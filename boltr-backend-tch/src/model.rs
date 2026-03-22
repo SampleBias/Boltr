@@ -7,12 +7,13 @@ pub use crate::boltz2::Boltz2Model as BoltzModel;
 use anyhow::Result;
 
 #[cfg(not(feature = "tch-backend"))]
+#[derive(Debug, Default)]
 pub struct BoltzModel;
 
 #[cfg(not(feature = "tch-backend"))]
 impl BoltzModel {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 
     pub fn forward(&self) -> Result<()> {

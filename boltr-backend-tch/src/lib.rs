@@ -36,3 +36,9 @@ pub use checkpoint::{list_safetensor_names, load_tensor_from_safetensors};
 pub use device::{cuda_is_available, parse_device_spec};
 #[cfg(feature = "tch-backend")]
 pub use model::BoltzModel;
+
+// Re-export layer implementations
+#[cfg(feature = "tch-backend")]
+pub use attention::AttentionPairBiasV2;
+#[cfg(feature = "tch-backend")]
+pub use layers::{PairformerLayer, PairformerModule, Transition};
