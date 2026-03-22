@@ -3,7 +3,7 @@
 //! Reference: boltz-reference/src/boltz/model/layers/triangular_attention/attention.py
 //! Implements the fallback PyTorch path (use_kernels=False)
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
+use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
 use tch::{Kind, Device, Tensor};
 
 /// Triangle Attention layer (base implementation)
@@ -41,15 +41,15 @@ impl TriangleAttention {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for this layer
     /// * `c_in` - Input dimension
     /// * `c_hidden` - Hidden dimension for attention
     /// * `no_heads` - Number of attention heads
     /// * `starting` - Whether this is a starting node (true) or ending node (false)
     /// * `inf` - Large negative value for masking
     /// * `device` - Computation device
-    pub fn new(
-        vs: &VarStore,
+    pub fn new<'a>(
+        path: Path<'a>,
         c_in: i64,
         c_hidden: Option<i64>,
         no_heads: Option<i64>,
@@ -61,17 +61,15 @@ impl TriangleAttention {
         let no_heads = no_heads.unwrap_or(4);
         let starting = starting.unwrap_or(true);
 
-        let root = vs.root();
-
         let layer_norm = LayerNorm::new(
-            root.sub("layer_norm"),
+            path.sub("layer_norm"),
             vec![c_in],
             c_in as f64 * 1e-5,
             true,
         );
 
         let linear = linear(
-            root.sub("linear"),
+            path.sub("linear"),
             c_in,
             no_heads,
             LinearConfig {
@@ -80,11 +78,8 @@ impl TriangleAttention {
             },
         );
 
-        // Multi-head attention projections
-        let head_dim = c_hidden / no_heads;
-
         let q_proj = linear(
-            root.sub("q_proj"),
+            path.sub("q_proj"),
             c_in,
             c_hidden,
             LinearConfig {
@@ -94,7 +89,7 @@ impl TriangleAttention {
         );
 
         let k_proj = linear(
-            root.sub("k_proj"),
+            path.sub("k_proj"),
             c_in,
             c_hidden,
             LinearConfig {
@@ -104,7 +99,7 @@ impl TriangleAttention {
         );
 
         let v_proj = linear(
-            root.sub("v_proj"),
+            path.sub("v_proj"),
             c_in,
             c_in,
             LinearConfig {
@@ -114,7 +109,7 @@ impl TriangleAttention {
         );
 
         let o_proj = linear(
-            root.sub("o_proj"),
+            path.sub("o_proj"),
             c_in,
             c_in,
             LinearConfig {
@@ -286,21 +281,22 @@ pub type TriangleAttentionStartingNode = TriangleAttention;
 /// This is just a TriangleAttention with starting=false
 impl TriangleAttention {
     /// Create a TriangleAttentionEndingNode
-    pub fn new_ending_node(
-        vs: &VarStore,
+    pub fn new_ending_node<'a>(
+        path: Path<'a>,
         c_in: i64,
         c_hidden: Option<i64>,
         no_heads: Option<i64>,
         inf: Option<f64>,
         device: Device,
     ) -> Self {
-        Self::new(vs, c_in, c_hidden, no_heads, Some(false), inf, device)
+        Self::new(path, c_in, c_hidden, no_heads, Some(false), inf, device)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::nn::VarStore;
 
     #[test]
     fn test_triangle_attention_starting_forward() {
@@ -315,7 +311,7 @@ mod tests {
 
         let vs = VarStore::new(device);
         let layer = TriangleAttention::new(
-            &vs,
+            vs.root(),
             c_in,
             Some(c_hidden),
             Some(no_heads),
@@ -345,7 +341,7 @@ mod tests {
 
         let vs = VarStore::new(device);
         let layer = TriangleAttention::new_ending_node(
-            &vs,
+            vs.root(),
             c_in,
             Some(c_hidden),
             Some(no_heads),

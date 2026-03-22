@@ -2,7 +2,7 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/transition.py
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
+use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
 use tch::{Kind, Device, Tensor};
 
 /// Transition layer (two-layer MLP with SwiGLU activation)
@@ -25,13 +25,13 @@ impl Transition {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for this transition block
     /// * `dim` - Input dimension
     /// * `hidden` - Hidden dimension (default: dim * 4)
     /// * `out_dim` - Output dimension (default: dim)
     /// * `device` - Computation device
-    pub fn new(
-        vs: &VarStore,
+    pub fn new<'a>(
+        path: Path<'a>,
         dim: i64,
         hidden: Option<i64>,
         out_dim: Option<i64>,
@@ -40,12 +40,10 @@ impl Transition {
         let hidden = hidden.unwrap_or(dim * 4);
         let out_dim = out_dim.unwrap_or(dim);
 
-        let root = vs.root();
-
-        let norm = LayerNorm::new(root.sub("norm"), vec![dim], dim as f64 * 1e-5, true);
+        let norm = LayerNorm::new(path.sub("norm"), vec![dim], dim as f64 * 1e-5, true);
 
         let fc1 = linear(
-            root.sub("fc1"),
+            path.sub("fc1"),
             dim,
             hidden,
             LinearConfig {
@@ -55,7 +53,7 @@ impl Transition {
         );
 
         let fc2 = linear(
-            root.sub("fc2"),
+            path.sub("fc2"),
             dim,
             hidden,
             LinearConfig {
@@ -65,7 +63,7 @@ impl Transition {
         );
 
         let fc3 = linear(
-            root.sub("fc3"),
+            path.sub("fc3"),
             hidden,
             out_dim,
             LinearConfig {
@@ -113,6 +111,7 @@ impl Transition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::nn::VarStore;
 
     #[test]
     fn test_transition_forward() {
@@ -125,7 +124,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = Transition::new(&vs, dim, Some(hidden), None, device);
+        let layer = Transition::new(vs.root(), dim, Some(hidden), None, device);
 
         let x = Tensor::randn(&[batch_size, seq_len, dim], (Kind::Float, device));
 
@@ -145,7 +144,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = Transition::new(&vs, dim, None, Some(out_dim), device);
+        let layer = Transition::new(vs.root(), dim, None, Some(out_dim), device);
 
         let x = Tensor::randn(&[batch_size, seq_len, dim], (Kind::Float, device));
 

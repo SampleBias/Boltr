@@ -3,7 +3,7 @@
 //! Reference: boltz-reference/src/boltz/model/layers/triangular_mult.py
 //! Implements the fallback PyTorch path (use_kernels=False)
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
+use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
 use tch::{Kind, Device, Tensor};
 
 /// Triangle Multiplication Outgoing layer
@@ -31,22 +31,21 @@ impl TriangleMultiplicationOutgoing {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for this layer
     /// * `dim` - Dimension of the input/output (default 128)
     /// * `device` - Computation device
-    pub fn new(vs: &VarStore, dim: Option<i64>, device: Device) -> Self {
+    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
         let dim = dim.unwrap_or(128);
-        let root = vs.root();
 
         let norm_in = LayerNorm::new(
-            root.sub("norm_in"),
+            path.sub("norm_in"),
             vec![dim],
             dim as f64 * 1e-5,
             true,
         );
 
         let p_in = linear(
-            root.sub("p_in"),
+            path.sub("p_in"),
             dim,
             2 * dim,
             LinearConfig {
@@ -56,7 +55,7 @@ impl TriangleMultiplicationOutgoing {
         );
 
         let g_in = linear(
-            root.sub("g_in"),
+            path.sub("g_in"),
             dim,
             2 * dim,
             LinearConfig {
@@ -66,14 +65,14 @@ impl TriangleMultiplicationOutgoing {
         );
 
         let norm_out = LayerNorm::new(
-            root.sub("norm_out"),
+            path.sub("norm_out"),
             vec![dim],
             dim as f64 * 1e-5,
             true,
         );
 
         let p_out = linear(
-            root.sub("p_out"),
+            path.sub("p_out"),
             dim,
             dim,
             LinearConfig {
@@ -83,7 +82,7 @@ impl TriangleMultiplicationOutgoing {
         );
 
         let g_out = linear(
-            root.sub("g_out"),
+            path.sub("g_out"),
             dim,
             dim,
             LinearConfig {
@@ -179,22 +178,21 @@ impl TriangleMultiplicationIncoming {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for this layer
     /// * `dim` - Dimension of the input/output (default 128)
     /// * `device` - Computation device
-    pub fn new(vs: &VarStore, dim: Option<i64>, device: Device) -> Self {
+    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
         let dim = dim.unwrap_or(128);
-        let root = vs.root();
 
         let norm_in = LayerNorm::new(
-            root.sub("norm_in"),
+            path.sub("norm_in"),
             vec![dim],
             dim as f64 * 1e-5,
             true,
         );
 
         let p_in = linear(
-            root.sub("p_in"),
+            path.sub("p_in"),
             dim,
             2 * dim,
             LinearConfig {
@@ -204,7 +202,7 @@ impl TriangleMultiplicationIncoming {
         );
 
         let g_in = linear(
-            root.sub("g_in"),
+            path.sub("g_in"),
             dim,
             2 * dim,
             LinearConfig {
@@ -214,14 +212,14 @@ impl TriangleMultiplicationIncoming {
         );
 
         let norm_out = LayerNorm::new(
-            root.sub("norm_out"),
+            path.sub("norm_out"),
             vec![dim],
             dim as f64 * 1e-5,
             true,
         );
 
         let p_out = linear(
-            root.sub("p_out"),
+            path.sub("p_out"),
             dim,
             dim,
             LinearConfig {
@@ -231,7 +229,7 @@ impl TriangleMultiplicationIncoming {
         );
 
         let g_out = linear(
-            root.sub("g_out"),
+            path.sub("g_out"),
             dim,
             dim,
             LinearConfig {
@@ -323,7 +321,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = TriangleMultiplicationOutgoing::new(&vs, Some(dim), device);
+        let layer = TriangleMultiplicationOutgoing::new(vs.root(), Some(dim), device);
 
         let x = Tensor::randn(&[batch_size, seq_len, seq_len, dim], (Kind::Float, device));
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
@@ -343,7 +341,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = TriangleMultiplicationIncoming::new(&vs, Some(dim), device);
+        let layer = TriangleMultiplicationIncoming::new(vs.root(), Some(dim), device);
 
         let x = Tensor::randn(&[batch_size, seq_len, seq_len, dim], (Kind::Float, device));
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));

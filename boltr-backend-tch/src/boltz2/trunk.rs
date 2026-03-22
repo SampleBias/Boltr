@@ -125,10 +125,9 @@ impl TrunkV2 {
         s_recycle.ws.set_zero();
         z_recycle.ws.set_zero();
 
-        // Owned PairformerModule
-        let pairformer_vs = root.sub("pairformer");
+        // Owned PairformerModule (parameters under `pairformer.layers_*`, etc.)
         let pairformer = PairformerModule::new(
-            &pairformer_vs.fork(),
+            root.sub("pairformer"),
             token_s,
             token_z,
             num_blocks,
@@ -274,7 +273,7 @@ impl TrunkV2 {
         // Recycling loop
         for _i in 0..=recycling_steps {
             // Apply recycling
-            let (s_recycled, z_recycled) = self.apply_recyling(&s_init, &z_init, &s, &z);
+            let (s_recycled, z_recycled) = self.apply_recycling(&s_init, &z_init, &s, &z);
 
             // Note: In full implementation, other components would add here:
             // - z += template_module(z, ...)
@@ -284,7 +283,7 @@ impl TrunkV2 {
             z = z_recycled;
 
             // Run owned pairformer module
-            let (s_new, z_new) = self.forward_pairformer(&s, &z, &mask, &pair_mask);
+            let (s_new, z_new) = self.forward_pairformer(&s, &z, &pair_mask, &pair_mask);
 
             s = s_new;
             z = z_new;
@@ -344,10 +343,7 @@ mod tests {
             device,
         );
 
-        println!("✓ TrunkV2 owns PairformerModule");
-        println!("  - token_s: {}", trunk.token_s());
-        println!("  - token_z: {}", trunk.token_z());
-        println!("  - Can access pairformer: {}", trunk.pairformer().num_blocks);
+        assert_eq!(trunk.pairformer().num_blocks(), num_blocks);
 
         // Test initialize method
         let s_inputs = Tensor::randn(
@@ -360,10 +356,6 @@ mod tests {
         assert_eq!(s_init.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(z_init.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
 
-        println!("\n✓ initialize() produces correct shapes:");
-        println!("  - s_init: {:?}", s_init.size());
-        println!("  - z_init: {:?}", z_init.size());
-
         // Test apply_recycling method
         let s_prev = Tensor::randn(
             &[batch_size, num_tokens, token_s],
@@ -374,14 +366,10 @@ mod tests {
             (tch::Kind::Float, device),
         );
 
-        let (s_recycled, z_recycled) = trunk.apply_recyling(&s_init, &z_init, &s_prev, &z_prev);
+        let (s_recycled, z_recycled) = trunk.apply_recycling(&s_init, &z_init, &s_prev, &z_prev);
 
         assert_eq!(s_recycled.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(z_recycled.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
-
-        println!("\n✓ apply_recycling() produces correct shapes:");
-        println!("  - s_recycled: {:?}", s_recycled.size());
-        println!("  - z_recycled: {:?}", z_recycled.size());
 
         // Test forward_pairformer method (the key API!)
         let mask = Tensor::ones(&[batch_size, num_tokens, num_tokens], (tch::Kind::Float, device));
@@ -392,14 +380,6 @@ mod tests {
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
 
-        println!("\n✓ forward_pairformer(s, z, mask, pair_mask) → (s, z) works:");
-        println!("  - Input s: {:?}", s_init.size());
-        println!("  - Input z: {:?}", z_init.size());
-        println!("  - Output s: {:?}", s_out.size());
-        println!("  - Output z: {:?}", z_out.size());
-
-        println!("\n✅ TrunkV2 properly owns PairformerModule and exposes clean API");
-        println!("   Other components can now call forward_pairformer(s, z, ...) without rewriting structure!");
     }
 
     /// Test full forward with recycling
@@ -434,7 +414,6 @@ mod tests {
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
 
-        println!("✓ Full forward with recycling works correctly");
     }
 
     /// Test API allows easy connection of other components
@@ -473,11 +452,6 @@ mod tests {
 
         // Call pairformer (easy API!)
         let (s, z) = trunk.forward_pairformer(&s, &z, &mask, &pair_mask);
-
-        println!("✓ API allows easy component connection:");
-        println!("   initialize(s_inputs) → (s, z)");
-        println!("   z += msa_module(...)  <-- Other components connect here!");
-        println!("   forward_pairformer(s, z, ...) → (s, z)");
 
         assert_eq!(s.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(z.size(), vec![batch_size, num_tokens, num_tokens, token_z]);

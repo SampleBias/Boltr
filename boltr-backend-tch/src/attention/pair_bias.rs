@@ -2,7 +2,7 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/attentionv2.py
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
+use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
 use tch::{Kind, Device, Tensor};
 
 /// Attention pair bias layer (Boltz2 variant)
@@ -44,7 +44,7 @@ impl AttentionPairBiasV2 {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for parameter names (e.g. `vs.root().sub("attention")`)
     /// * `c_s` - Input/output sequence dimension
     /// * `c_z` - Pairwise representation dimension
     /// * `num_heads` - Number of attention heads (must divide c_s evenly)
@@ -54,8 +54,8 @@ impl AttentionPairBiasV2 {
     /// # Panics
     ///
     /// Panics if `c_s` is not divisible by `num_heads`
-    pub fn new(
-        vs: &VarStore,
+    pub fn new<'a>(
+        path: Path<'a>,
         c_s: i64,
         c_z: Option<i64>,
         num_heads: Option<i64>,
@@ -74,11 +74,9 @@ impl AttentionPairBiasV2 {
         let head_dim = c_s / num_heads;
         let compute_pair_bias = c_z.is_some();
 
-        let root = vs.root();
-
         // Linear projections for sequence representations
         let proj_q = linear(
-            root.sub("proj_q"),
+            path.sub("proj_q"),
             c_s,
             c_s,
             LinearConfig {
@@ -88,7 +86,7 @@ impl AttentionPairBiasV2 {
         );
 
         let proj_k = linear(
-            root.sub("proj_k"),
+            path.sub("proj_k"),
             c_s,
             c_s,
             LinearConfig {
@@ -98,7 +96,7 @@ impl AttentionPairBiasV2 {
         );
 
         let proj_v = linear(
-            root.sub("proj_v"),
+            path.sub("proj_v"),
             c_s,
             c_s,
             LinearConfig {
@@ -108,7 +106,7 @@ impl AttentionPairBiasV2 {
         );
 
         let proj_g = linear(
-            root.sub("proj_g"),
+            path.sub("proj_g"),
             c_s,
             c_s,
             LinearConfig {
@@ -118,7 +116,7 @@ impl AttentionPairBiasV2 {
         );
 
         let proj_o = linear(
-            root.sub("proj_o"),
+            path.sub("proj_o"),
             c_s,
             c_s,
             LinearConfig {
@@ -131,14 +129,14 @@ impl AttentionPairBiasV2 {
         let (proj_z_layer_norm, proj_z) = if compute_pair_bias {
             let c_z = c_z.unwrap();
             let ln = LayerNorm::new(
-                root.sub("proj_z_layer_norm"),
+                path.sub("proj_z_layer_norm"),
                 vec![c_z],
                 c_z as f64 * 1e-5,
                 true,
             );
 
             let linear = linear(
-                root.sub("proj_z"),
+                path.sub("proj_z"),
                 c_z,
                 num_heads,
                 LinearConfig {
@@ -292,7 +290,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = AttentionPairBiasV2::new(&vs, c_s, Some(c_z), Some(num_heads), None, device);
+        let layer = AttentionPairBiasV2::new(vs.root(), c_s, Some(c_z), Some(num_heads), None, device);
 
         let s = Tensor::randn(&[batch_size, seq_len, c_s], (Kind::Float, device));
         let z = Tensor::randn(&[batch_size, seq_len, seq_len, c_z], (Kind::Float, device));
@@ -314,7 +312,7 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = AttentionPairBiasV2::new(&vs, c_s, None, Some(num_heads), None, device);
+        let layer = AttentionPairBiasV2::new(vs.root(), c_s, None, Some(num_heads), None, device);
 
         let s = Tensor::randn(&[batch_size, seq_len, c_s], (Kind::Float, device));
         let z = Tensor::zeros(&[batch_size, seq_len, seq_len], (Kind::Float, device));

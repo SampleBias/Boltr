@@ -3,15 +3,14 @@
 //! Reference: boltz-reference/src/boltz/model/layers/pairformer.py
 //! Combines attention, triangular operations, and transitions
 
-use super::triangular_attention::{TriangleAttention, TriangleAttentionStartingNode};
+use super::triangular_attention::TriangleAttention;
 use super::triangular_mult::{TriangleMultiplicationIncoming, TriangleMultiplicationOutgoing};
 use super::transition::Transition;
 
 use crate::attention::pair_bias::AttentionPairBiasV2;
 
-use tch::nn::LayerNorm;
+use tch::nn::{LayerNorm, Module, Path};
 use tch::{Kind, Device, Tensor, VarStore};
-use tch::nn::Module;
 
 /// Pairformer Layer
 ///
@@ -34,7 +33,7 @@ pub struct PairformerLayer {
     // Pairwise stack
     tri_mul_out: TriangleMultiplicationOutgoing,
     tri_mul_in: TriangleMultiplicationIncoming,
-    tri_att_start: TriangleAttentionStartingNode,
+    tri_att_start: TriangleAttention,
     tri_att_end: TriangleAttention,
     transition_z: Transition,
 
@@ -46,7 +45,7 @@ impl PairformerLayer {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for this layer (e.g. `vs.root().sub("layers_0")`)
     /// * `token_s` - Sequence dimension
     /// * `token_z` - Pairwise dimension
     /// * `num_heads` - Number of attention heads for sequence attention
@@ -56,8 +55,8 @@ impl PairformerLayer {
     /// * `post_layer_norm` - Whether to apply post layer norm on sequence
     /// * `v2` - Whether to use Boltz2 variant (true) or Boltz1 variant (false)
     /// * `device` - Computation device
-    pub fn new(
-        vs: &VarStore,
+    pub fn new<'a>(
+        path: Path<'a>,
         token_s: i64,
         token_z: i64,
         num_heads: Option<i64>,
@@ -74,21 +73,18 @@ impl PairformerLayer {
         let pairwise_head_width = pairwise_head_width.unwrap_or(32);
         let pairwise_num_heads = pairwise_num_heads.unwrap_or(4);
 
-        let root = vs.root();
-
         // Sequence stack
         let pre_norm_s = LayerNorm::new(
-            root.sub("pre_norm_s"),
+            path.sub("pre_norm_s"),
             vec![token_s],
             token_s as f64 * 1e-5,
             true,
         );
 
-        // Use AttentionPairBiasV2 if v2 is true
-        let v2_value = v2.unwrap_or(true);
-        let vs_attention = root.sub("attention");
+        // Boltz1 vs Boltz2 branching not wired yet; keep API aligned with Python.
+        let _ = v2.unwrap_or(true);
         let attention = AttentionPairBiasV2::new(
-            &vs_attention.fork(),
+            path.sub("attention"),
             token_s,
             Some(token_z),
             Some(num_heads),
@@ -96,9 +92,8 @@ impl PairformerLayer {
             device,
         );
 
-        let vs_transition_s = root.sub("transition_s");
         let transition_s = Transition::new(
-            &vs_transition_s.fork(),
+            path.sub("transition_s"),
             token_s,
             Some(token_s * 4),
             None,
@@ -107,7 +102,7 @@ impl PairformerLayer {
 
         let s_post_norm = if post_layer_norm {
             Some(LayerNorm::new(
-                root.sub("s_post_norm"),
+                path.sub("s_post_norm"),
                 vec![token_s],
                 token_s as f64 * 1e-5,
                 true,
@@ -117,23 +112,30 @@ impl PairformerLayer {
         };
 
         // Pairwise stack
-        let vs_tri_mul_out = root.sub("tri_mul_out");
         let tri_mul_out = TriangleMultiplicationOutgoing::new(
-            &vs_tri_mul_out.fork(),
+            path.sub("tri_mul_out"),
             Some(token_z),
             device,
         );
 
-        let vs_tri_mul_in = root.sub("tri_mul_in");
         let tri_mul_in = TriangleMultiplicationIncoming::new(
-            &vs_tri_mul_in.fork(),
+            path.sub("tri_mul_in"),
             Some(token_z),
             device,
         );
 
-        let vs_tri_att_start = root.sub("tri_att_start");
-        let tri_att_start = TriangleAttentionStartingNode::new(
-            &vs_tri_att_start.fork(),
+        let tri_att_start = TriangleAttention::new(
+            path.sub("tri_att_start"),
+            token_z,
+            Some(pairwise_head_width),
+            Some(pairwise_num_heads),
+            Some(true),
+            Some(1e9),
+            device,
+        );
+
+        let tri_att_end = TriangleAttention::new_ending_node(
+            path.sub("tri_att_end"),
             token_z,
             Some(pairwise_head_width),
             Some(pairwise_num_heads),
@@ -141,20 +143,8 @@ impl PairformerLayer {
             device,
         );
 
-        let vs_tri_att_end = root.sub("tri_att_end");
-        let tri_att_end = TriangleAttention::new(
-            &vs_tri_att_end.fork(),
-            token_z,
-            Some(pairwise_head_width),
-            Some(pairwise_num_heads),
-            Some(false), // ending node
-            Some(1e9),
-            device,
-        );
-
-        let vs_transition_z = root.sub("transition_z");
         let transition_z = Transition::new(
-            &vs_transition_z.fork(),
+            path.sub("transition_z"),
             token_z,
             Some(token_z * 4),
             None,
@@ -342,7 +332,7 @@ impl PairformerModule {
     ///
     /// # Arguments
     ///
-    /// * `vs` - Variable store for parameter storage
+    /// * `path` - VarStore sub-path for the stack (e.g. `vs.root().sub("pairformer")`)
     /// * `token_s` - Sequence dimension
     /// * `token_z` - Pairwise dimension
     /// * `num_blocks` - Number of PairformerLayers
@@ -354,8 +344,8 @@ impl PairformerModule {
     /// * `activation_checkpointing` - Whether to use activation checkpointing (not yet implemented)
     /// * `v2` - Whether to use Boltz2 variant
     /// * `device` - Computation device
-    pub fn new(
-        vs: &VarStore,
+    pub fn new<'a>(
+        path: Path<'a>,
         token_s: i64,
         token_z: i64,
         num_blocks: i64,
@@ -373,13 +363,10 @@ impl PairformerModule {
         let post_layer_norm = post_layer_norm.unwrap_or(false);
         let activation_checkpointing = activation_checkpointing.unwrap_or(false);
 
-        let root = vs.root();
-
         let mut layers = Vec::new();
         for i in 0..num_blocks {
-            let vs_layer = root.sub(&format!("layers_{}", i));
             let layer = PairformerLayer::new(
-                &vs_layer.fork(),
+                path.sub(&format!("layers_{}", i)),
                 token_s,
                 token_z,
                 Some(num_heads),
@@ -402,6 +389,11 @@ impl PairformerModule {
             activation_checkpointing,
             layers,
         }
+    }
+
+    /// Number of pairformer blocks in this stack.
+    pub fn num_blocks(&self) -> i64 {
+        self.num_blocks
     }
 
     /// Forward pass through all layers
@@ -465,7 +457,7 @@ mod tests {
 
         let vs = VarStore::new(device);
         let layer = PairformerLayer::new(
-            &vs,
+            vs.root(),
             token_s,
             token_z,
             Some(num_heads),
@@ -501,7 +493,7 @@ mod tests {
 
         let vs = VarStore::new(device);
         let module = PairformerModule::new(
-            &vs,
+            vs.root(),
             token_s,
             token_z,
             num_blocks,
