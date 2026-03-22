@@ -19,7 +19,8 @@ anyhow.workspace = true
 tokio.workspace = true
 boltr-io = { path = "../boltr-io" }
 boltr-backend-tch = { path = "../boltr-backend-tch", optional = true }
+dirs.workspace = true
 
 [features]
-default = []
+default = ["tch"]
 tch = ["boltr-backend-tch/tch-backend"]

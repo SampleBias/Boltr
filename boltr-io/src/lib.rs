@@ -8,9 +8,15 @@
 // - Output formatting
 
 pub mod config;
-pub mod parser;
-pub mod msa;
+pub mod download;
 pub mod format;
+pub mod msa;
+pub mod parser;
 
-pub use config::BoltzConfig;
-pub use parser::parse_input;
+pub use config::BoltzInput;
+/// Backward-compatible name for parsed YAML root.
+pub type BoltzConfig = BoltzInput;
+pub use download::download_model_assets;
+pub use format::PredictionRunSummary;
+pub use parser::{parse_input_path, parse_input_str};
+pub use parser::parse_input_path as parse_input;

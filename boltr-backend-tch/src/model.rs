@@ -1,19 +1,21 @@
-// Core Boltz model structure
-// Placeholder implementation
+//! Top-level model entry points.
 
+#[cfg(feature = "tch-backend")]
+pub use crate::boltz2::Boltz2Model as BoltzModel;
+
+#[cfg(not(feature = "tch-backend"))]
 use anyhow::Result;
 
-pub struct BoltzModel {
-    // TODO: Implement model architecture
-}
+#[cfg(not(feature = "tch-backend"))]
+pub struct BoltzModel;
 
+#[cfg(not(feature = "tch-backend"))]
 impl BoltzModel {
     pub fn new() -> Self {
-        Self {}
+        Self
     }
 
     pub fn forward(&self) -> Result<()> {
-        // TODO: Implement forward pass
-        anyhow::bail!("Forward pass not implemented")
+        anyhow::bail!("build with --features tch-backend (LibTorch required)")
     }
 }

@@ -30,6 +30,12 @@ clap-verbosity-flag = "3.0"
 # IO dependencies
 tokio = { version = "1.0", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
+serde_yaml = "0.9"
+safetensors = "0.4"
+flate2 = "1.0"
+tar = "0.4"
+dirs = "5.0"
+rand = "0.8"
 
 [profile.release]
 opt-level = 3
