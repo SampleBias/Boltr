@@ -104,7 +104,7 @@ async fn run_job_download(
     let mut rng = rand::thread_rng();
     let submit_url = format!("{base}/ticket/msa");
 
-    let mut submitted = loop {
+    let submitted = loop {
         let out = post_ticket_msa(client, &submit_url, query, mode).await?;
         match out.status.as_str() {
             "UNKNOWN" | "RATELIMIT" => {
@@ -171,8 +171,7 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
 
     for entry in archive.entries().context("tar entries")? {
         let mut entry = entry.context("tar entry")?;
-        let path = entry.path().context("tar path")?;
-        let path_s = path.to_string_lossy();
+        let path_s = entry.path().context("tar path")?.to_string_lossy().into_owned();
         let is_uniref = path_s.ends_with("uniref.a3m");
         let is_bfd = path_s.contains("bfd.mgnify30.metaeuk30.smag30.a3m");
         if !is_uniref && !(use_env && is_bfd) {
@@ -181,7 +180,7 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
         let mut text = String::new();
         entry
             .read_to_string(&mut text)
-            .with_context(|| format!("read tar member {}", path_s))?;
+            .with_context(|| format!("read tar member {path_s}"))?;
         parse_a3m_into_map(&text, &mut combined);
     }
 

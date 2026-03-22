@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 

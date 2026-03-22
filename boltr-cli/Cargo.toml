@@ -22,5 +22,6 @@ boltr-backend-tch = { path = "../boltr-backend-tch", optional = true }
 dirs.workspace = true
 
 [features]
-default = ["tch"]
+# Enable `tch` for LibTorch-backed inference (requires LIBTORCH or LIBTORCH_USE_PYTORCH=1).
+default = []
 tch = ["boltr-backend-tch/tch-backend"]
