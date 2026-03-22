@@ -11,3 +11,4 @@ pub mod model;
 pub mod trunk;
 
 pub use model::Boltz2Model;
+pub use trunk::TrunkV2;

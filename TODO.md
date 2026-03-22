@@ -14,7 +14,9 @@ This file is the **master implementation checklist** for parity with upstream Bo
 4. Update the checkbox in your PR (`[ ]` → `[x]`) for the rows you finish.
 5. Keep **numerical parity** against Python with `use_kernels=False` (no cuequivariance fused kernels in Rust). GPU = CUDA LibTorch, not Python’s `boltz[cuda]` wheels.
 
-**Related docs:** [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
+**Related docs:** [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md), [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md).
+
+**Sprint / activity tracking:** [tasks/todo.md](tasks/todo.md) (rolling checklist), [docs/activity.md](docs/activity.md) (timeline), [docs/PROJECT_README.md](docs/PROJECT_README.md) (project context for tooling).
 
 ---
 
@@ -69,13 +71,22 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 ---
 
+## 2a. Recent progress log
+
+| When | What landed | Notes |
+|------|-------------|--------|
+| 2025-03-22 | **Pairformer stack (§5.5)** in `boltr-backend-tch` | Full layer implementations: `AttentionPairBiasV2`, triangle mult/attn (fallback path), `Transition`, `OuterProductMean`, `PairformerLayer`, `PairformerModule`. See [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md). **Unit tests** exist behind `--features tch` + LibTorch. |
+| | **Not done yet** | Layers are **not** wired into `Boltz2Model` / `boltz2::TrunkV2` (still placeholder trunk). **No golden-tensor parity** vs Python for the stack yet—treat as “code complete, integration + validation pending.” |
+
+---
+
 ## 3. Tooling, build, and CI
 
 | Status | Task | Details |
 |--------|------|---------|
 | [x] | LibTorch build matrix | Document CPU vs CUDA; `LIBTORCH` / `LIBTORCH_USE_PYTORCH` ([DEVELOPMENT.md](DEVELOPMENT.md)). |
 | [x] | CLI device flags | `--device`, `BOLTR_DEVICE`; CUDA availability check in backend. |
-| [ ] | Default feature policy | Decide: keep `default = []` for LibTorch-free CI vs developer profile alias; document in README. |
+| [x] | Default feature policy | **Resolved for now:** `default = []` on `boltr-cli` so `cargo test` works without LibTorch; document `--features tch` in [README.md](README.md) / [DEVELOPMENT.md](DEVELOPMENT.md). Revisit optional `full` alias if needed. |
 | [ ] | Optional CUDA CI job | Nightly or manual workflow with CUDA LibTorch smoke test (single matmul or `s_init` forward). |
 | [ ] | Checkpoint export automation | Makefile / `xtask` to run export script + verify key count vs Lightning `state_dict`. |
 | [ ] | Hyperparameter manifest | Export `hparams.yaml` or JSON from ckpt for Rust `Boltz2Model::from_config` (avoid hardcoding dims). |
@@ -172,8 +183,9 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 |--------|------|------------------|-------------------------|
 | [ ] | `InputEmbedder` | `modules/trunkv2.py` + embedder args | `boltz2/embedder.rs` |
 | [ ] | `RelativePositionEncoder` | `modules/encodersv2.py` | `boltz2/relative_position.rs` |
-| [ ] | `s_init`, `z_init_*`, bonds, contact conditioning | `trunkv2.py` | Extend [model.rs](boltr-backend-tch/src/boltz2/model.rs) |
+| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | `trunkv2.py` | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs) has **`s_init` only** + safetensors load spike; z_init, bonds, contact TBD |
 | [ ] | LayerNorm / recycling projections | `trunkv2.py` | Same module |
+| [ ] | **Wire `PairformerModule` into trunk** | `trunkv2.py` | Replace [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs) placeholder; connect MSA → pairformer → downstream (blocked on §5.4 + §5.1 VarStore naming) |
 
 ### 5.3 Templates
 
@@ -191,14 +203,16 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | `PairformerModule` | `layers/pairformer.py` | `boltz2/pairformer.rs` |
-| [ ] | Attention variants | `attention.py`, `attentionv2.py` | Submodules |
-| [ ] | Triangular multiplication (fallback) | `triangular_mult.py` | **No cuequivariance**; pure torch ops path only. |
-| [ ] | Triangular attention (fallback) | `triangular_attention/*` | Same |
-| [ ] | Transition / outer product mean | `transition.py`, `outer_product_mean.py` | |
-| [ ] | Dropout, mask handling | `dropout.py`, pair masks | |
+| [x] | `PairformerModule` | `layers/pairformer.py` | [layers/pairformer.rs](boltr-backend-tch/src/layers/pairformer.rs) — stack of `PairformerLayer`s |
+| [x] | Attention (Boltz2 pair bias) | `attentionv2.py` | [attention/pair_bias.rs](boltr-backend-tch/src/attention/pair_bias.rs) — `AttentionPairBiasV2` |
+| [x] | Triangular multiplication (fallback) | `triangular_mult.py` | [layers/triangular_mult.rs](boltr-backend-tch/src/layers/triangular_mult.rs) — incoming/outgoing |
+| [x] | Triangular attention (fallback) | `triangular_attention/*` | [layers/triangular_attention.rs](boltr-backend-tch/src/layers/triangular_attention.rs) |
+| [x] | Transition / outer product mean | `transition.py`, `outer_product_mean.py` | [transition.rs](boltr-backend-tch/src/layers/transition.rs), [outer_product_mean.rs](boltr-backend-tch/src/layers/outer_product_mean.rs) |
+| [~] | Dropout, mask handling | `dropout.py`, pair masks | Covered inside layer forwards where applicable; audit vs Python masks for edge cases. |
 
-**Acceptance:** Single pairformer block output matches Python golden tensor for fixed `(s, z, mask)`.
+**Integration (still open):** Re-exported from [lib.rs](boltr-backend-tch/src/lib.rs). Layers are **not** yet invoked from [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs) or [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs) — add a §5.2 / §5.10 task to wire trunk + VarStore names.
+
+**Acceptance (product bar):** Single `PairformerLayer` / block output **allclose** to Python golden tensor for fixed `(s, z, mask)` — **pending**; run tests with `cargo test -p boltr-backend-tch --features tch-backend` when LibTorch is available.
 
 ### 5.6 Diffusion conditioning + structure
 
@@ -258,10 +272,11 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 
 | Status | Task | Details |
 |--------|------|---------|
-| [ ] | Golden fixture repo layout | `tests/fixtures/` with YAML, optional tiny npz, README describing how regenerated from Python. |
-| [ ] | Python export scripts | Small scripts next to `export_checkpoint_to_safetensors.py` to dump featurizer batch + intermediate activations. |
+| [~] | Golden fixture repo layout | [boltr-io/tests/fixtures/](boltr-io/tests/fixtures/) has minimal YAML; expand with npz + README for featurizer/collate goldens. |
+| [ ] | Python export scripts | Small scripts next to `export_checkpoint_to_safetensors.py` to dump featurizer batch + **pairformer intermediate** activations. |
 | [ ] | Numerical tolerances | Document per-tensor rtol/atol; strict for embeddings, looser for sampling. |
 | [ ] | Regression test harness | Optional: subprocess `boltz predict` vs `boltr predict` diff. |
+| [~] | Backend layer unit tests | Pairformer-related modules include `#[test]` (require `cargo test -p boltr-backend-tch --features tch-backend` + LibTorch). **Does not** replace Python golden parity. |
 
 ---
 
@@ -282,10 +297,11 @@ Do **not** delete `boltz-reference/` chunks until Rust replaces them with tests.
 These can proceed **in parallel** once interfaces are agreed (tensor names/shapes in `docs/TENSOR_CONTRACT.md`):
 
 1. **Featurizer team:** §4.3–4.5 (blocked only on §4.1–4.2 for parser outputs).
-2. **Pairformer team:** §5.5 (blocked on §4.4 golden batch + §5.1 VarStore).
+2. **Trunk integration team:** §5.2 (wire §5.5 `PairformerModule` + §5.4 MSA into real `TrunkV2`; §5.1 VarStore key map). **Pairformer layers are implemented; integration is the bottleneck.**
 3. **Diffusion team:** §5.6 (blocked on trunk output tensors).
 4. **Writers team:** §4.6 (can start from Python dumps of expected files).
 5. **Affinity team:** §5.8 (blocked on affinity featurizer path).
+6. **Numerical parity team:** §7 golden tensors for pairformer block + featurizer collate (cross-cuts §5.5 acceptance).
 
 ---
 
@@ -309,4 +325,4 @@ These can proceed **in parallel** once interfaces are agreed (tensor names/shape
 
 ---
 
-*Last generated for repo layout as of Boltr workspace with `boltz-reference` vendor tree. Update this file when major milestones land.*
+*Last updated: 2025-03-22 — Pairformer stack (§5.5) marked implemented; trunk wiring and golden parity explicitly tracked as open.*
