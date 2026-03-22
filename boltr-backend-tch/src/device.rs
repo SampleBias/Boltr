@@ -24,7 +24,11 @@ pub fn parse_device_spec(spec: &str) -> Result<Device> {
 }
 
 fn cuda_device(index: usize) -> Result<Device> {
-    tch::Cuda::is_available();
+    if !tch::Cuda::is_available() {
+        anyhow::bail!(
+            "CUDA device requested but LibTorch was built without CUDA or no GPU is visible"
+        );
+    }
     Ok(Device::Cuda(index))
 }
 

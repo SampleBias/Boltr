@@ -49,9 +49,7 @@ impl Boltz2Model {
     /// Load `s_init.weight` from a safetensors file (exported from Lightning `state_dict`).
     pub fn load_s_init_from_safetensors(&mut self, path: &Path) -> Result<()> {
         let w = load_tensor_from_safetensors(path, "s_init.weight", self.device)?;
-        self.s_init
-            .ws
-            .copy_(&w);
+        self.s_init.ws.copy_(&w);
         Ok(())
     }
 

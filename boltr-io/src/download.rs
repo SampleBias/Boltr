@@ -24,8 +24,7 @@ pub const BOLTZ1_CONF_URLS: &[&str] = &[
     "https://huggingface.co/boltz-community/boltz-1/resolve/main/boltz1_conf.ckpt",
 ];
 
-pub const CCD_PKL_URL: &str =
-    "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl";
+pub const CCD_PKL_URL: &str = "https://huggingface.co/boltz-community/boltz-1/resolve/main/ccd.pkl";
 pub const MOLS_TAR_URL: &str =
     "https://huggingface.co/boltz-community/boltz-2/resolve/main/mols.tar";
 

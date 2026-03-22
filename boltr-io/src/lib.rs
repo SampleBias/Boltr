@@ -19,5 +19,5 @@ pub type BoltzConfig = BoltzInput;
 pub use download::download_model_assets;
 pub use format::PredictionRunSummary;
 pub use msa::{write_a3m, MsaProcessor};
-pub use parser::{parse_input_path, parse_input_str};
 pub use parser::parse_input_path as parse_input;
+pub use parser::{parse_input_path, parse_input_str};

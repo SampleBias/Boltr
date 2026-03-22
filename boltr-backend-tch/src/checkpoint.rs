@@ -51,8 +51,7 @@ fn tensor_from_view(view: safetensors::tensor::TensorView<'_>, device: Device) -
 
 /// Load one tensor by name from a `.safetensors` file.
 pub fn load_tensor_from_safetensors(path: &Path, name: &str, device: Device) -> Result<Tensor> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let st = SafeTensors::deserialize(&bytes).context("parse safetensors")?;
     let view = st
         .tensor(name)
@@ -62,8 +61,7 @@ pub fn load_tensor_from_safetensors(path: &Path, name: &str, device: Device) -> 
 
 /// List tensor names in a safetensors file (for debugging / key alignment).
 pub fn list_safetensor_names(path: &Path) -> Result<Vec<String>> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let st = SafeTensors::deserialize(&bytes).context("parse safetensors")?;
     Ok(st.tensors().into_iter().map(|(n, _)| n).collect())
 }

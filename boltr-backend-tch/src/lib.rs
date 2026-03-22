@@ -34,3 +34,5 @@ pub use boltz2::Boltz2Model;
 pub use checkpoint::{list_safetensor_names, load_tensor_from_safetensors};
 #[cfg(feature = "tch-backend")]
 pub use device::{cuda_is_available, parse_device_spec};
+#[cfg(feature = "tch-backend")]
+pub use model::BoltzModel;

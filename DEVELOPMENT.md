@@ -7,12 +7,18 @@
 
 ## Initial Setup
 
-### Build (without PyTorch backend)
+### Build (I/O and CLI only, no LibTorch)
+
+Default workspace crates build **without** linking LibTorch so CI and minimal clones work:
+
 ```bash
 cargo build --release
+cargo test
 ```
 
-### Build (with PyTorch backend)
+### Build with `tch-rs` (LibTorch)
+
+All tensor work uses the `tch` feature on `boltr-cli` (pulls in `boltr-backend-tch/tch-backend`).
 
 First, install LibTorch:
 
@@ -21,25 +27,32 @@ First, install LibTorch:
 pip install torch
 export LIBTORCH_USE_PYTORCH=1
 
-# Option 2: Manual LibTorch installation
+# Option 2: Manual LibTorch installation (CPU or CUDA build — use CUDA zip for GPU)
 wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-latest.zip
 unzip libtorch-shared-with-deps-latest.zip
 export LIBTORCH=$(pwd)/libtorch
 ```
 
-Then build with the feature:
-```bash
-cargo build --release --features tch
-```
-
-### Build with GPU support
-Requires CUDA-capable GPU and CUDA toolkit:
+Then:
 
 ```bash
-# Install CUDA version compatible with your PyTorch installation
-# Then build with the tch feature (GPU support is automatic)
-cargo build --release --features tch
+cargo build --release -p boltr-cli --features tch
 ```
+
+### CUDA vs Python `cuequivariance` wheels
+
+- **GPU in Boltr** comes from a **CUDA build of LibTorch** plus `--device cuda` (or `cuda:N`) on the CLI. Override with env `BOLTR_DEVICE` if needed.
+- Upstream Boltz’s optional `pip install boltz[cuda]` adds **cuequivariance** fused kernels. Those are **not** available through `tch-rs`; Boltr targets the same numerics as PyTorch with `use_kernels=False` (the pure PyTorch op path).
+
+### Checkpoint export for Rust
+
+Lightning `.ckpt` files are not loaded directly in Rust. Use:
+
+```bash
+python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ckpt ~/.cache/boltr/boltz2_conf.safetensors
+```
+
+(Optional: `--strip-prefix model.` if keys are nested.) See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md).
 
 ## Project Structure
 
@@ -51,18 +64,27 @@ Boltr/
 │   └── Cargo.toml
 ├── boltr-io/            # Input/output handling
 │   ├── src/
-│   │   ├── config.rs   # Configuration parsing
+│   │   ├── config.rs   # YAML types (Boltz2-oriented)
 │   │   ├── parser.rs   # Input file parsing
-│   │   ├── msa.rs      # MSA processing
-│   │   └── format.rs   # Output formatting
+│   │   ├── download.rs # Checkpoints + ccd/mols URLs (aligned with boltz main.py)
+│   │   ├── msa.rs      # ColabFold-style MSA server client
+│   │   └── format.rs   # Run summary JSON
 │   └── Cargo.toml
-├── boltr-backend-tch/   # PyTorch backend (optional)
+├── boltr-backend-tch/   # LibTorch backend (`--features tch`)
 │   ├── src/
-│   │   ├── model.rs    # Core model
-│   │   ├── layers.rs   # Neural network layers
-│   │   ├── attention.rs # Attention mechanisms
-│   │   └── equivariance.rs # Equivariant operations
+│   │   ├── boltz2/     # Boltz2 module layout (trunk, diffusion, …)
+│   │   ├── checkpoint.rs # Safetensors → tch
+│   │   ├── device.rs   # cpu / cuda:N
+│   │   ├── model.rs    # Re-exports
+│   │   ├── layers.rs   # (stubs / future)
+│   │   ├── attention.rs
+│   │   └── equivariance.rs
 │   └── Cargo.toml
+├── docs/
+│   ├── TENSOR_CONTRACT.md
+│   └── PYTHON_REMOVAL.md
+├── scripts/
+│   └── export_checkpoint_to_safetensors.py
 ├── boltz-reference/     # Original PyTorch implementation
 ├── Cargo.toml           # Workspace configuration
 ├── README.md
@@ -77,11 +99,13 @@ Boltr/
 # Build debug version
 cargo build
 
-# Run from debug build
-cargo run -- predict input.yaml
+# Run from debug build (MSA server optional; default MSA host matches Boltz)
+cargo run -p boltr-cli -- predict input.yaml --output ./out
 
-# Run with specific features
-cargo run --features tch -- predict input.yaml --use_msa_server
+# LibTorch + optional GPU spike (requires LIBTORCH / LIBTORCH_USE_PYTORCH)
+cargo run -p boltr-cli --features tch -- predict input.yaml --device cuda --output ./out
+
+cargo run -p boltr-cli -- download --version boltz2
 ```
 
 ### Running Tests

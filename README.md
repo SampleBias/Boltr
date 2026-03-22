@@ -32,18 +32,26 @@ The project is organized as a Rust workspace with three main crates:
 ```bash
 git clone https://github.com/SampleBias/Boltr.git
 cd Boltr
-cargo build --release
+cargo build --release -p boltr-cli
 ```
 
-The binary will be available at `target/release/boltr`.
+The binary is at `target/release/boltr`. I/O and CLI build **without** LibTorch by default. For `tch-rs` inference, set `LIBTORCH` or `LIBTORCH_USE_PYTORCH=1` and build with:
+
+```bash
+cargo build --release -p boltr-cli --features tch
+```
+
+Use a **CUDA** LibTorch build for GPU; pass `--device cuda` (or `cuda:N`). See [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Usage
 
 ### Prediction
 
 ```bash
-boltr predict input.yaml --use_msa_server --output ./results
+boltr predict input.yaml --use_msa_server --output ./results --device cpu
 ```
+
+Optional: `BOLTR_DEVICE=cuda` instead of `--device`. MSA server base URL defaults to `https://api.colabfold.com` (same as Boltz); override with `--msa-server-url`.
 
 ### Download Model Weights
 
@@ -59,23 +67,22 @@ boltr eval ./test_data
 
 ## Development Status
 
-This is an active work-in-progress project. The implementation follows the original Boltz architecture:
+Work in progress. See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) for the Python tensor path and [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md) for when to shrink `boltz-reference/`.
 
-- [ ] Model architecture implementation (Boltz-1)
-- [ ] Model architecture implementation (Boltz-2)
-- [ ] Attention mechanisms (equivariant and standard)
-- [ ] MSA processing pipeline
-- [ ] Structure prediction
-- [ ] Binding affinity prediction
-- [ ] GPU acceleration via CUDA
-- [ ] Model weight loading and inference
-- [ ] CLI interface
-- [ ] Configuration file parsing
-- [ ] MSA server integration
+- [ ] Boltz-1 full model
+- [ ] Boltz-2 full forward (in progress: `boltr-backend-tch/src/boltz2/`, safetensors load, `s_init` spike)
+- [ ] Attention / pairformer (non-kernel parity with Python)
+- [x] MSA server client + YAML parsing (`boltr-io`, ColabFold-compatible protocol)
+- [ ] Structure prediction (Rust featurizer + diffusion)
+- [ ] Binding affinity head
+- [x] GPU path: CUDA LibTorch + CLI `--device cuda` (Python-only cuequivariance kernels not in tch-rs)
+- [x] Weight download (`.ckpt`); Rust loads exported `.safetensors` (`scripts/export_checkpoint_to_safetensors.py`)
+- [x] CLI: `predict`, `download`, run summary JSON
+- [x] YAML configuration types (Boltz2-oriented)
 
 ## Reference Implementation
 
-This project is based on the original Boltz implementation in PyTorch, which is included in the `boltz-reference/` directory for architectural reference.
+The vendored `boltz-reference/` tree mirrors upstream Boltz for parity testing; removal is gated (see `docs/PYTHON_REMOVAL.md`).
 
 ## License
 

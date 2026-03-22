@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
 #[command(name = "boltr")]
@@ -54,9 +54,7 @@ enum Commands {
         version: String,
     },
     /// Run model evaluation (not yet implemented)
-    Eval {
-        test_dir: String,
-    },
+    Eval { test_dir: String },
 }
 
 fn default_cache_dir() -> PathBuf {
@@ -167,11 +165,7 @@ fn predict_backend_note() -> &'static str {
 }
 
 #[cfg(feature = "tch")]
-async fn try_model_spike(
-    cli: &Cli,
-    device_str: &str,
-    out_dir: &std::path::Path,
-) -> Result<()> {
+async fn try_model_spike(cli: &Cli, device_str: &str, out_dir: &std::path::Path) -> Result<()> {
     use boltr_backend_tch::{cuda_is_available, parse_device_spec, Boltz2Model};
 
     tch::maybe_init_cuda();
@@ -212,10 +206,6 @@ async fn try_model_spike(
 }
 
 #[cfg(not(feature = "tch"))]
-async fn try_model_spike(
-    _cli: &Cli,
-    _device_str: &str,
-    _out_dir: &std::path::Path,
-) -> Result<()> {
+async fn try_model_spike(_cli: &Cli, _device_str: &str, _out_dir: &std::path::Path) -> Result<()> {
     Ok(())
 }

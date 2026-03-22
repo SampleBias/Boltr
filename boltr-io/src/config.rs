@@ -20,18 +20,10 @@ pub struct BoltzInput {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum SequenceEntry {
-    Protein {
-        protein: PolymerEntity,
-    },
-    Dna {
-        dna: PolymerEntity,
-    },
-    Rna {
-        rna: PolymerEntity,
-    },
-    Ligand {
-        ligand: LigandEntity,
-    },
+    Protein { protein: PolymerEntity },
+    Dna { dna: PolymerEntity },
+    Rna { rna: PolymerEntity },
+    Ligand { ligand: LigandEntity },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

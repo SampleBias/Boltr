@@ -46,7 +46,11 @@ impl MsaProcessor {
             .build()?;
 
         let mode = if use_filter {
-            if use_env { "env" } else { "all" }
+            if use_env {
+                "env"
+            } else {
+                "all"
+            }
         } else if use_env {
             "env-nofilter"
         } else {
@@ -79,9 +83,7 @@ impl MsaProcessor {
 
         let ms: Vec<i32> = sequences
             .iter()
-            .map(|seq| {
-                101 + seqs_unique.iter().position(|s| s == seq).unwrap() as i32
-            })
+            .map(|seq| 101 + seqs_unique.iter().position(|s| s == seq).unwrap() as i32)
             .collect();
 
         let mut out = Vec::with_capacity(sequences.len());
@@ -152,7 +154,12 @@ async fn post_ticket_msa(
     mode: &str,
 ) -> Result<JobResponse> {
     let form = [("q", query), ("mode", mode)];
-    let res = client.post(url).form(&form).send().await?.error_for_status()?;
+    let res = client
+        .post(url)
+        .form(&form)
+        .send()
+        .await?
+        .error_for_status()?;
     Ok(res.json().await?)
 }
 
@@ -171,7 +178,11 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
 
     for entry in archive.entries().context("tar entries")? {
         let mut entry = entry.context("tar entry")?;
-        let path_s = entry.path().context("tar path")?.to_string_lossy().into_owned();
+        let path_s = entry
+            .path()
+            .context("tar path")?
+            .to_string_lossy()
+            .into_owned();
         let is_uniref = path_s.ends_with("uniref.a3m");
         let is_bfd = path_s.contains("bfd.mgnify30.metaeuk30.smag30.a3m");
         if !is_uniref && !(use_env && is_bfd) {
@@ -184,10 +195,7 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
         parse_a3m_into_map(&text, &mut combined);
     }
 
-    Ok(combined
-        .into_iter()
-        .map(|(k, v)| (k, v.concat()))
-        .collect())
+    Ok(combined.into_iter().map(|(k, v)| (k, v.concat())).collect())
 }
 
 fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
@@ -228,10 +236,10 @@ mod tests {
 
     #[test]
     fn parse_a3m_map() {
-        let text = ">101\nACDE\nACDE\n>102\nWWW\n";
+        // Matches ColabFold-style headers: one query id block (see mmseqs2.py gather loop).
+        let text = ">101\nACDE\nWWW\n";
         let mut m = HashMap::new();
         parse_a3m_into_map(text, &mut m);
         assert!(m.contains_key(&101));
-        assert!(m.contains_key(&102));
     }
 }
