@@ -1,9 +1,12 @@
-//! TrunkV2 - Owns PairformerModule, exposes forward_pairformer(s, z) → (s, z)
+//! Trunk slice for Boltz2: init + recycling + `PairformerModule`.
 //!
-//! Reference: boltz-reference/src/boltz/model/modules/trunkv2.py
+//! **Python alignment:** `s_init`, `z_init_*`, norms, recycling, and `pairformer_module` live on the
+//! **Boltz2 model root** in `boltz2.py` (not inside a `TrunkV2` class). This struct groups that
+//! subgraph for Rust ergonomics; [`VarStore`](tch::nn::VarStore) names match Lightning `state_dict`
+//! when using the same root (see `pairformer_module.layers.0.…`).
 //!
-//! This implementation allows other components (MSA, templates, embeddings) to connect
-//! easily without rewriting structure.
+//! Reference: `boltz-reference/src/boltz/model/models/boltz2.py` (trunk loop) and
+//! `modules/trunkv2.py` (embedder/MSA/template building blocks).
 
 use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
 use tch::{Device, Tensor};
@@ -125,9 +128,9 @@ impl TrunkV2 {
         s_recycle.ws.set_zero();
         z_recycle.ws.set_zero();
 
-        // Owned PairformerModule (parameters under `pairformer.layers_*`, etc.)
+        // Owned PairformerModule — keys align with Lightning `pairformer_module.*`
         let pairformer = PairformerModule::new(
-            root.sub("pairformer"),
+            root.sub("pairformer_module"),
             token_s,
             token_z,
             num_blocks,
@@ -312,6 +315,16 @@ impl TrunkV2 {
     /// Get reference to owned PairformerModule
     pub fn pairformer(&self) -> &PairformerModule {
         &self.pairformer
+    }
+
+    /// Python `Boltz2.s_init`: linear on per-token features `[B, N, token_s]`.
+    pub fn apply_s_init(&self, s_inputs: &Tensor) -> Tensor {
+        self.s_init.forward(s_inputs)
+    }
+
+    /// Copy exported `s_init.weight` into this trunk (`[token_s, token_s]`).
+    pub fn load_s_init_weight(&mut self, w: &Tensor) {
+        self.s_init.ws.copy_(w);
     }
 }
 

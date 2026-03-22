@@ -180,7 +180,7 @@ async fn try_model_spike(cli: &Cli, device_str: &str, out_dir: &std::path::Path)
     let safetensors_path = cache.join("boltz2_conf.safetensors");
     if safetensors_path.exists() {
         let token_s = 384_i64;
-        let mut model = Boltz2Model::new(device, token_s)?;
+        let mut model = Boltz2Model::new(device, token_s);
         if let Err(e) = model.load_s_init_from_safetensors(&safetensors_path) {
             tracing::warn!(
                 error = %e,

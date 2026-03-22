@@ -77,6 +77,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 |------|-------------|--------|
 | 2025-03-22 | **Pairformer stack (§5.5)** in `boltr-backend-tch` | Full layer implementations: `AttentionPairBiasV2`, triangle mult/attn (fallback path), `Transition`, `OuterProductMean`, `PairformerLayer`, `PairformerModule`. See [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md). **Unit tests** exist behind `--features tch-backend` + LibTorch. |
 | 2025-03-22 | **`PairformerModule` owned by `TrunkV2`** | [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs): `initialize`, recycling projections + norms, `forward_pairformer`, recycling loop calling pairformer. Submodule constructors use **`tch::nn::Path`** (`vs.root().sub("…")`) — **no** `Path::fork()` (not in tch 0.16). |
+| 2025-03-22 | **`Boltz2Model` wraps `TrunkV2`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): single `VarStore`, `forward_trunk(s_inputs, recycling_steps)`, `forward_s_init`. VarStore names **`pairformer_module.layers.{i}.…`** to match Lightning (was `pairformer` / `layers_{i}`). |
 | | **Still open** | **`Boltz2Model` / full `predict_step`** does not call this trunk yet. **MSA / templates / embedder** not hooked into `TrunkV2::forward`. **§5.1** checkpoint key map + **golden-tensor parity** for pairformer block vs Python still **pending**. |
 
 ---

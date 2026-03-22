@@ -332,7 +332,7 @@ impl PairformerModule {
     ///
     /// # Arguments
     ///
-    /// * `path` - VarStore sub-path for the stack (e.g. `vs.root().sub("pairformer")`)
+    /// * `path` - VarStore sub-path for the stack (e.g. `vs.root().sub("pairformer_module")`)
     /// * `token_s` - Sequence dimension
     /// * `token_z` - Pairwise dimension
     /// * `num_blocks` - Number of PairformerLayers
@@ -363,10 +363,12 @@ impl PairformerModule {
         let post_layer_norm = post_layer_norm.unwrap_or(false);
         let activation_checkpointing = activation_checkpointing.unwrap_or(false);
 
+        // Match PyTorch `nn.ModuleList` names: `pairformer_module.layers.0.*`
+        let layers_root = path.sub("layers");
         let mut layers = Vec::new();
         for i in 0..num_blocks {
             let layer = PairformerLayer::new(
-                path.sub(&format!("layers_{}", i)),
+                layers_root.sub(&i.to_string()),
                 token_s,
                 token_z,
                 Some(num_heads),
