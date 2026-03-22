@@ -1,0 +1,20 @@
+[package]
+name = "boltr-backend-tch"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+tch-backend = ["tch"]
+
+[dependencies]
+tch = { version = "0.16", optional = true }
+ndarray.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

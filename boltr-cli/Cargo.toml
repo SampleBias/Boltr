@@ -1,0 +1,25 @@
+[package]
+name = "boltr-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "boltr"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+clap-verbosity-flag.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+boltr-io = { path = "../boltr-io" }
+boltr-backend-tch = { path = "../boltr-backend-tch", optional = true }
+
+[features]
+default = []
+tch = ["boltr-backend-tch/tch-backend"]

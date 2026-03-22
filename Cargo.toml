@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "boltr-cli",
+    "boltr-io",
+    "boltr-backend-tch",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["SampleBias"]
+license = "MIT"
+repository = "https://github.com/SampleBias/Boltr"
+
+[workspace.dependencies]
+# Core dependencies
+ndarray = "0.16"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI dependencies
+clap = { version = "4.5", features = ["derive"] }
+clap-verbosity-flag = "3.0"
+
+# IO dependencies
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

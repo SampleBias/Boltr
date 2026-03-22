@@ -1,0 +1,48 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python (for reference code)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Model weights
+weights/
+*.pt
+*.pth
+*.safetensors
+
+# Data and outputs
+data/
+output/
+results/
+*.pdb
+*.fasta
+*.yaml
+!examples/*.yaml
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
