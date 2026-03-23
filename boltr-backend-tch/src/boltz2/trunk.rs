@@ -295,6 +295,42 @@ impl TrunkV2 {
         Ok((s, z))
     }
 
+    /// Recycling + pairformer from precomputed `s_init` / `z_init` (e.g. `z_init` already includes
+    /// relative position bias). Matches Python trunk loop after `z_init += rel_pos(...)`.
+    pub fn forward_from_init(
+        &self,
+        s_init: &Tensor,
+        z_init: &Tensor,
+        recycling_steps: Option<i64>,
+    ) -> anyhow::Result<(Tensor, Tensor)> {
+        let recycling_steps = recycling_steps.unwrap_or(0);
+        let batch_size = s_init.size()[0];
+        let num_tokens = s_init.size()[1];
+
+        let mask = Tensor::ones(&[batch_size, num_tokens], (tch::Kind::Float, self.device));
+        let pair_mask = mask.unsqueeze(1) * mask.unsqueeze(2);
+
+        let mut s = Tensor::zeros(
+            &[batch_size, num_tokens, self.token_s],
+            (s_init.kind(), self.device),
+        );
+        let mut z = Tensor::zeros(
+            &[batch_size, num_tokens, num_tokens, self.token_z],
+            (z_init.kind(), self.device),
+        );
+
+        for _i in 0..=recycling_steps {
+            let (s_recycled, z_recycled) = self.apply_recycling(s_init, z_init, &s, &z);
+            s = s_recycled;
+            z = z_recycled;
+            let (s_new, z_new) = self.forward_pairformer(&s, &z, &pair_mask, &pair_mask);
+            s = s_new;
+            z = z_new;
+        }
+
+        Ok((s, z))
+    }
+
     /// Get token_s dimension
     pub fn token_s(&self) -> i64 {
         self.token_s

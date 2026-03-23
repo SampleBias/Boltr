@@ -79,6 +79,11 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2025-03-22 | **`PairformerModule` owned by `TrunkV2`** | [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs): `initialize`, recycling projections + norms, `forward_pairformer`, recycling loop calling pairformer. Submodule constructors use **`tch::nn::Path`** (`vs.root().sub("…")`) — **no** `Path::fork()` (not in tch 0.16). |
 | 2025-03-22 | **`Boltz2Model` wraps `TrunkV2`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): single `VarStore`, `forward_trunk(s_inputs, recycling_steps)`, `forward_s_init`. VarStore names **`pairformer_module.layers.{i}.…`** to match Lightning (was `pairformer` / `layers_{i}`). |
 | | **Still open** | **`Boltz2Model` / full `predict_step`** does not call this trunk yet. **MSA / templates / embedder** not hooked into `TrunkV2::forward`. **§5.1** checkpoint key map + **golden-tensor parity** for pairformer block vs Python still **pending**. |
+| 2026-03-23 | **`RelativePositionEncoder` + `z_init` path** | [boltz2/relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) mirrors `encodersv2.py` (incl. optional cyclic). `TrunkV2::forward_from_init`, `Boltz2Model::forward_trunk_with_rel_pos`. **`rel_pos` on model root** for `load_partial` (`rel_pos.linear_layer.weight`). Defaults: `fix_sym_check=false`, `cyclic_pos_enc=false` (match typical Boltz2). |
+| 2026-03-23 | **`token_bonds` / `token_bonds_type`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): `token_bonds` linear + optional `Embedding(7, token_z)` via `Boltz2Model::with_options_bonds(..., bond_type_feature)`. `forward_token_bonds_bias`, `forward_trunk_with_z_init_terms`. |
+| 2026-03-23 | **`ContactConditioning`** | [boltz2/contact_conditioning.rs](boltr-backend-tch/src/boltz2/contact_conditioning.rs): `FourierEmbedding` + encoder + `encoding_unspecified` / `encoding_unselected`; `ContactFeatures`, `forward_contact_conditioning`, wired into `forward_trunk_with_z_init_terms` (optional; `None` → zero bias). Cutoffs **4 / 20** Å like `Boltz2`. |
+| 2026-03-23 | **`InputEmbedder` (partial)** | [boltz2/input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs): `res_type_encoding` + `msa_profile_encoding` under `input_embedder/` (`BOLTZ_NUM_TOKENS=33`). `forward_with_atom_repr` / `Boltz2Model::forward_input_embedder` — caller supplies atom-attn **`a`**. **Next:** `AtomEncoder` + `AtomAttentionEncoder`, optional conditioning flags, golden parity. |
+| 2026-03-23 | **A3M + MSA npz (`boltr-io`)** | [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) (A3M/CSV parse). [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed` / `read_msa_npz_*` for Boltz `MSA` `.npz`. **Next:** golden byte/npz compare vs Python on a fixture when NumPy is available in CI. |
 
 ---
 
@@ -116,8 +121,8 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [x] | ColabFold server client | `msa/mmseqs2.py` | [boltr-io/src/msa.rs](boltr-io/src/msa.rs) (review pairing / auth if Boltz exposes). |
-| [ ] | MSA file formats | `parse/a3m.py`, `parse/csv.py` | Read/write `.a3m` and paired `.csv` as Python. |
-| [ ] | MSA → npz | `main.py` preprocess, `types.py` (`MSA`) | Emit same `.npz` as Python for `MSA.load`. |
+| [x] | MSA file formats | `parse/a3m.py`, `parse/csv.py` | **A3M:** [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs). **CSV:** [boltr-io/src/msa_csv.rs](boltr-io/src/msa_csv.rs) (`parse_csv_path`, `parse_csv_str`, `key`/`sequence`, taxonomy from `key`). |
+| [x] | MSA → npz | `main.py` preprocess, `types.py` (`MSA`) | [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed`, `read_msa_npz_path` / `read_msa_npz_bytes` — Boltz dtypes (`|i1`, `<i2`, `<i4`), aligned `MSASequence` records, NPY 1.0 header matching NumPy `format.py`. |
 
 **Acceptance:** Same `.npz` hash or tensor allclose after load for a fixed input.
 
@@ -183,9 +188,9 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 
 | Status | Task | Python reference | Rust target (suggested) |
 |--------|------|------------------|-------------------------|
-| [ ] | `InputEmbedder` | `modules/trunkv2.py` + embedder args | `boltz2/embedder.rs` |
-| [ ] | `RelativePositionEncoder` | `modules/encodersv2.py` | `boltz2/relative_position.rs` |
-| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | `trunkv2.py` | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs) has **`s_init` only** + safetensors load spike; z_init, bonds, contact TBD |
+| [~] | `InputEmbedder` | `modules/trunkv2.py` + embedder args | [boltz2/input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs) — **partial** (`res_type` + `msa_profile` linears + external `a`); atom stack **TBD** |
+| [~] | `RelativePositionEncoder` | `modules/encodersv2.py` | [boltz2/relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — forward + `forward_trunk_with_rel_pos`; golden parity **pending** |
+| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | `trunkv2.py` | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): **`z_init`** = pair + **`rel_pos`** + **`token_bonds`** (+ optional type) + **`contact_conditioning`**; golden parity **pending** |
 | [x] | LayerNorm / recycling projections | `trunkv2.py` | [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs): `s_norm` / `z_norm`, `s_recycle` / `z_recycle` (gating init zeros) |
 | [~] | **Wire `PairformerModule` into trunk** | `trunkv2.py` | `TrunkV2` **owns** `PairformerModule` and runs it in `forward` / `forward_pairformer`. **Still missing:** MSA/template/embedder path into the same forward (§5.4, §5.3, §5.2 rows above) and **§5.1** weight naming vs checkpoint. |
 

@@ -29,9 +29,15 @@ pub mod layers;
 pub mod model;
 
 #[cfg(feature = "tch-backend")]
-pub use boltz2::Boltz2Model;
+pub use boltz2::{
+    Boltz2Model, ContactConditioning, ContactFeatures, InputEmbedder, RelPosFeatures,
+    RelativePositionEncoder, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
+    BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
+};
 #[cfg(feature = "tch-backend")]
-pub use checkpoint::{list_safetensor_names, load_tensor_from_safetensors};
+pub use checkpoint::{
+    list_safetensor_names, load_tensor_from_safetensors, safetensor_names_not_in_var_store,
+};
 #[cfg(feature = "tch-backend")]
 pub use device::{cuda_is_available, parse_device_spec};
 #[cfg(feature = "tch-backend")]

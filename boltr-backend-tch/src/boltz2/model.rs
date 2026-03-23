@@ -7,17 +7,32 @@
 use std::path::Path;
 
 use anyhow::Result;
-use tch::nn::VarStore;
-use tch::{Device, Tensor};
+use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore};
+use tch::{Device, Kind, Tensor};
 
+use super::contact_conditioning::{ContactConditioning, ContactFeatures};
+use super::input_embedder::InputEmbedder;
+use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
 use super::trunk::TrunkV2;
 use crate::checkpoint::load_tensor_from_safetensors;
 
-/// Boltz2 inference skeleton: owns trunk + pairformer under a single [`VarStore`].
+/// `len(const.bond_types) + 1` in Boltz (`boltz-reference/.../const.py`).
+pub const BOND_TYPE_EMBEDDING_NUM: i64 = 7;
+
+/// Boltz2 inference skeleton: trunk + pairformer + `rel_pos` + token-bond bias on a shared [`VarStore`].
 pub struct Boltz2Model {
     device: Device,
     var_store: VarStore,
     trunk: TrunkV2,
+    rel_pos: RelativePositionEncoder,
+    /// Python `token_bonds`: `Linear(1, token_z, bias=False)`.
+    token_bonds: tch::nn::Linear,
+    /// Python `token_bonds_type` when `bond_type_feature`; `Embedding(BOND_TYPE_EMBEDDING_NUM, token_z)`.
+    token_bonds_type: Option<tch::nn::Embedding>,
+    /// Python `contact_conditioning` (cutoffs default 4 Å / 20 Å like `Boltz2`).
+    contact_conditioning: ContactConditioning,
+    /// Partial `input_embedder`: `res_type` + `msa_profile` linears; pass atom-attn `a` from outside.
+    input_embedder: InputEmbedder,
     token_s: i64,
     token_z: i64,
 }
@@ -28,14 +43,26 @@ impl Boltz2Model {
         Self::with_options(device, token_s, 128, None)
     }
 
-    /// Full constructor: `num_pairformer_blocks` defaults to `4` when `None`.
+    /// Full constructor: `num_pairformer_blocks` defaults to `4` when `None`; no bond-type embedding.
     pub fn with_options(
         device: Device,
         token_s: i64,
         token_z: i64,
         num_pairformer_blocks: Option<i64>,
     ) -> Self {
+        Self::with_options_bonds(device, token_s, token_z, num_pairformer_blocks, false)
+    }
+
+    /// Like [`Self::with_options`]; set `bond_type_feature` to match Python `Boltz2(bond_type_feature=…)`.
+    pub fn with_options_bonds(
+        device: Device,
+        token_s: i64,
+        token_z: i64,
+        num_pairformer_blocks: Option<i64>,
+        bond_type_feature: bool,
+    ) -> Self {
         let var_store = VarStore::new(device);
+        let root = var_store.root();
         let trunk = TrunkV2::new(
             &var_store,
             Some(token_s),
@@ -43,10 +70,48 @@ impl Boltz2Model {
             num_pairformer_blocks,
             device,
         );
+        let rel_pos = RelativePositionEncoder::new(
+            root.sub("rel_pos"),
+            token_z,
+            None,
+            None,
+            false,
+            false,
+            device,
+        );
+        let token_bonds = linear(
+            root.sub("token_bonds"),
+            1,
+            token_z,
+            LinearConfig {
+                bias: false,
+                ..Default::default()
+            },
+        );
+        let token_bonds_type = bond_type_feature.then(|| {
+            embedding(
+                root.sub("token_bonds_type"),
+                BOND_TYPE_EMBEDDING_NUM,
+                token_z,
+                EmbeddingConfig::default(),
+            )
+        });
+        let contact_conditioning = ContactConditioning::new(
+            root.sub("contact_conditioning"),
+            token_z,
+            4.0,
+            20.0,
+        );
+        let input_embedder = InputEmbedder::new(root.sub("input_embedder"), token_s);
         Self {
             device,
             var_store,
             trunk,
+            rel_pos,
+            token_bonds,
+            token_bonds_type,
+            contact_conditioning,
+            input_embedder,
             token_s,
             token_z,
         }
@@ -68,6 +133,10 @@ impl Boltz2Model {
         &self.var_store
     }
 
+    pub fn var_store_mut(&mut self) -> &mut VarStore {
+        &mut self.var_store
+    }
+
     pub fn trunk(&self) -> &TrunkV2 {
         &self.trunk
     }
@@ -76,11 +145,84 @@ impl Boltz2Model {
         &mut self.trunk
     }
 
+    pub fn rel_pos(&self) -> &RelativePositionEncoder {
+        &self.rel_pos
+    }
+
+    pub fn bond_type_feature(&self) -> bool {
+        self.token_bonds_type.is_some()
+    }
+
+    pub fn contact_conditioning(&self) -> &ContactConditioning {
+        &self.contact_conditioning
+    }
+
+    pub fn input_embedder(&self) -> &InputEmbedder {
+        &self.input_embedder
+    }
+
+    /// Python `input_embedder` tail: `a` + `res_type_encoding` + `msa_profile_encoding`.
+    pub fn forward_input_embedder(
+        &self,
+        atom_attn_out: &Tensor,
+        res_type: &Tensor,
+        profile: &Tensor,
+        deletion_mean: &Tensor,
+    ) -> Tensor {
+        self.input_embedder
+            .forward_with_atom_repr(atom_attn_out, res_type, profile, deletion_mean)
+    }
+
+    /// Pairwise contact bias `[B, N, N, token_z]` (Python `contact_conditioning(feats)`).
+    pub fn forward_contact_conditioning(&self, feats: &ContactFeatures<'_>) -> Tensor {
+        self.contact_conditioning.forward(feats)
+    }
+
+    /// `z += token_bonds(feats["token_bonds"])` (+ optional type embedding). See Python `Boltz2.forward`.
+    ///
+    /// `token_bonds` is `[B, N, N, 1]` float. If `None`, uses zeros (same as a missing bond signal of 0).
+    /// `type_bonds` is `[B, N, N]` int64 when bond-type embedding is enabled.
+    pub fn forward_token_bonds_bias(
+        &self,
+        batch: i64,
+        num_tokens: i64,
+        token_bonds: Option<&Tensor>,
+        type_bonds: Option<&Tensor>,
+    ) -> Result<Tensor> {
+        let tb_in = match token_bonds {
+            Some(t) => t.shallow_clone(),
+            None => Tensor::zeros(
+                &[batch, num_tokens, num_tokens, 1],
+                (Kind::Float, self.device),
+            ),
+        };
+        let mut z = self.token_bonds.forward(&tb_in);
+        if let Some(emb) = &self.token_bonds_type {
+            let idx = type_bonds.ok_or_else(|| {
+                anyhow::anyhow!("type_bonds is required when bond_type_feature is enabled")
+            })?;
+            z = z + emb.forward(idx);
+        }
+        Ok(z)
+    }
+
     /// Load `s_init.weight` from a safetensors file (exported from Lightning `state_dict`).
     pub fn load_s_init_from_safetensors(&mut self, path: &Path) -> Result<()> {
         let w = load_tensor_from_safetensors(path, "s_init.weight", self.device)?;
         self.trunk.load_s_init_weight(&w);
         Ok(())
+    }
+
+    /// Load every tensor that exists in both the safetensors file and this model's [`VarStore`].
+    ///
+    /// Checkpoint keys must match `VarStore` names (export with
+    /// `scripts/export_checkpoint_to_safetensors.py` and `--strip-prefix` if Lightning uses a
+    /// `model.` prefix). Returns the names of **model** parameters that were not found in the file
+    /// (they remain at default initialization).
+    pub fn load_partial_from_safetensors(&mut self, path: &Path) -> Result<Vec<String>> {
+        self.var_store
+            .load_partial(path)
+            .map_err(|e| anyhow::anyhow!("VarStore::load_partial: {e}"))
     }
 
     /// Same transform as Python `self.s_init(s_inputs)` on `[B, N, token_s]`.
@@ -99,6 +241,54 @@ impl Boltz2Model {
         self.trunk.forward(s_inputs, recycling_steps)
     }
 
+    /// Relative position bias `[B, N, N, token_z]` from tokenizer/featurizer index tensors.
+    pub fn forward_rel_pos(&self, rel: &RelPosFeatures<'_>) -> Tensor {
+        self.rel_pos.forward(rel)
+    }
+
+    /// Trunk forward with Python-aligned `z_init += rel_pos(feats)` before recycling.
+    pub fn forward_trunk_with_rel_pos(
+        &self,
+        s_inputs: &Tensor,
+        rel: &RelPosFeatures<'_>,
+        recycling_steps: Option<i64>,
+    ) -> Result<(Tensor, Tensor)> {
+        self.forward_trunk_with_z_init_terms(
+            s_inputs,
+            rel,
+            None,
+            None,
+            None,
+            recycling_steps,
+        )
+    }
+
+    /// Full z-init slice matching Python: pair + `rel_pos` + `token_bonds` + `contact_conditioning`.
+    pub fn forward_trunk_with_z_init_terms(
+        &self,
+        s_inputs: &Tensor,
+        rel: &RelPosFeatures<'_>,
+        token_bonds: Option<&Tensor>,
+        type_bonds: Option<&Tensor>,
+        contact: Option<&ContactFeatures<'_>>,
+        recycling_steps: Option<i64>,
+    ) -> Result<(Tensor, Tensor)> {
+        let b = s_inputs.size()[0];
+        let n = s_inputs.size()[1];
+        let (s_init, z_pair) = self.trunk.initialize(s_inputs);
+        let z_rel = self.rel_pos.forward(rel);
+        let z_bonds = self.forward_token_bonds_bias(b, n, token_bonds, type_bonds)?;
+        let z_contact = match contact {
+            Some(c) => self.contact_conditioning.forward(c),
+            None => Tensor::zeros(
+                &[b, n, n, self.token_z],
+                (Kind::Float, self.device),
+            ),
+        };
+        let z_init = z_pair + z_rel + z_bonds + z_contact;
+        self.trunk.forward_from_init(&s_init, &z_init, recycling_steps)
+    }
+
     /// Full structure forward is not wired until diffusion + featurizer match Python.
     pub fn forward_structure(&self, _feats: &Tensor) -> Result<Tensor> {
         anyhow::bail!(
@@ -110,6 +300,7 @@ impl Boltz2Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::boltz2::contact_conditioning::{ContactFeatures, CONTACT_CONDITIONING_CHANNELS};
 
     #[test]
     fn s_init_linear_runs() {
@@ -135,5 +326,178 @@ mod tests {
         let (s, z) = m.forward_trunk(&s_in, Some(0)).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    #[test]
+    fn trunk_forward_with_rel_pos_runs() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+        let b = 2_i64;
+        let n = 8_i64;
+        let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+        let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let asym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let residue_index = Tensor::arange(n, (tch::Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let cyclic_period = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let (s, z) = m.forward_trunk_with_rel_pos(&s_in, &rel, Some(0)).unwrap();
+        assert_eq!(s.size(), vec![b, n, token_s]);
+        assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    #[test]
+    fn trunk_forward_with_token_bonds_and_types() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+        let b = 2_i64;
+        let n = 8_i64;
+        let m = Boltz2Model::with_options_bonds(device, token_s, token_z, Some(1), true);
+        assert!(m.bond_type_feature());
+        let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let asym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let residue_index = Tensor::arange(n, (tch::Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let cyclic_period = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let token_bonds = Tensor::randn(&[b, n, n, 1], (tch::Kind::Float, device));
+        let type_bonds = Tensor::zeros(&[b, n, n], (tch::Kind::Int64, device));
+        let (s, z) = m
+            .forward_trunk_with_z_init_terms(
+                &s_in,
+                &rel,
+                Some(&token_bonds),
+                Some(&type_bonds),
+                None,
+                Some(0),
+            )
+            .unwrap();
+        assert_eq!(s.size(), vec![b, n, token_s]);
+        assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    #[test]
+    fn input_embedder_tail_then_trunk_runs() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+        let b = 2_i64;
+        let n = 8_i64;
+        let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+        let a = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let res = Tensor::randn(
+            &[b, n, crate::boltz2::BOLTZ_NUM_TOKENS],
+            (tch::Kind::Float, device),
+        );
+        let prof = Tensor::randn(
+            &[b, n, crate::boltz2::BOLTZ_NUM_TOKENS],
+            (tch::Kind::Float, device),
+        );
+        let del = Tensor::randn(&[b, n], (tch::Kind::Float, device));
+        let s_inputs = m.forward_input_embedder(&a, &res, &prof, &del);
+        let (s, z) = m.forward_trunk(&s_inputs, Some(0)).unwrap();
+        assert_eq!(s.size(), vec![b, n, token_s]);
+        assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    #[test]
+    fn trunk_forward_with_contact_conditioning() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+        let b = 2_i64;
+        let n = 8_i64;
+        let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+        let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let asym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let residue_index = Tensor::arange(n, (tch::Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let cyclic_period = Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let cc = Tensor::zeros(
+            &[b, n, n, CONTACT_CONDITIONING_CHANNELS],
+            (tch::Kind::Float, device),
+        );
+        let ct = Tensor::ones(&[b, n, n], (tch::Kind::Float, device)).g_mul_scalar(12.0);
+        let contact = ContactFeatures {
+            contact_conditioning: &cc,
+            contact_threshold: &ct,
+        };
+        let (s, z) = m
+            .forward_trunk_with_z_init_terms(
+                &s_in,
+                &rel,
+                None,
+                None,
+                Some(&contact),
+                Some(0),
+            )
+            .unwrap();
+        assert_eq!(s.size(), vec![b, n, token_s]);
+        assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    #[test]
+    fn safetensors_partial_load_roundtrip_var_store() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let path = std::env::temp_dir().join(format!(
+            "boltr_vs_rt_{}.safetensors",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+
+        let m = Boltz2Model::with_options(device, 64, 32, Some(1));
+        m.var_store().save(&path).expect("VarStore::save safetensors");
+
+        let mut m2 = Boltz2Model::with_options(device, 64, 32, Some(1));
+        let missing = m2
+            .load_partial_from_safetensors(&path)
+            .expect("load_partial_from_safetensors");
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            missing.is_empty(),
+            "expected full match after self-export, missing: {:?}",
+            missing
+        );
     }
 }

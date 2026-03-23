@@ -1,10 +1,12 @@
 //! Load weights from Safetensors into `tch` tensors (checkpoint export is Python-side).
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use safetensors::tensor::Dtype;
 use safetensors::SafeTensors;
+use tch::nn::VarStore;
 use tch::{Device, Tensor};
 
 fn tensor_from_view(view: safetensors::tensor::TensorView<'_>, device: Device) -> Result<Tensor> {
@@ -64,4 +66,13 @@ pub fn list_safetensor_names(path: &Path) -> Result<Vec<String>> {
     let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let st = SafeTensors::deserialize(&bytes).context("parse safetensors")?;
     Ok(st.tensors().into_iter().map(|(n, _)| n).collect())
+}
+
+/// Keys present in the file but not in `vs` (unused by this graph, or naming mismatch).
+pub fn safetensor_names_not_in_var_store(path: &Path, vs: &VarStore) -> Result<Vec<String>> {
+    let file_keys: HashSet<String> = list_safetensor_names(path)?.into_iter().collect();
+    let var_keys: HashSet<String> = vs.variables().into_keys().collect();
+    let mut extra: Vec<String> = file_keys.difference(&var_keys).cloned().collect();
+    extra.sort();
+    Ok(extra)
 }

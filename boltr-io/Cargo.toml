@@ -19,3 +19,5 @@ ndarray.workspace = true
 flate2.workspace = true
 tar.workspace = true
 rand.workspace = true
+csv = "1.3"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }

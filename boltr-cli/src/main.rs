@@ -31,6 +31,10 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     num_samples: usize,
 
+    /// Boltz2 trunk recycling iterations (forward_trunk); 0 means one pairformer pass per step
+    #[arg(long, default_value_t = 0)]
+    recycling_steps: i64,
+
     /// Output directory
     #[arg(short, long, default_value = "./output")]
     output: String,
@@ -148,7 +152,7 @@ async fn predict_flow(cli: &Cli, input: &str) -> Result<()> {
     summary.write_json(&summary_path)?;
     tracing::info!(path = %summary_path.display(), "wrote run summary");
 
-    try_model_spike(cli, &device_str, out_dir).await?;
+    try_model_spike(cli, &device_str, out_dir, cli.recycling_steps).await?;
 
     Ok(())
 }
@@ -165,8 +169,15 @@ fn predict_backend_note() -> &'static str {
 }
 
 #[cfg(feature = "tch")]
-async fn try_model_spike(cli: &Cli, device_str: &str, out_dir: &std::path::Path) -> Result<()> {
-    use boltr_backend_tch::{cuda_is_available, parse_device_spec, Boltz2Model};
+async fn try_model_spike(
+    cli: &Cli,
+    device_str: &str,
+    out_dir: &std::path::Path,
+    recycling_steps: i64,
+) -> Result<()> {
+    use boltr_backend_tch::{
+        cuda_is_available, parse_device_spec, safetensor_names_not_in_var_store, Boltz2Model,
+    };
 
     tch::maybe_init_cuda();
     tracing::info!(
@@ -181,20 +192,88 @@ async fn try_model_spike(cli: &Cli, device_str: &str, out_dir: &std::path::Path)
     if safetensors_path.exists() {
         let token_s = 384_i64;
         let mut model = Boltz2Model::new(device, token_s);
-        if let Err(e) = model.load_s_init_from_safetensors(&safetensors_path) {
-            tracing::warn!(
-                error = %e,
-                "optional s_init load failed (check safetensor key names vs Lightning state_dict)"
-            );
+
+        let mut missing_after_partial: Vec<String> = Vec::new();
+        let mut partial_load_ok = false;
+        match model.load_partial_from_safetensors(&safetensors_path) {
+            Ok(missing) => {
+                partial_load_ok = true;
+                missing_after_partial = missing;
+                tracing::info!(
+                    model_params = model.var_store().len(),
+                    still_missing = missing_after_partial.len(),
+                    "safetensors VarStore::load_partial"
+                );
+                if !missing_after_partial.is_empty() {
+                    tracing::warn!(
+                        n = missing_after_partial.len(),
+                        sample = ?missing_after_partial.iter().take(12).collect::<Vec<_>>(),
+                        "checkpoint missing these VarStore keys (left default-init)"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "VarStore::load_partial failed (key/shape mismatch vs Rust graph?); trying s_init only"
+                );
+                if let Err(e2) = model.load_s_init_from_safetensors(&safetensors_path) {
+                    tracing::warn!(error = %e2, "s_init load also failed");
+                }
+            }
         }
+
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            match safetensor_names_not_in_var_store(&safetensors_path, model.var_store()) {
+                Ok(extra) if !extra.is_empty() => {
+                    tracing::debug!(
+                        n = extra.len(),
+                        sample = ?extra.iter().take(8).collect::<Vec<_>>(),
+                        "safetensors keys not mapped into this Boltz2Model VarStore"
+                    );
+                }
+                _ => {}
+            }
+        }
+
         let probe = tch::Tensor::randn(&[2, token_s], (tch::Kind::Float, device));
         let _y = model.forward_s_init(&probe);
+
+        // Exercise full trunk + pairformer + recycling (embedder outputs not yet wired from IO).
+        let b = 2_i64;
+        let n = 16_i64;
+        let s_in =
+            tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let (s_out, z_out) = model
+            .forward_trunk(&s_in, Some(recycling_steps))
+            .map_err(|e| anyhow::anyhow!("forward_trunk spike: {e}"))?;
+        let s_sz = s_out.size();
+        let z_sz = z_out.size();
+        tracing::info!(
+            ?s_sz,
+            ?z_sz,
+            recycling_steps,
+            "forward_trunk (pairformer stack) spike ok"
+        );
+
         let spike_path = out_dir.join("boltr_backend_spike_ok.txt");
-        tokio::fs::write(
-            &spike_path,
-            "Boltz2Model s_init forward executed (see boltr-backend-tch).\n",
-        )
-        .await?;
+        let load_note = if partial_load_ok {
+            format!(
+                "VarStore partial load ok; keys still missing in checkpoint: {}\n",
+                missing_after_partial.len()
+            )
+        } else {
+            "VarStore partial load failed; see logs (optional s_init-only fallback may have run).\n"
+                .to_string()
+        };
+        let msg = format!(
+            "Boltz2Model: s_init forward + forward_trunk executed (pairformer + recycling).\n\
+             recycling_steps={recycling_steps}\n\
+             s_out shape: {s_sz:?}\n\
+             z_out shape: {z_sz:?}\n\
+             {load_note}"
+        );
+        tokio::fs::write(&spike_path, msg).await?;
         tracing::info!(path = %spike_path.display(), "backend spike");
     } else {
         tracing::info!(
@@ -206,6 +285,11 @@ async fn try_model_spike(cli: &Cli, device_str: &str, out_dir: &std::path::Path)
 }
 
 #[cfg(not(feature = "tch"))]
-async fn try_model_spike(_cli: &Cli, _device_str: &str, _out_dir: &std::path::Path) -> Result<()> {
+async fn try_model_spike(
+    _cli: &Cli,
+    _device_str: &str,
+    _out_dir: &std::path::Path,
+    _recycling_steps: i64,
+) -> Result<()> {
     Ok(())
 }
