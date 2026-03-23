@@ -84,7 +84,13 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **`ContactConditioning`** | [boltz2/contact_conditioning.rs](boltr-backend-tch/src/boltz2/contact_conditioning.rs): `FourierEmbedding` + encoder + `encoding_unspecified` / `encoding_unselected`; `ContactFeatures`, `forward_contact_conditioning`, wired into `forward_trunk_with_z_init_terms` (optional; `None` → zero bias). Cutoffs **4 / 20** Å like `Boltz2`. |
 | 2026-03-23 | **`InputEmbedder` (partial)** | [boltz2/input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs): `res_type_encoding` + `msa_profile_encoding` under `input_embedder/` (`BOLTZ_NUM_TOKENS=33`). `forward_with_atom_repr` / `Boltz2Model::forward_input_embedder` — caller supplies atom-attn **`a`**. **Next:** `AtomEncoder` + `AtomAttentionEncoder`, optional conditioning flags, golden parity. |
 | 2026-03-23 | **A3M + MSA npz (`boltr-io`)** | [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) (A3M/CSV parse). [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed` / `read_msa_npz_*`. **Golden:** [`scripts/verify_msa_npz_golden.py`](scripts/verify_msa_npz_golden.py) + [`boltr-io/src/bin/msa_npz_golden.rs`](boltr-io/src/bin/msa_npz_golden.rs); CI [`.github/workflows/msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml). |
-| 2026-03-23 | **`boltz_const` + `ref_atoms`** | [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs): tokens/chains + chirality, hybridization, bonds, contacts, MSA limits, cutoffs. [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs): `ref_atoms`, **`ref_symmetry_groups`**, backbone, center/disto. [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) uses `boltz_const` for letters. **TBD:** method conditioning enums. |
+| 2026-03-23 | **`boltz_const` + `ref_atoms` + vdw + ligand exclusion** | [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs): tokens through template coverage constants. [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs): `ref_atoms` / symmetries. [boltr-io/src/vdw_radii.rs](boltr-io/src/vdw_radii.rs), [boltr-io/src/ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs). |
+| 2026-03-23 | **`ambiguous_atoms` (PDB element map)** | [boltr-io/src/ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs): `pdb_atom_key`, `resolve_ambiguous_element` (matches `write/pdb.py` boltz2 branch). Data: [boltr-io/data/ambiguous_atoms.json](boltr-io/data/ambiguous_atoms.json) (185 keys); regen: [`scripts/gen_ambiguous_atoms_json.py`](scripts/gen_ambiguous_atoms_json.py). |
+| 2026-03-23 | **`boltr msa-to-npz`** | Preprocess hook: A3M/CSV → Boltz `MSA` `.npz` without Python ([boltr-cli/src/main.rs](boltr-cli/src/main.rs)). |
+| 2026-03-23 | **Padding helpers (`boltr-io`)** | [boltr-io/src/pad.rs](boltr-io/src/pad.rs) for batched token rows / ragged sequences + `token_pad_mask` (§4.4). |
+| 2026-03-23 | **`FeatureBatch` / collate scaffold** | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs) — typed `dict[str, Tensor]`-like batch + stack collate (§4.5). |
+| 2026-03-23 | **Boltz2 `tokenize_structure` (partial)** | [boltr-io/src/tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs): `compute_frame`, `tokenize_structure`, `TokenData` / `TokenBondV2`; tables [boltr-io/src/structure_v2.rs](boltr-io/src/structure_v2.rs). **TBD:** `Boltz2Tokenizer` trait + templates + `Input`/`Tokenized`; single structured numpy `TokenV2` row (padding) + Python golden. |
+| 2026-03-23 | **Token batch columnar `.npz`** | [boltr-io/src/token_npz.rs](boltr-io/src/token_npz.rs): `write_token_batch_npz_compressed` / `read_token_batch_npz_*` / `write_token_batch_npz_to_vec` — zip of `.npy` columns (`t_*`, `bond_*`) for golden checks vs Python. |
 
 ---
 
@@ -123,7 +129,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 |--------|------|------------------|--------------|
 | [x] | ColabFold server client | `msa/mmseqs2.py` | [boltr-io/src/msa.rs](boltr-io/src/msa.rs) (review pairing / auth if Boltz exposes). |
 | [x] | MSA file formats | `parse/a3m.py`, `parse/csv.py` | **A3M:** [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs). **CSV:** [boltr-io/src/msa_csv.rs](boltr-io/src/msa_csv.rs) (`parse_csv_path`, `parse_csv_str`, `key`/`sequence`, taxonomy from `key`). |
-| [x] | MSA → npz | `main.py` preprocess, `types.py` (`MSA`) | [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed`, `read_msa_npz_path` / `read_msa_npz_bytes` — Boltz dtypes (`|i1`, `<i2`, `<i4`), aligned `MSASequence` records, NPY 1.0 header matching NumPy `format.py`. |
+| [x] | MSA → npz | `main.py` preprocess, `types.py` (`MSA`) | [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed`, `read_msa_npz_path` / `read_msa_npz_bytes`. **CLI:** `boltr msa-to-npz` ([boltr-cli/src/main.rs](boltr-cli/src/main.rs)) from `.a3m` / `.a3m.gz` / `.csv`; test [boltr-cli/tests/msa_to_npz_cli.rs](boltr-cli/tests/msa_to_npz_cli.rs). |
 
 **Acceptance:** Decoded arrays match after load for a fixed input (`numpy.testing.assert_equal`), not raw `.npz` bytes. CI: [`.github/workflows/msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml) + [`scripts/verify_msa_npz_golden.py`](scripts/verify_msa_npz_golden.py) + [`boltr-io/src/bin/msa_npz_golden.rs`](boltr-io/src/bin/msa_npz_golden.rs).
 
@@ -131,8 +137,8 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | `Boltz2Tokenizer` | `tokenize/boltz2.py`, `tokenize/tokenizer.py` | Rust module e.g. `boltr-io/src/tokenize/boltz2.rs` (or new `boltr-preprocess` crate if binary size matters). |
-| [ ] | Token/atom bookkeeping | `types.py` (`Tokenized`, etc.) | Mirror fields used by featurizer. |
+| [~] | `Boltz2Tokenizer` | `tokenize/boltz2.py`, `tokenize/tokenizer.py` | **Core:** [boltr-io/src/tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs) — `compute_frame`, `tokenize_structure` on [`StructureV2Tables`](boltr-io/src/structure_v2.rs). **Still TBD:** `Tokenizer` trait + `Input` → `Tokenized`, template tokenization loop, wire to preprocess. |
+| [~] | Token/atom bookkeeping | `types.py` (`Tokenized`, etc.) | **`TokenData` / `TokenBondV2`** + columnar **`.npz`** I/O [boltr-io/src/token_npz.rs](boltr-io/src/token_npz.rs). **TBD:** single structured `TokenV2` array (exact numpy padding) if featurizer requires it. |
 
 **Acceptance:** `tokenize` output matches Python **field-by-field** on a golden complex (dump + diff in tests).
 
@@ -140,13 +146,13 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | Constants / enums | `data/const.py` | **Tokens + chains + chemistry + method conditioning:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs) (`method_type_id`, `temperature_bin_id`, `ph_bin_id`, counts). **`ref_atoms` + `ref_symmetries`:** [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs). **Still TBD:** `vdw_radii`, `ligand_exclusion`, other large tables. |
+| [~] | Constants / enums | `data/const.py` | **Core tables ported:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs), [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs), [boltr-io/src/vdw_radii.rs](boltr-io/src/vdw_radii.rs) (`VDW_RADII`, `vdw_radius`), [boltr-io/src/ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs) (`is_ligand_excluded`), template `MIN_COVERAGE_*`, [boltr-io/src/ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs) + [boltr-io/data/ambiguous_atoms.json](boltr-io/data/ambiguous_atoms.json). **Still TBD:** other large `const.py` maps. |
 | [ ] | `process_token_features` | `feature/featurizerv2.py` | Token-level tensors. |
 | [ ] | `process_atom_features` | same | Atom-level tensors, distograms, windows. |
 | [ ] | `process_msa_features` | same | MSA embedding path; affinity variant (`affinity=True`). |
 | [ ] | `process_template_features` | same + dummy templates | Real + dummy template tensors. |
 | [ ] | Ensemble / symmetry / constraints | same + `feature/symmetry.py` | Optional flags parity with inference. |
-| [ ] | Padding utilities | `pad.py` | Match `pad_to_max` behavior in collate. |
+| [~] | Padding utilities | `pad.py` | [boltr-io/src/pad.rs](boltr-io/src/pad.rs): `pad_1d`, `pad_ragged_rows`, `stack_tokens_2d`, `token_pad_mask` (post-padding + lengths). Extend when collate keys are frozen. |
 
 **Acceptance:** For one **frozen** Python export (`dict[str, Tensor]` after `collate`), Rust produces **allclose** tensors (document rtol/atol per key in test).
 
@@ -155,7 +161,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [ ] | `load_input` | `module/inferencev2.py` | Build `Input` from dirs + npz paths. |
-| [ ] | `collate` | same | Stack/pad rules for each key (see exclusions in Python). |
+| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs): `FeatureBatch`, `collate_feature_batches`, `stack_f32_views` (stack pre-padded identical shapes). Per-key pad rules + exclusions still **TBD** vs Python. |
 | [ ] | Affinity crop | `crop/affinity.py` | If parity with affinity inference is required. |
 
 **Acceptance:** Batch dict from Rust equals Python on golden fixture.

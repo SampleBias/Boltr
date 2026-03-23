@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -59,6 +59,17 @@ enum Commands {
     },
     /// Run model evaluation (not yet implemented)
     Eval { test_dir: String },
+    /// Convert an MSA file (`.a3m`, `.a3m.gz`, or Boltz `.csv`) to a Boltz `MSA` `.npz`
+    MsaToNpz {
+        /// Input path (format from extension: a3m / a3m.gz / csv)
+        input: PathBuf,
+        /// Output `.npz` path (default: same directory, base name with `.npz`)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Maximum number of sequences (after dedup), like Boltz preprocess
+        #[arg(long)]
+        max_seqs: Option<usize>,
+    },
 }
 
 fn default_cache_dir() -> PathBuf {
@@ -107,8 +118,54 @@ async fn main() -> Result<()> {
             tracing::info!("Running evaluation on: {}", test_dir);
             anyhow::bail!("Evaluation not yet implemented");
         }
+        Commands::MsaToNpz {
+            input,
+            output,
+            max_seqs,
+        } => {
+            run_msa_to_npz(&input, output.as_deref(), max_seqs)?;
+        }
     }
     Ok(())
+}
+
+fn run_msa_to_npz(input: &Path, output: Option<&Path>, max_seqs: Option<usize>) -> Result<()> {
+    let msa = load_msa_for_npz(input, max_seqs)
+        .with_context(|| format!("read MSA from {}", input.display()))?;
+    let out = output
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| default_msa_npz_path(input));
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create directory {}", parent.display()))?;
+    }
+    boltr_io::write_msa_npz_compressed(&out, &msa)
+        .with_context(|| format!("write {}", out.display()))?;
+    tracing::info!(
+        in_path = %input.display(),
+        out_path = %out.display(),
+        n_seq = msa.sequences.len(),
+        "wrote Boltz MSA npz"
+    );
+    Ok(())
+}
+
+fn load_msa_for_npz(path: &Path, max_seqs: Option<usize>) -> Result<boltr_io::A3mMsa> {
+    let lossy = path.to_string_lossy();
+    let lower = lossy.to_ascii_lowercase();
+    if lower.ends_with(".csv") {
+        boltr_io::parse_csv_path(path, max_seqs)
+    } else {
+        boltr_io::parse_a3m_path(path, max_seqs)
+    }
+}
+
+/// `foo.a3m` → `foo.npz`; `foo.a3m.gz` → `foo.npz` (strip `.gz` then optional inner extension).
+fn default_msa_npz_path(input: &Path) -> PathBuf {
+    let stem = input.file_stem().unwrap_or_default();
+    let base = Path::new(stem).file_stem().unwrap_or(stem);
+    let parent = input.parent().unwrap_or(Path::new("."));
+    parent.join(format!("{}.npz", base.to_string_lossy()))
 }
 
 async fn predict_flow(cli: &Cli, input: &str) -> Result<()> {

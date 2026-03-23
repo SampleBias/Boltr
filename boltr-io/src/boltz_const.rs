@@ -138,7 +138,12 @@ pub fn rna_letter_to_token_id(c: char) -> Option<i32> {
 
 // --- Atoms / bonds / contacts / MSA limits (`const.py`) ---
 
+/// Upper bound for element-type embedding slots in Boltz (distinct from [`crate::vdw_radii::VDW_RADII_LEN`]).
 pub const NUM_ELEMENTS: usize = 128;
+
+/// `min_coverage_residues` / `min_coverage_fraction` for templates (`const.py`).
+pub const MIN_COVERAGE_RESIDUES: usize = 10;
+pub const MIN_COVERAGE_FRACTION: f64 = 0.1;
 
 pub const CHIRALITY_TYPES: [&str; 7] = [
     "CHI_UNSPECIFIED",
@@ -349,5 +354,18 @@ mod tests {
         assert_eq!(contact_conditioning_id("CONTACT"), Some(4));
         assert_eq!(MAX_MSA_SEQS, 16384);
         assert_eq!(CHUNK_SIZE_THRESHOLD, 384);
+    }
+
+    #[test]
+    fn method_and_bin_ids() {
+        assert_eq!(method_type_id("X-RAY DIFFRACTION"), 1);
+        assert_eq!(method_type_id("electron microscopy"), 2);
+        assert_eq!(method_type_id("BOLTZ-1"), 6);
+        assert_eq!(method_type_id("unknown method"), 4);
+        assert_eq!(NUM_METHOD_TYPES, 12);
+        assert_eq!(temperature_bin_id(270.0), 0);
+        assert_eq!(temperature_bin_id(310.0), 3);
+        assert_eq!(ph_bin_id(7.0), 1);
+        assert_eq!(ph_bin_id(99.0), 3);
     }
 }
