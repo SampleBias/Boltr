@@ -2,7 +2,8 @@
 //!
 //! Reference: `boltz-reference/src/boltz/model/layers/pair_averaging.py`
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 pub struct PairWeightedAveraging {
@@ -29,8 +30,8 @@ impl PairWeightedAveraging {
         device: Device,
     ) -> Self {
         let inf = inf.unwrap_or(1e6);
-        let norm_m = LayerNorm::new(path.sub("norm_m"), vec![c_m], c_m as f64 * 1e-5, true);
-        let norm_z = LayerNorm::new(path.sub("norm_z"), vec![c_z], c_z as f64 * 1e-5, true);
+        let norm_m = layer_norm_1d(path.sub("norm_m"), c_m);
+        let norm_z = layer_norm_1d(path.sub("norm_z"), c_z);
         let proj_m = linear(
             path.sub("proj_m"),
             c_m,

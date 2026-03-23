@@ -23,7 +23,7 @@ fn tensor_from_view(view: safetensors::tensor::TensorView<'_>, device: Device) -
                 .chunks_exact(4)
                 .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
                 .collect();
-            Tensor::from_slice(&floats).view(&shape).to_device(device)
+            Tensor::from_slice(&floats).view(&*shape).to_device(device)
         }
         Dtype::F64 => {
             let raw = view.data();
@@ -32,7 +32,7 @@ fn tensor_from_view(view: safetensors::tensor::TensorView<'_>, device: Device) -
                 .chunks_exact(8)
                 .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
                 .collect();
-            Tensor::from_slice(&vals).view(&shape).to_device(device)
+            Tensor::from_slice(&vals).view(&*shape).to_device(device)
         }
         Dtype::I64 => {
             let raw = view.data();
@@ -41,7 +41,7 @@ fn tensor_from_view(view: safetensors::tensor::TensorView<'_>, device: Device) -
                 .chunks_exact(8)
                 .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
                 .collect();
-            Tensor::from_slice(&vals).view(&shape).to_device(device)
+            Tensor::from_slice(&vals).view(&*shape).to_device(device)
         }
         other => anyhow::bail!(
             "dtype {:?} not yet supported in safetensors loader; export as f32 from Python for now",

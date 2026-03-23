@@ -3,7 +3,8 @@
 //! Reference: boltz-reference/src/boltz/model/layers/triangular_mult.py
 //! Implements the fallback PyTorch path (use_kernels=False)
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 /// Triangle Multiplication Outgoing layer
@@ -34,10 +35,10 @@ impl TriangleMultiplicationOutgoing {
     /// * `path` - VarStore sub-path for this layer
     /// * `dim` - Dimension of the input/output (default 128)
     /// * `device` - Computation device
-    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
+    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, _device: Device) -> Self {
         let dim = dim.unwrap_or(128);
 
-        let norm_in = LayerNorm::new(path.sub("norm_in"), vec![dim], dim as f64 * 1e-5, true);
+        let norm_in = layer_norm_1d(path.sub("norm_in"), dim);
 
         let p_in = linear(
             path.sub("p_in"),
@@ -59,7 +60,7 @@ impl TriangleMultiplicationOutgoing {
             },
         );
 
-        let norm_out = LayerNorm::new(path.sub("norm_out"), vec![dim], dim as f64 * 1e-5, true);
+        let norm_out = layer_norm_1d(path.sub("norm_out"), dim);
 
         let p_out = linear(
             path.sub("p_out"),
@@ -171,10 +172,10 @@ impl TriangleMultiplicationIncoming {
     /// * `path` - VarStore sub-path for this layer
     /// * `dim` - Dimension of the input/output (default 128)
     /// * `device` - Computation device
-    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
+    pub fn new<'a>(path: Path<'a>, dim: Option<i64>, _device: Device) -> Self {
         let dim = dim.unwrap_or(128);
 
-        let norm_in = LayerNorm::new(path.sub("norm_in"), vec![dim], dim as f64 * 1e-5, true);
+        let norm_in = layer_norm_1d(path.sub("norm_in"), dim);
 
         let p_in = linear(
             path.sub("p_in"),
@@ -196,7 +197,7 @@ impl TriangleMultiplicationIncoming {
             },
         );
 
-        let norm_out = LayerNorm::new(path.sub("norm_out"), vec![dim], dim as f64 * 1e-5, true);
+        let norm_out = layer_norm_1d(path.sub("norm_out"), dim);
 
         let p_out = linear(
             path.sub("p_out"),
@@ -290,6 +291,7 @@ impl TriangleMultiplicationIncoming {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::nn::VarStore;
 
     #[test]
     fn test_triangular_mult_outgoing_forward() {

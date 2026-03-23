@@ -38,7 +38,7 @@ if [[ -x "$ROOT/.venv/bin/python" ]]; then
   case "$VPY" in
     3.13|3.14|3.15)
       echo "  WARNING: tch 0.16 libtch C++ is built for PyTorch 2.3 + older Pythons; 3.13+ + latest torch → compile errors (hasORT, _scaled_mm, …)."
-      echo "           Fix: rm -rf .venv && bash scripts/bootstrap_dev_venv.sh   (uses python3.12 if installed)"
+      echo "           Fix: rm -rf .venv && bash scripts/bootstrap_dev_venv.sh   (needs python3.12 on PATH, or pyenv/AUR — see script output / DEVELOPMENT.md)"
       ;;
   esac
   if "$ROOT/.venv/bin/python" -c 'import torch' >/dev/null 2>&1; then

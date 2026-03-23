@@ -3,7 +3,8 @@
 //! Reference: boltz-reference/src/boltz/model/layers/triangular_attention/attention.py
 //! Implements the fallback PyTorch path (use_kernels=False)
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 /// Triangle Attention layer (base implementation)
@@ -61,10 +62,9 @@ impl TriangleAttention {
         let no_heads = no_heads.unwrap_or(4);
         let starting = starting.unwrap_or(true);
 
-        let layer_norm =
-            LayerNorm::new(path.sub("layer_norm"), vec![c_in], c_in as f64 * 1e-5, true);
+        let layer_norm = layer_norm_1d(path.sub("layer_norm"), c_in);
 
-        let linear = linear(
+        let bias_linear = linear(
             path.sub("linear"),
             c_in,
             no_heads,
@@ -121,7 +121,7 @@ impl TriangleAttention {
             starting,
             inf: inf.unwrap_or(1e9),
             layer_norm,
-            linear,
+            linear: bias_linear,
             q_proj,
             k_proj,
             v_proj,
@@ -197,13 +197,13 @@ impl TriangleAttention {
     fn mha_with_bias(
         &self,
         x: &Tensor,
-        mask_bias: &Tensor,
-        triangle_bias: &Tensor,
-        mask: Option<&Tensor>,
+        _mask_bias: &Tensor,
+        _triangle_bias: &Tensor,
+        _mask: Option<&Tensor>,
         _chunk_size: Option<i64>,
     ) -> Tensor {
         let shape = x.size();
-        let num_dims = shape.len();
+        let _num_dims = shape.len();
 
         // Reshape for batch processing
         // Input: [B, I, J, C_in]

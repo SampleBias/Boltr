@@ -41,7 +41,7 @@ impl FourierEmbedding {
     /// `times`: `[*, 1]` float; returns `[*, dim]`.
     pub fn forward(&self, times: &Tensor) -> Tensor {
         let x = self.proj.forward(times);
-        x.mul_scalar(2.0 * PI).cos()
+        x.g_mul_scalar(2.0 * PI).cos()
     }
 }
 
@@ -93,13 +93,13 @@ impl ContactConditioning {
 
         let thresh = feats.contact_threshold;
         let denom = self.cutoff_max - self.cutoff_min;
-        let contact_threshold_normalized = thresh.g_sub_scalar(self.cutoff_min).div_scalar(denom);
+        let contact_threshold_normalized = thresh.g_sub_scalar(self.cutoff_min).g_div_scalar(denom);
 
         let sz = contact_threshold_normalized.size();
         let flat = contact_threshold_normalized.flatten(0, 2);
         let t_in = flat.unsqueeze(1);
         let fourier_flat = self.fourier_embedding.forward(&t_in);
-        let contact_threshold_fourier = fourier_flat.view(&[sz[0], sz[1], sz[2], self.token_z]);
+        let contact_threshold_fourier = fourier_flat.view([sz[0], sz[1], sz[2], self.token_z]);
 
         let norm_exp = contact_threshold_normalized.unsqueeze(-1);
         let pieces = [
@@ -111,8 +111,8 @@ impl ContactConditioning {
         let encoded = self.encoder.forward(&cat);
 
         let head = cc_full.narrow(3, 0, 2);
-        let sum01 = head.sum_dim_intlist(&[-1], true, Kind::Float);
-        let one = Tensor::ones_like(&sum01);
+        let sum01 = head.sum_dim_intlist(&[-1i64][..], true, Kind::Float);
+        let one = sum01.ones_like();
         let mult = &one - &sum01;
         let mut out = encoded * mult;
 

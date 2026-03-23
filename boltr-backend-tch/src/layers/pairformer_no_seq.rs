@@ -13,14 +13,16 @@ use tch::{Device, Kind, Tensor};
 fn dropout_mask_pair(dropout: f64, z: &Tensor, training: bool) -> Tensor {
     let dropout = if training { dropout } else { 0.0 };
     let v = z.narrow(2, 0, 1).narrow(3, 0, 1);
-    let d = v.rand_like() >= dropout;
+    let thr = Tensor::from(dropout).to_device(v.device());
+    let d = v.rand_like().ge_tensor(&thr);
     d.to_kind(Kind::Float) * (1.0 / (1.0 - dropout).max(1e-12))
 }
 
 fn dropout_mask_columnwise(dropout: f64, z: &Tensor, training: bool) -> Tensor {
     let dropout = if training { dropout } else { 0.0 };
     let v = z.narrow(1, 0, 1).narrow(3, 0, 1);
-    let d = v.rand_like() >= dropout;
+    let thr = Tensor::from(dropout).to_device(v.device());
+    let d = v.rand_like().ge_tensor(&thr);
     let d = d.to_kind(Kind::Float) * (1.0 / (1.0 - dropout).max(1e-12));
     let shape = z.size();
     d.expand(shape.as_slice(), false)
@@ -118,6 +120,9 @@ impl PairformerNoSeqLayer {
             .forward(&z, Some(pair_mask), chunk_size_tri_attn, use_kernels);
         z = z + drop * z_out;
 
-        z + self.transition_z.forward(&z, None)
+        {
+            let z_t = self.transition_z.forward(&z, None);
+            z + z_t
+        }
     }
 }

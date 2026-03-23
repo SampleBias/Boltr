@@ -17,8 +17,9 @@ cd "$ROOT"
 # Must match boltr-backend-tch's tch (torch-sys) expected LibTorch API.
 TORCH_PIN="${BOLTR_TORCH_VERSION:-2.3.0}"
 
+WANT_FORCE=0
 if [[ "${1:-}" == "--force" ]]; then
-  rm -rf .venv
+  WANT_FORCE=1
   shift || true
 fi
 
@@ -40,7 +41,10 @@ pick_venv_python() {
   done
   echo "No python3.12 / python3.11 / python3.10 on PATH." >&2
   echo "tch 0.16 + latest pip 'torch' on Python 3.13+ breaks C++ build (libtch vs ATen headers)." >&2
-  echo "Install e.g. Arch: sudo pacman -S python312   then re-run this script." >&2
+  echo "Arch: there is no official 'python312' in core/extra (only latest 'python'). Pick one:" >&2
+  echo "  • AUR:  yay -S python312   or   paru -S python312" >&2
+  echo "  • Repo: sudo pacman -S pyenv && pyenv install 3.12 && export BOLTR_VENV_PYTHON=\"\$HOME/.pyenv/versions/<3.12.x>/bin/python\"" >&2
+  echo "  • Or skip Python torch: DEVELOPMENT.md Path A (LibTorch 2.3.0 zip), unset LIBTORCH_USE_PYTORCH." >&2
   exit 1
 }
 
@@ -51,6 +55,11 @@ echo "Using $VPY for .venv ($(command -v "$VPY"))"
 if ! "$VPY" -c 'import sys; v=sys.version_info; raise SystemExit(0 if v.major==3 and 10<=v.minor<=12 else 1)'; then
   echo "ERROR: $VPY must be Python 3.10, 3.11, or 3.12 for tch 0.16 + torch ${TORCH_PIN}." >&2
   exit 1
+fi
+
+# Only remove .venv after we know a compatible interpreter exists (so --force can't strand you with no venv).
+if [[ "$WANT_FORCE" -eq 1 ]]; then
+  rm -rf .venv
 fi
 
 if [[ ! -d .venv ]]; then
@@ -66,10 +75,11 @@ if ! .venv/bin/python -c 'import sys; v=sys.version_info; raise SystemExit(0 if 
 fi
 
 .venv/bin/pip install -U pip
-.venv/bin/pip install "torch==${TORCH_PIN}" safetensors
+# torch-sys probes Python via torch.utils.cpp_extension → requires setuptools (not always pulled by torch wheels).
+.venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors
 
 echo
-echo "Installed torch==${TORCH_PIN} + safetensors into $ROOT/.venv"
+echo "Installed setuptools, torch==${TORCH_PIN}, safetensors into $ROOT/.venv"
 .venv/bin/python -c "import torch; print('torch:', torch.__version__, 'python:', __import__('sys').version.split()[0])"
 echo
 echo "Build:"

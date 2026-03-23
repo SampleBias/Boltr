@@ -2,7 +2,8 @@
 //!
 //! Reference: `boltz-reference/src/boltz/model/layers/outer_product_mean.py`
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 pub struct OuterProductMeanMsa {
@@ -15,7 +16,7 @@ pub struct OuterProductMeanMsa {
 
 impl OuterProductMeanMsa {
     pub fn new<'a>(path: Path<'a>, c_in: i64, c_hidden: i64, c_out: i64, device: Device) -> Self {
-        let norm = LayerNorm::new(path.sub("norm"), vec![c_in], c_in as f64 * 1e-5, true);
+        let norm = layer_norm_1d(path.sub("norm"), c_in);
         let proj_a = linear(
             path.sub("proj_a"),
             c_in,
@@ -58,11 +59,11 @@ impl OuterProductMeanMsa {
         let mask_4 = msa_mask.unsqueeze(-1).to_kind(m.kind());
         let m = self.norm.forward(m);
         let a = self.proj_a.forward(&m) * &mask_4;
-        let b = self.proj_b.forward(&m) * mask_4;
+        let b = self.proj_b.forward(&m) * &mask_4;
 
         let pair_mask = mask_4.unsqueeze(2) * mask_4.unsqueeze(3);
         let num_mask = pair_mask
-            .sum_dim_intlist(&[1], false, Kind::Float)
+            .sum_dim_intlist(&[1i64][..], false, Kind::Float)
             .clamp_min(1.0);
 
         let a_f = a.to_kind(Kind::Float);

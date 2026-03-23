@@ -2,6 +2,7 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/outer_product_mean.py
 
+use crate::tch_compat::layer_norm_1d;
 use tch::nn::{linear, LinearConfig, Module, VarStore};
 use tch::{Device, Tensor};
 
@@ -35,8 +36,7 @@ impl OuterProductMean {
 
         let root = vs.root();
 
-        let layer_norm =
-            tch::nn::LayerNorm::new(root.sub("layer_norm"), vec![c_m], c_m as f64 * 1e-5, true);
+        let layer_norm = layer_norm_1d(root.sub("layer_norm"), c_m);
 
         let proj_bin = linear(
             root.sub("proj_bin"),
@@ -69,7 +69,7 @@ impl OuterProductMean {
     /// # Returns
     ///
     /// Output tensor of shape [B, N, N, c_z]
-    pub fn forward(&self, a: &Tensor, b: &Tensor, mask: Option<&Tensor>) -> Tensor {
+    pub fn forward(&self, a: &Tensor, b: &Tensor, _mask: Option<&Tensor>) -> Tensor {
         // Apply LayerNorm
         let a_normed = self.layer_norm.forward(a);
         let b_normed = self.layer_norm.forward(b);
@@ -116,7 +116,7 @@ impl OuterProductMean {
 
         // Sum over m dimensions to get [B, N, N, c_z]
         // For now, return simplified version
-        outer.sum_dim(&[2, 4], false, a.kind())
+        outer.sum_dim_intlist(&[2i64, 4][..], false, a.kind())
     }
 }
 

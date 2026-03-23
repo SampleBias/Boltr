@@ -99,8 +99,11 @@ impl MsaLayerBlock {
         let pwa = self
             .pair_weighted_averaging
             .forward(m, z, pair_mask);
-        let mut m = m + msa_drop * pwa;
-        m = m + self.msa_transition.forward(&m, None);
+        let m = {
+            let m1 = m + msa_drop * pwa;
+            let m2 = self.msa_transition.forward(&m1, None);
+            m1 + m2
+        };
 
         let mut z = z + self.outer_product_mean.forward(&m, msa_mask_float);
         z = self.pairformer_layer.forward(
@@ -118,7 +121,8 @@ impl MsaLayerBlock {
 fn msa_dropout_mask(dropout: f64, m: &Tensor, training: bool) -> Tensor {
     let dropout = if training { dropout } else { 0.0 };
     let v = m.narrow(2, 0, 1).narrow(3, 0, 1);
-    let d = v.rand_like() >= dropout;
+    let thr = Tensor::from(dropout).to_device(v.device());
+    let d = v.rand_like().ge_tensor(&thr);
     d.to_kind(Kind::Float) * (1.0 / (1.0 - dropout).max(1e-12))
 }
 

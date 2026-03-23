@@ -9,8 +9,9 @@ use super::triangular_mult::{TriangleMultiplicationIncoming, TriangleMultiplicat
 
 use crate::attention::pair_bias::AttentionPairBiasV2;
 
-use tch::nn::{LayerNorm, Module, Path};
-use tch::{Device, Kind, Tensor, VarStore};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{Module, Path};
+use tch::{Device, Kind, Tensor};
 
 /// Pairformer Layer
 ///
@@ -74,12 +75,7 @@ impl PairformerLayer {
         let pairwise_num_heads = pairwise_num_heads.unwrap_or(4);
 
         // Sequence stack
-        let pre_norm_s = LayerNorm::new(
-            path.sub("pre_norm_s"),
-            vec![token_s],
-            token_s as f64 * 1e-5,
-            true,
-        );
+        let pre_norm_s = layer_norm_1d(path.sub("pre_norm_s"), token_s);
 
         // Boltz1 vs Boltz2 branching not wired yet; keep API aligned with Python.
         let _ = v2.unwrap_or(true);
@@ -101,12 +97,7 @@ impl PairformerLayer {
         );
 
         let s_post_norm = if post_layer_norm {
-            Some(LayerNorm::new(
-                path.sub("s_post_norm"),
-                vec![token_s],
-                token_s as f64 * 1e-5,
-                true,
-            ))
+            Some(layer_norm_1d(path.sub("s_post_norm"), token_s))
         } else {
             None
         };
@@ -191,7 +182,7 @@ impl PairformerLayer {
 
         // Triangle multiplication outgoing
         let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(z))
+            Some(self.create_dropout_mask(&z))
         } else {
             None
         };
@@ -205,7 +196,7 @@ impl PairformerLayer {
 
         // Triangle multiplication incoming
         let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(z))
+            Some(self.create_dropout_mask(&z))
         } else {
             None
         };
@@ -219,7 +210,7 @@ impl PairformerLayer {
 
         // Triangle attention starting
         let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(z))
+            Some(self.create_dropout_mask(&z))
         } else {
             None
         };
@@ -235,7 +226,7 @@ impl PairformerLayer {
 
         // Triangle attention ending (columnwise dropout)
         let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask_columnwise(z))
+            Some(self.create_dropout_mask_columnwise(&z))
         } else {
             None
         };
@@ -287,18 +278,20 @@ impl PairformerLayer {
 
     fn create_dropout_mask(&self, tensor: &Tensor) -> Tensor {
         let scale = 1.0 / (1.0 - self.dropout);
-        let mask = tensor.rand_like(tensor) > self.dropout;
+        let thr = Tensor::from(self.dropout).to_device(tensor.device());
+        let mask = tensor.rand_like().gt_tensor(&thr);
         mask.to_kind(tensor.kind()).to_kind(Kind::Float) * scale
     }
 
     fn create_dropout_mask_columnwise(&self, tensor: &Tensor) -> Tensor {
         let shape = tensor.size();
-        let batch_size = shape[0];
+        let _batch_size = shape[0];
         let dim = shape[3];
 
         // Create columnwise mask: broadcast over first two dimensions
-        let mask = Tensor::empty(&[1, 1, 1, dim], (Kind::Float, self.device));
-        let mask = (mask.rand_like(mask) > self.dropout).to_kind(Kind::Float)
+        let mask = Tensor::empty(&[1i64, 1, 1, dim], (Kind::Float, self.device));
+        let thr = Tensor::from(self.dropout).to_device(self.device);
+        let mask = (mask.rand_like().gt_tensor(&thr)).to_kind(Kind::Float)
             * (1.0 / (1.0 - self.dropout));
 
         mask.expand(shape.as_slice(), false)
@@ -437,6 +430,7 @@ impl PairformerModule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::nn::VarStore;
 
     #[test]
     fn test_pairformer_layer_forward() {

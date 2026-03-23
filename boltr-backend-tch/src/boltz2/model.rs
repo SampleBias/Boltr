@@ -416,7 +416,7 @@ mod tests {
         tch::maybe_init_cuda();
         let device = Device::Cpu;
         let ts = 384_i64;
-        let mut m = Boltz2Model::new(device, ts);
+        let m = Boltz2Model::new(device, ts);
         let x = Tensor::randn(&[7, ts], (tch::Kind::Float, device));
         let y = m.forward_s_init(&x);
         assert_eq!(y.size(), vec![7, ts]);

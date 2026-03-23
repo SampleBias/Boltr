@@ -2,7 +2,8 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/attentionv2.py
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 /// Attention pair bias layer (Boltz2 variant)
@@ -128,14 +129,9 @@ impl AttentionPairBiasV2 {
         // Pairwise bias projection (LayerNorm -> Linear -> reshape)
         let (proj_z_layer_norm, proj_z) = if compute_pair_bias {
             let c_z = c_z.unwrap();
-            let ln = LayerNorm::new(
-                path.sub("proj_z_layer_norm"),
-                vec![c_z],
-                c_z as f64 * 1e-5,
-                true,
-            );
+            let ln = layer_norm_1d(path.sub("proj_z_layer_norm"), c_z);
 
-            let linear = linear(
+            let proj_z_linear = linear(
                 path.sub("proj_z"),
                 c_z,
                 num_heads,
@@ -145,7 +141,7 @@ impl AttentionPairBiasV2 {
                 },
             );
 
-            (Some(ln), Some(linear))
+            (Some(ln), Some(proj_z_linear))
         } else {
             (None, None)
         };
@@ -225,7 +221,7 @@ impl AttentionPairBiasV2 {
 
         // Repeat bias if multiplicity > 1
         let bias = if multiplicity > 1 {
-            bias.repeat_interleave(multiplicity, 0)
+            bias.repeat_interleave_self_int(multiplicity, Some(0), None)
         } else {
             bias
         };
@@ -252,9 +248,12 @@ impl AttentionPairBiasV2 {
         let attn = attn + bias_float;
 
         // Apply mask: add -inf where mask is 0
-        let mask_expanded = mask_float.unsqueeze(1).unsqueeze(2); // [B, 1, 1, N, N] -> [B, 1, 1, N] after unsqueeze(2) is wrong, need [B, 1, N, N]
         let mask_expanded = mask_float.unsqueeze(1); // [B, 1, N, N]
-        let attn = attn + (1 - mask_expanded) * (-self.inf);
+        let attn = attn
+            + mask_expanded
+                .ones_like()
+                .g_sub(&mask_expanded)
+                .g_mul_scalar(-self.inf);
 
         // Softmax over last dimension
         let attn = attn.softmax(-1, Kind::Float);
@@ -277,6 +276,7 @@ impl AttentionPairBiasV2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::nn::VarStore;
 
     #[test]
     fn test_attention_pair_bias_v2_forward() {

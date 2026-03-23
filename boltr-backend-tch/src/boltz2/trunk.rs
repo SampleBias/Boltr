@@ -8,7 +8,8 @@
 //! Reference: `boltz-reference/src/boltz/model/models/boltz2.py` (trunk loop) and
 //! `modules/trunkv2.py` (embedder/MSA/template building blocks).
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, VarStore};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, VarStore};
 use tch::{Device, Tensor};
 
 use crate::layers::PairformerModule;
@@ -108,21 +109,11 @@ impl TrunkV2 {
         );
 
         // Normalization layers
-        let s_norm = LayerNorm::new(
-            root.sub("s_norm"),
-            vec![token_s],
-            token_s as f64 * 1e-5,
-            true,
-        );
-        let z_norm = LayerNorm::new(
-            root.sub("z_norm"),
-            vec![token_z],
-            token_z as f64 * 1e-5,
-            true,
-        );
+        let s_norm = layer_norm_1d(root.sub("s_norm"), token_s);
+        let z_norm = layer_norm_1d(root.sub("z_norm"), token_z);
 
         // Recycling projections (with gating initialization)
-        let s_recycle = linear(
+        let mut s_recycle = linear(
             root.sub("s_recycle"),
             token_s,
             token_s,
@@ -132,7 +123,7 @@ impl TrunkV2 {
             },
         );
 
-        let z_recycle = linear(
+        let mut z_recycle = linear(
             root.sub("z_recycle"),
             token_z,
             token_z,
@@ -143,8 +134,8 @@ impl TrunkV2 {
         );
 
         // Initialize recycling weights for gating (zeros)
-        s_recycle.ws.set_zero();
-        z_recycle.ws.set_zero();
+        s_recycle.ws.zero_();
+        z_recycle.ws.zero_();
 
         // Owned PairformerModule — keys align with Lightning `pairformer_module.*`
         let pairformer = PairformerModule::new(
@@ -208,9 +199,6 @@ impl TrunkV2 {
     /// - s_init: [B, N, token_s]
     /// - z_init: [B, N, N, token_z]
     pub fn initialize(&self, s_inputs: &Tensor) -> (Tensor, Tensor) {
-        let batch_size = s_inputs.size()[0];
-        let num_tokens = s_inputs.size()[1];
-
         // Initialize sequence embeddings
         let s_init = self.s_init.forward(s_inputs);
 

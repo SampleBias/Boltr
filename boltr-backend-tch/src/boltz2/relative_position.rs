@@ -82,21 +82,21 @@ impl RelativePositionEncoder {
                 let period = rel.cyclic_period.where_self(&pos, &ten_k);
                 let d_f = d_residue.to_kind(Kind::Float);
                 let p_f = period.unsqueeze(2).to_kind(Kind::Float);
-                let adj = d_f.shallow_clone() / p_f;
+                let adj = d_f.shallow_clone() / p_f.shallow_clone();
                 d_residue = (d_f - p_f * adj.round()).to_kind(Kind::Int64);
             }
         }
 
         let r2 = 2 * self.r_max;
         let mut d_residue = (d_residue + self.r_max).clamp(0, r2);
-        let off_chain = Tensor::full_like(&d_residue, r2 + 1, (Kind::Int64, self.device));
+        let off_chain = Tensor::full_like(&d_residue, r2 + 1);
         d_residue = d_residue.where_self(&b_same_chain, &off_chain);
         let a_rel_pos = d_residue.one_hot(r2 + 2);
 
         let mut d_token =
             (token_index.unsqueeze(2) - token_index.unsqueeze(1) + self.r_max).clamp(0, r2);
         let same_res = b_same_chain.bitwise_and_tensor(&b_same_residue);
-        let off_tok = Tensor::full_like(&d_token, r2 + 1, (Kind::Int64, self.device));
+        let off_tok = Tensor::full_like(&d_token, r2 + 1);
         d_token = d_token.where_self(&same_res, &off_tok);
         let a_rel_token = d_token.one_hot(r2 + 2);
 
@@ -108,7 +108,7 @@ impl RelativePositionEncoder {
         } else {
             b_same_chain.shallow_clone()
         };
-        let off_ch = Tensor::full_like(&d_chain, s2 + 1, (Kind::Int64, self.device));
+        let off_ch = Tensor::full_like(&d_chain, s2 + 1);
         d_chain = d_chain.where_self(&cond, &off_ch);
         let a_rel_chain = d_chain.one_hot(s2 + 2);
 

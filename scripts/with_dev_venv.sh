@@ -12,7 +12,7 @@ fi
 if ! "$VENV_BIN/python" -c 'import sys; v=sys.version_info; raise SystemExit(0 if v.major==3 and 10<=v.minor<=12 else 1)'; then
   VNOW="$("$VENV_BIN/python" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
   echo "ERROR: .venv is Python ${VNOW}; tch 0.16 needs 3.10–3.12 + torch 2.3.x headers." >&2
-  echo "Recreate: bash scripts/bootstrap_dev_venv.sh --force   (install python312 if needed)" >&2
+  echo "Recreate: bash scripts/bootstrap_dev_venv.sh --force   (Arch: yay -S python312 or pyenv 3.12 — see DEVELOPMENT.md)" >&2
   exit 1
 fi
 export PATH="$VENV_BIN:$PATH"

@@ -78,7 +78,7 @@ Or manually (use **python3.12** etc., not 3.13+, and pin torch):
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install 'torch==2.3.0' safetensors
+pip install setuptools wheel 'torch==2.3.0' safetensors
 export LIBTORCH_USE_PYTORCH=1
 python3 -c "import torch; print('PyTorch', torch.__version__)"
 cargo test -p boltr-backend-tch --features tch-backend
@@ -112,11 +112,14 @@ Error: Cannot find a libtorch install ...
 
 You did not set `LIBTORCH`, or `LIBTORCH_USE_PYTORCH=1` is set but Python cannot supply LibTorch. **Fix:** use **Path A** (set `LIBTORCH` to an unpacked zip) or fix Python per **Path B**.
 
-#### Troubleshooting: `no cxx11 abi returned by python` + `ModuleNotFoundError: No module named 'torch'`
+#### Troubleshooting: `no cxx11 abi returned by python`
 
-`torch-sys` runs the **first** `python3` on your `PATH` and requires `import torch`.
+`torch-sys` runs the **first** `python3` on your `PATH` and asks PyTorch for the C++11 ABI flag. That code path imports **`torch.utils.cpp_extension`**, which in turn imports **`setuptools`**. A bare `python -m venv` often has **no setuptools**, so you can see this Rust error even when `torch` is installed.
 
-**Fix:** (1) **`unset LIBTORCH_USE_PYTORCH`** and use **Path A**, or (2) put a venv **ahead** of `/usr/bin` — `scripts/cargo-tch …` / `scripts/with_dev_venv.sh cargo …`, or `source .venv/bin/activate` before `cargo`. If `LIBTORCH_USE_PYTORCH=1` is exported in `~/.bashrc` but the venv is not activated, `/usr/bin/python3` still has no `torch` and the build fails.
+| Python stderr (inside the Rust error) | Fix |
+|---------------------------------------|-----|
+| `No module named 'torch'` | Put `.venv` first on `PATH` — `scripts/cargo-tch …` / `scripts/with_dev_venv.sh cargo …`, or `source .venv/bin/activate` before `cargo`. Or **Path A** + `unset LIBTORCH_USE_PYTORCH`. |
+| `No module named 'setuptools'` | `.venv/bin/pip install setuptools` or re-run [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh) (installs setuptools). |
 
 #### Troubleshooting: `externally-managed-environment` (pip on Arch)
 
@@ -153,7 +156,7 @@ bash scripts/bootstrap_dev_venv.sh
 scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
 ```
 
-If you have no `python3.12` binary, install it (e.g. Arch: `sudo pacman -S python312`) or use **Path A** with a **2.3.0** LibTorch zip (not `latest`).
+If you have no `python3.12` (or 3.11 / 3.10) binary: on **Arch Linux** there is **no** `python312` in the main repos (`pacman -S python312` → *target not found*). Install **3.12** via **AUR** (`yay -S python312` / `paru -S python312`), or **`pyenv`** from `extra` (`sudo pacman -S pyenv`, `pyenv install 3.12`, then `export BOLTR_VENV_PYTHON="$HOME/.pyenv/versions/3.12.x/bin/python"` and run `bootstrap_dev_venv.sh`), or use **Path A** with a **2.3.0** LibTorch zip (not `latest`).
 
 ### CUDA vs Python `cuequivariance` wheels
 

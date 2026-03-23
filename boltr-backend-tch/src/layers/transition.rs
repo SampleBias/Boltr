@@ -2,8 +2,9 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/transition.py
 
-use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
-use tch::{Device, Kind, Tensor};
+use crate::tch_compat::layer_norm_1d;
+use tch::nn::{linear, LinearConfig, Module, Path};
+use tch::{Device, Tensor};
 
 /// Transition layer (two-layer MLP with SwiGLU activation)
 ///
@@ -35,12 +36,12 @@ impl Transition {
         dim: i64,
         hidden: Option<i64>,
         out_dim: Option<i64>,
-        device: Device,
+        _device: Device,
     ) -> Self {
         let hidden = hidden.unwrap_or(dim * 4);
         let out_dim = out_dim.unwrap_or(dim);
 
-        let norm = LayerNorm::new(path.sub("norm"), vec![dim], dim as f64 * 1e-5, true);
+        let norm = layer_norm_1d(path.sub("norm"), dim);
 
         let fc1 = linear(
             path.sub("fc1"),
@@ -111,6 +112,7 @@ impl Transition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tch::Kind;
     use tch::nn::VarStore;
 
     #[test]
