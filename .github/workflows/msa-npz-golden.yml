@@ -1,0 +1,31 @@
+name: MSA npz golden (Rust / NumPy)
+
+on:
+  push:
+    paths:
+      - "boltr-io/**"
+      - "scripts/verify_msa_npz_golden.py"
+      - ".github/workflows/msa-npz-golden.yml"
+  pull_request:
+    paths:
+      - "boltr-io/**"
+      - "scripts/verify_msa_npz_golden.py"
+      - ".github/workflows/msa-npz-golden.yml"
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install NumPy
+        run: pip install numpy
+
+      - name: Verify MSA npz golden
+        run: python scripts/verify_msa_npz_golden.py

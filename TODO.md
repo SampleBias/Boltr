@@ -83,7 +83,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **`token_bonds` / `token_bonds_type`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): `token_bonds` linear + optional `Embedding(7, token_z)` via `Boltz2Model::with_options_bonds(..., bond_type_feature)`. `forward_token_bonds_bias`, `forward_trunk_with_z_init_terms`. |
 | 2026-03-23 | **`ContactConditioning`** | [boltz2/contact_conditioning.rs](boltr-backend-tch/src/boltz2/contact_conditioning.rs): `FourierEmbedding` + encoder + `encoding_unspecified` / `encoding_unselected`; `ContactFeatures`, `forward_contact_conditioning`, wired into `forward_trunk_with_z_init_terms` (optional; `None` → zero bias). Cutoffs **4 / 20** Å like `Boltz2`. |
 | 2026-03-23 | **`InputEmbedder` (partial)** | [boltz2/input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs): `res_type_encoding` + `msa_profile_encoding` under `input_embedder/` (`BOLTZ_NUM_TOKENS=33`). `forward_with_atom_repr` / `Boltz2Model::forward_input_embedder` — caller supplies atom-attn **`a`**. **Next:** `AtomEncoder` + `AtomAttentionEncoder`, optional conditioning flags, golden parity. |
-| 2026-03-23 | **A3M + MSA npz (`boltr-io`)** | [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) (A3M/CSV parse). [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed` / `read_msa_npz_*` for Boltz `MSA` `.npz`. **Next:** golden byte/npz compare vs Python on a fixture when NumPy is available in CI. |
+| 2026-03-23 | **A3M + MSA npz (`boltr-io`)** | [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) (A3M/CSV parse). [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed` / `read_msa_npz_*`. **Golden:** [`scripts/verify_msa_npz_golden.py`](scripts/verify_msa_npz_golden.py) + [`boltr-io/src/bin/msa_npz_golden.rs`](boltr-io/src/bin/msa_npz_golden.rs); CI [`.github/workflows/msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml). |
 
 ---
 
@@ -124,7 +124,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | [x] | MSA file formats | `parse/a3m.py`, `parse/csv.py` | **A3M:** [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs). **CSV:** [boltr-io/src/msa_csv.rs](boltr-io/src/msa_csv.rs) (`parse_csv_path`, `parse_csv_str`, `key`/`sequence`, taxonomy from `key`). |
 | [x] | MSA → npz | `main.py` preprocess, `types.py` (`MSA`) | [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed`, `read_msa_npz_path` / `read_msa_npz_bytes` — Boltz dtypes (`|i1`, `<i2`, `<i4`), aligned `MSASequence` records, NPY 1.0 header matching NumPy `format.py`. |
 
-**Acceptance:** Same `.npz` hash or tensor allclose after load for a fixed input.
+**Acceptance:** Decoded arrays match after load for a fixed input (`numpy.testing.assert_equal`), not raw `.npz` bytes. CI: [`.github/workflows/msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml) + [`scripts/verify_msa_npz_golden.py`](scripts/verify_msa_npz_golden.py) + [`boltr-io/src/bin/msa_npz_golden.rs`](boltr-io/src/bin/msa_npz_golden.rs).
 
 ### 4.3 Tokenizer (Boltz2)
 
