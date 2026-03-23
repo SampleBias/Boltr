@@ -91,6 +91,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **`FeatureBatch` / collate scaffold** | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs) — typed `dict[str, Tensor]`-like batch + stack collate (§4.5). |
 | 2026-03-23 | **Boltz2 `tokenize_structure` (partial)** | [boltr-io/src/tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs): `compute_frame`, `tokenize_structure`, `TokenData` / `TokenBondV2`; tables [boltr-io/src/structure_v2.rs](boltr-io/src/structure_v2.rs). **TBD:** `Boltz2Tokenizer` trait + templates + `Input`/`Tokenized`; single structured numpy `TokenV2` row (padding) + Python golden. |
 | 2026-03-23 | **Token batch columnar `.npz`** | [boltr-io/src/token_npz.rs](boltr-io/src/token_npz.rs): `write_token_batch_npz_compressed` / `read_token_batch_npz_*` / `write_token_batch_npz_to_vec` — zip of `.npy` columns (`t_*`, `bond_*`) for golden checks vs Python. |
+| 2026-03-23 | **`boltr tokens-to-npz` + ALA fixture** | [boltr-cli/src/main.rs](boltr-cli/src/main.rs) `tokens-to-npz` (demo `ala`); shared [boltr-io/src/fixtures.rs](boltr-io/src/fixtures.rs) `structure_v2_single_ala`. Test [boltr-cli/tests/tokens_to_npz_cli.rs](boltr-cli/tests/tokens_to_npz_cli.rs). |
 
 ---
 
@@ -138,7 +139,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [~] | `Boltz2Tokenizer` | `tokenize/boltz2.py`, `tokenize/tokenizer.py` | **Core:** [boltr-io/src/tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs) — `compute_frame`, `tokenize_structure` on [`StructureV2Tables`](boltr-io/src/structure_v2.rs). **Still TBD:** `Tokenizer` trait + `Input` → `Tokenized`, template tokenization loop, wire to preprocess. |
-| [~] | Token/atom bookkeeping | `types.py` (`Tokenized`, etc.) | **`TokenData` / `TokenBondV2`** + columnar **`.npz`** I/O [boltr-io/src/token_npz.rs](boltr-io/src/token_npz.rs). **TBD:** single structured `TokenV2` array (exact numpy padding) if featurizer requires it. |
+| [~] | Token/atom bookkeeping | `types.py` (`Tokenized`, etc.) | **`TokenData` / `TokenBondV2`** + columnar **`.npz`** I/O [boltr-io/src/token_npz.rs](boltr-io/src/token_npz.rs); CLI **`boltr tokens-to-npz`** (demo `ala`). **TBD:** single structured `TokenV2` array (exact numpy padding) if featurizer requires it; load real `StructureV2` from preprocess npz. |
 
 **Acceptance:** `tokenize` output matches Python **field-by-field** on a golden complex (dump + diff in tests).
 

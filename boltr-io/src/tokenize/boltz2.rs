@@ -300,7 +300,8 @@ pub fn tokenize_structure(
 mod tests {
     use super::*;
     use crate::boltz_const::token_id;
-    use crate::structure_v2::{AtomV2Row, BondV2AtomRow, ResidueRow, StructureV2Tables};
+    use crate::fixtures::structure_v2_single_ala;
+    use crate::structure_v2::{AtomV2Row, BondV2AtomRow, ChainRow, ResidueRow, StructureV2Tables};
 
     #[test]
     fn compute_frame_matches_analytic_example() {
@@ -315,55 +316,9 @@ mod tests {
         assert!((t[0] - 1.0).abs() < 1e-5 && t[1].abs() < 1e-5 && t[2].abs() < 1e-5);
     }
 
-    fn ala_chain() -> StructureV2Tables {
-        let p = protein_mol_type();
-        let coords = vec![
-            [0.0_f32, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0],
-            [2.0, 0.0, 0.0],
-            [1.5, 1.0, 0.0],
-        ];
-        let atoms: Vec<_> = coords
-            .iter()
-            .map(|&c| AtomV2Row {
-                coords: c,
-                is_present: true,
-            })
-            .collect();
-        let ala_id = token_id("ALA").expect("ALA") as i8;
-        StructureV2Tables {
-            atoms,
-            residues: vec![ResidueRow {
-                name: "ALA".to_string(),
-                res_type: ala_id,
-                res_idx: 0,
-                atom_idx: 0,
-                atom_num: 5,
-                atom_center: 1,
-                atom_disto: 4,
-                is_standard: true,
-                is_present: true,
-            }],
-            chains: vec![ChainRow {
-                mol_type: p,
-                sym_id: 0,
-                asym_id: 0,
-                entity_id: 0,
-                res_idx: 0,
-                res_num: 1,
-                cyclic_period: 0,
-            }],
-            chain_mask: vec![true],
-            coords: coords.clone(),
-            ensemble_atom_coord_idx: 0,
-            bonds: vec![],
-        }
-    }
-
     #[test]
     fn tokenize_single_standard_ala() {
-        let s = ala_chain();
+        let s = structure_v2_single_ala();
         let (tokens, bonds) = tokenize_structure(&s, None);
         assert_eq!(tokens.len(), 1);
         assert!(bonds.is_empty());
@@ -430,7 +385,7 @@ mod tests {
 
     #[test]
     fn affinity_mask_on_matching_asym() {
-        let s = ala_chain();
+        let s = structure_v2_single_ala();
         let (tok, _) = tokenize_structure(&s, None);
         assert!(!tok[0].affinity_mask);
         let (tok2, _) = tokenize_structure(&s, Some(0));

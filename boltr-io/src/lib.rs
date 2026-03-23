@@ -15,6 +15,7 @@ pub mod tokenize;
 pub mod ref_atoms;
 pub mod config;
 pub mod download;
+pub mod fixtures;
 pub mod feature_batch;
 pub mod format;
 pub mod ligand_exclusion;
@@ -68,6 +69,7 @@ pub use feature_batch::{
     collate_feature_batches, stack_f32_views, CollateError, FeatureBatch, FeatureTensor,
 };
 pub use download::download_model_assets;
+pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;
 pub use msa::{write_a3m, MsaProcessor};
 pub use parser::parse_input_path as parse_input;

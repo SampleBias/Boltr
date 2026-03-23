@@ -70,6 +70,17 @@ enum Commands {
         #[arg(long)]
         max_seqs: Option<usize>,
     },
+    /// Tokenize a built-in demo `StructureV2` and write columnar token `.npz` ([`boltr_io::token_npz`])
+    TokensToNpz {
+        /// Demo structure: `ala` (single standard ALA, five atoms)
+        demo: String,
+        /// Output `.npz` path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// If set, tokens on chains with this `asym_id` get `affinity_mask` (see `tokenize_structure`)
+        #[arg(long)]
+        affinity_asym_id: Option<i32>,
+    },
 }
 
 fn default_cache_dir() -> PathBuf {
@@ -125,7 +136,38 @@ async fn main() -> Result<()> {
         } => {
             run_msa_to_npz(&input, output.as_deref(), max_seqs)?;
         }
+        Commands::TokensToNpz {
+            demo,
+            output,
+            affinity_asym_id,
+        } => {
+            run_tokens_to_npz(&demo, &output, affinity_asym_id)?;
+        }
     }
+    Ok(())
+}
+
+fn run_tokens_to_npz(demo: &str, output: &Path, affinity_asym_id: Option<i32>) -> Result<()> {
+    let structure = match demo.to_ascii_lowercase().as_str() {
+        "ala" => boltr_io::structure_v2_single_ala(),
+        other => anyhow::bail!(
+            "unknown demo {other:?} (supported: ala). Structure-from-npz is not implemented yet."
+        ),
+    };
+    let (tokens, bonds) = boltr_io::tokenize_structure(&structure, affinity_asym_id);
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create directory {}", parent.display()))?;
+    }
+    boltr_io::write_token_batch_npz_compressed(output, &tokens, &bonds)
+        .with_context(|| format!("write {}", output.display()))?;
+    tracing::info!(
+        demo,
+        out_path = %output.display(),
+        n_tokens = tokens.len(),
+        n_bonds = bonds.len(),
+        "wrote token batch npz"
+    );
     Ok(())
 }
 

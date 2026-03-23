@@ -522,60 +522,13 @@ pub fn read_token_batch_npz_bytes(zip_bytes: &[u8]) -> Result<(Vec<TokenData>, V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::boltz_const::{chain_type_id, token_id};
-    use crate::structure_v2::{AtomV2Row, ChainRow, ResidueRow, StructureV2Tables};
+    use crate::fixtures::structure_v2_single_ala;
     use crate::tokenize::boltz2::tokenize_structure;
-    use std::io::Cursor;
-
-    fn ala_tables() -> StructureV2Tables {
-        let p = chain_type_id("PROTEIN").unwrap() as i8;
-        let coords = vec![
-            [0.0_f32, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, 1.0, 0.0],
-            [2.0, 0.0, 0.0],
-            [1.5, 1.0, 0.0],
-        ];
-        let atoms: Vec<_> = coords
-            .iter()
-            .map(|&c| AtomV2Row {
-                coords: c,
-                is_present: true,
-            })
-            .collect();
-        let ala_id = token_id("ALA").unwrap() as i8;
-        StructureV2Tables {
-            atoms,
-            residues: vec![ResidueRow {
-                name: "ALA".to_string(),
-                res_type: ala_id,
-                res_idx: 0,
-                atom_idx: 0,
-                atom_num: 5,
-                atom_center: 1,
-                atom_disto: 4,
-                is_standard: true,
-                is_present: true,
-            }],
-            chains: vec![ChainRow {
-                mol_type: p,
-                sym_id: 0,
-                asym_id: 0,
-                entity_id: 0,
-                res_idx: 0,
-                res_num: 1,
-                cyclic_period: 0,
-            }],
-            chain_mask: vec![true],
-            coords: coords.clone(),
-            ensemble_atom_coord_idx: 0,
-            bonds: vec![],
-        }
-    }
+    use std::io::{Cursor, Read};
 
     #[test]
     fn roundtrip_token_npz_ala() {
-        let s = ala_tables();
+        let s = structure_v2_single_ala();
         let (tokens, bonds) = tokenize_structure(&s, None);
         let raw = write_token_batch_npz_to_vec(&tokens, &bonds).unwrap();
         let (back_t, back_b) = read_token_batch_npz_bytes(&raw).unwrap();
@@ -585,7 +538,7 @@ mod tests {
 
     #[test]
     fn frame_mask_stored_as_i4() {
-        let s = ala_tables();
+        let s = structure_v2_single_ala();
         let (tokens, bonds) = tokenize_structure(&s, None);
         let raw = write_token_batch_npz_to_vec(&tokens, &bonds).unwrap();
         let cursor = Cursor::new(&raw);
