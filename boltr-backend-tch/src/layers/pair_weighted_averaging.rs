@@ -100,7 +100,8 @@ impl PairWeightedAveraging {
         let mut b = self.proj_z.forward(&z);
         b = b.permute(&[0, 3, 1, 2]);
         let mask_exp = pair_mask.unsqueeze(1);
-        b = b + (1.0 - &mask_exp) * (-self.inf);
+        let inv_mask = Tensor::ones_like(&mask_exp) - &mask_exp;
+        b = b + inv_mask * (-self.inf);
         let w = b.softmax(-1, Kind::Float);
 
         let g = self.proj_g.forward(&m).sigmoid();

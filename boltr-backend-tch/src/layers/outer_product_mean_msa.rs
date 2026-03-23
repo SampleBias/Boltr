@@ -61,7 +61,9 @@ impl OuterProductMeanMsa {
         let b = self.proj_b.forward(&m) * mask_4;
 
         let pair_mask = mask_4.unsqueeze(2) * mask_4.unsqueeze(3);
-        let num_mask = pair_mask.sum_dim_intlist(&[1], false, Kind::Float).clamp_min(1.0);
+        let num_mask = pair_mask
+            .sum_dim_intlist(&[1], false, Kind::Float)
+            .clamp_min(1.0);
 
         let a_f = a.to_kind(Kind::Float);
         let b_f = b.to_kind(Kind::Float);

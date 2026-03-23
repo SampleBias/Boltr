@@ -399,6 +399,11 @@ impl TrunkV2 {
         &self.pairformer
     }
 
+    /// Pre-pairformer MSA stack (`msa_module` weights in Lightning).
+    pub fn msa(&self) -> &MsaModule {
+        &self.msa
+    }
+
     /// Python `Boltz2.s_init`: linear on per-token features `[B, N, token_s]`.
     pub fn apply_s_init(&self, s_inputs: &Tensor) -> Tensor {
         self.s_init.forward(s_inputs)

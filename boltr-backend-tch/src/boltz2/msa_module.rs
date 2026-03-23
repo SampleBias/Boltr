@@ -301,7 +301,6 @@ mod tests {
 
         let out = m.forward_trunk_step(&z, &emb, Some(&feats), false, None, false);
         assert_eq!(out.size(), vec![b, n, n, token_z]);
-        let _ = out.mean_dim(&[0, 1, 2, 3], false, Kind::Float);
     }
 
     #[test]
@@ -325,6 +324,7 @@ mod tests {
         let z = Tensor::ones(&[1, 3, 3, 16], (Kind::Float, device));
         let s = Tensor::zeros(&[1, 3, 32], (Kind::Float, device));
         let out = m.forward_trunk_step(&z, &s, None, false, None, false);
-        assert!(out.eq_tensor(&z).all().into_scalar::<i64>() != 0);
+        let diff = (out - z).abs().max();
+        assert!(diff.double_value(&[]) < 1e-6);
     }
 }

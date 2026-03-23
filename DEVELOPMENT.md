@@ -20,24 +20,140 @@ cargo test
 
 All tensor work uses the `tch` feature on `boltr-cli` (pulls in `boltr-backend-tch/tch-backend`).
 
-First, install LibTorch:
+Keep **`LIBTORCH` or `LIBTORCH_USE_PYTORCH`** exported in the **same shell** where you run `cargo` (`torch-sys` reads them at compile time).
+
+**Sanity check (optional):**
 
 ```bash
-# Option 1: Use Python environment with PyTorch
-pip install torch
-export LIBTORCH_USE_PYTORCH=1
-
-# Option 2: Manual LibTorch installation (CPU or CUDA build — use CUDA zip for GPU)
-wget https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-latest.zip
-unzip libtorch-shared-with-deps-latest.zip
-export LIBTORCH=$(pwd)/libtorch
+bash scripts/check_tch_prereqs.sh
 ```
 
-Then:
+**Arch Linux + PEP 668:** system Python is “externally managed”; `pip install torch` to `/usr` fails with `externally-managed-environment`. Use **Path A** (no Python torch), or a **venv** (Path B below + [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh)).
+
+#### Path A — Standalone LibTorch (works without PyTorch in Python)
+
+Use this when system `python3` has **no `pip`** or **no `torch`** (common on minimal Arch installs). Rust links against the C++ library only; you do **not** need `import torch` for `cargo build`.
+
+[`tch` 0.16](https://crates.io/crates/tch) matches **LibTorch ~2.3.0** C++ APIs. Avoid **`libtorch-*-latest.zip`** (too new vs bundled `libtch`).
+
+```bash
+wget 'https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-2.3.0%2Bcpu.zip' -O libtorch-2.3.0-cpu.zip
+unzip libtorch-2.3.0-cpu.zip
+export LIBTORCH="$(pwd)/libtorch"
+unset LIBTORCH_USE_PYTORCH
+cargo test -p boltr-backend-tch --features tch-backend
+```
+
+For GPU, use a **2.3.x** CUDA LibTorch from [PyTorch previous versions](https://pytorch.org/get-started/previous-versions/) (same minor as above), not an unrelated release.
+
+#### Path B — `LIBTORCH_USE_PYTORCH=1` (reuse PyTorch’s LibTorch)
+
+`torch-sys` runs **`python3` from your `PATH`** and requires `import torch`. That must be an interpreter that actually has PyTorch (venv, conda, etc.) — **not** bare `/usr/bin/python3` on Arch after only `pacman -S python-pip`.
+
+**Recommended on Arch (PEP 668):** repo venv (one-time setup). The script uses **Python 3.12 / 3.11 / 3.10** and **`torch==2.3.0`** so `libtch` compiles (see troubleshooting below if you used Python 3.14 + latest torch).
+
+```bash
+bash scripts/bootstrap_dev_venv.sh --force   # --force if an old .venv had wrong Python/torch
+scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
+```
+
+**Plain `cargo` without activating `.venv`** still uses system `python3` → `ModuleNotFoundError: torch` / `no cxx11 abi returned by python`. From the repo root use the wrapper (same env as `with_dev_venv.sh`):
+
+```bash
+scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
+```
+
+**Cursor / VS Code (rust-analyzer):** it runs `cargo check` without your shell’s `activate`. Either run **`source .venv/bin/activate`** in the integrated terminal before editing, or add **user** settings (not committed; Path A devs omit `LIBTORCH_*`):
+
+```json
+"rust-analyzer.cargo.extraEnv": {
+  "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}",
+  "LIBTORCH_USE_PYTORCH": "1",
+  "LIBTORCH_BYPASS_VERSION_CHECK": "1"
+}
+```
+
+Or manually (use **python3.12** etc., not 3.13+, and pin torch):
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install 'torch==2.3.0' safetensors
+export LIBTORCH_USE_PYTORCH=1
+python3 -c "import torch; print('PyTorch', torch.__version__)"
+cargo test -p boltr-backend-tch --features tch-backend
+```
+
+Other situations:
+
+| Situation | Command |
+|-----------|---------|
+| No `pip` module | Arch: `sudo pacman -S python-pip`, then use a **venv** row above (not `pip install --user` on Arch). |
+| [`uv`](https://github.com/astral-sh/uv) | `uv venv && source .venv/bin/activate && uv pip install torch safetensors` then `export LIBTORCH_USE_PYTORCH=1`. |
+
+Confirm the interpreter `torch-sys` will see (first `python3` on `PATH`):
+
+```bash
+which python3
+python3 -c "import torch"
+```
+
+#### CLI release build (after Path A or B)
 
 ```bash
 cargo build --release -p boltr-cli --features tch
 ```
+
+#### Troubleshooting: `Cannot find a libtorch install` (`torch-sys`)
+
+```text
+Error: Cannot find a libtorch install ...
+```
+
+You did not set `LIBTORCH`, or `LIBTORCH_USE_PYTORCH=1` is set but Python cannot supply LibTorch. **Fix:** use **Path A** (set `LIBTORCH` to an unpacked zip) or fix Python per **Path B**.
+
+#### Troubleshooting: `no cxx11 abi returned by python` + `ModuleNotFoundError: No module named 'torch'`
+
+`torch-sys` runs the **first** `python3` on your `PATH` and requires `import torch`.
+
+**Fix:** (1) **`unset LIBTORCH_USE_PYTORCH`** and use **Path A**, or (2) put a venv **ahead** of `/usr/bin` — `scripts/cargo-tch …` / `scripts/with_dev_venv.sh cargo …`, or `source .venv/bin/activate` before `cargo`. If `LIBTORCH_USE_PYTORCH=1` is exported in `~/.bashrc` but the venv is not activated, `/usr/bin/python3` still has no `torch` and the build fails.
+
+#### Troubleshooting: `externally-managed-environment` (pip on Arch)
+
+System Python refuses `pip install torch` (PEP 668). Use [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh) or Path A — not `pip install --user` into `/usr`.
+
+#### Golden export scripts (`ModuleNotFoundError: No module named 'torch'`)
+
+Scripts such as [`scripts/export_msa_module_golden.py`](scripts/export_msa_module_golden.py) need **`torch`** and **`safetensors`**. With the repo venv:
+
+```bash
+source .venv/bin/activate   # after bootstrap_dev_venv.sh
+PYTHONPATH=boltz-reference/src python3 scripts/export_msa_module_golden.py
+```
+
+#### Troubleshooting: `this tch version expects PyTorch 2.3.0, got …`
+
+[`tch` 0.16](https://crates.io/crates/tch) / `torch-sys` compares the **reported** wheel version. Newer pip `torch` trips this unless you bypass:
+
+```bash
+export LIBTORCH_BYPASS_VERSION_CHECK=1
+```
+
+[`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh) sets this by default. Prefer **`torch==2.3.0`** in `.venv` so you can omit bypass (see [`bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh)).
+
+#### Troubleshooting: `libtch/torch_api.cpp` / `hasORT` / `_scaled_mm` / C++ errors while building `torch-sys`
+
+**Dissection:** `LIBTORCH_BYPASS_VERSION_CHECK` only skips the **Python version string** check. The crate still compiles bundled **`libtch` C++** against **your PyTorch install’s headers**. **Python 3.14 + latest torch** exposes **new ATen C++ APIs** that do not match `tch` 0.16’s generated code → compile errors.
+
+**Fix:** recreate `.venv` with **Python ≤ 3.12** and **`torch==2.3.0`** (matches `tch` 0.16):
+
+```bash
+rm -rf .venv
+bash scripts/bootstrap_dev_venv.sh
+scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
+```
+
+If you have no `python3.12` binary, install it (e.g. Arch: `sudo pacman -S python312`) or use **Path A** with a **2.3.0** LibTorch zip (not `latest`).
 
 ### CUDA vs Python `cuequivariance` wheels
 

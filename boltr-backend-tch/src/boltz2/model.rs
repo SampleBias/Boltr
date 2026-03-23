@@ -12,7 +12,7 @@ use tch::{Device, Kind, Tensor};
 
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
 use super::input_embedder::InputEmbedder;
-use super::msa_module::MsaFeatures;
+use super::msa_module::{MsaFeatures, MsaModule};
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
 use super::trunk::TrunkV2;
 use crate::boltz_hparams::Boltz2Hparams;
@@ -152,6 +152,11 @@ impl Boltz2Model {
 
     pub fn trunk_mut(&mut self) -> &mut TrunkV2 {
         &mut self.trunk
+    }
+
+    /// Lightning `msa_module` subgraph (optional `MsaFeatures` on trunk forwards).
+    pub fn msa(&self) -> &MsaModule {
+        self.trunk.msa()
     }
 
     pub fn rel_pos(&self) -> &RelativePositionEncoder {
@@ -360,6 +365,7 @@ impl Boltz2Model {
         type_bonds: Option<&Tensor>,
         contact: Option<&ContactFeatures<'_>>,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         self.forward_trunk_with_z_init_terms(
             s_inputs,
@@ -368,6 +374,7 @@ impl Boltz2Model {
             type_bonds,
             contact,
             recycling_steps,
+            msa_feats,
         )
     }
 }
@@ -425,7 +432,7 @@ mod tests {
         let n = 8_i64;
         let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
         let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
-        let (s, z) = m.forward_trunk(&s_in, Some(0)).unwrap();
+        let (s, z) = m.forward_trunk(&s_in, Some(0), None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -456,7 +463,7 @@ mod tests {
             sym_id: &sym_id,
             cyclic_period: &cyclic_period,
         };
-        let (s, z) = m.forward_trunk_with_rel_pos(&s_in, &rel, Some(0)).unwrap();
+        let (s, z) = m.forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -498,6 +505,7 @@ mod tests {
                 Some(&type_bonds),
                 None,
                 Some(0),
+                None,
             )
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
@@ -524,7 +532,7 @@ mod tests {
         );
         let del = Tensor::randn(&[b, n], (tch::Kind::Float, device));
         let s_inputs = m.forward_input_embedder(&a, &res, &prof, &del);
-        let (s, z) = m.forward_trunk(&s_inputs, Some(0)).unwrap();
+        let (s, z) = m.forward_trunk(&s_inputs, Some(0), None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -565,7 +573,15 @@ mod tests {
             contact_threshold: &ct,
         };
         let (s, z) = m
-            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0))
+            .forward_trunk_with_z_init_terms(
+                &s_in,
+                &rel,
+                None,
+                None,
+                Some(&contact),
+                Some(0),
+                None,
+            )
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);

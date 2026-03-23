@@ -362,7 +362,7 @@ async fn try_model_spike(
         let n = 16_i64;
         let s_in = tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
         let (s_out, z_out) = model
-            .forward_trunk(&s_in, Some(recycling_steps))
+            .forward_trunk(&s_in, Some(recycling_steps), None)
             .map_err(|e| anyhow::anyhow!("forward_trunk spike: {e}"))?;
         let s_sz = s_out.size();
         let z_sz = z_out.size();
@@ -390,7 +390,15 @@ async fn try_model_spike(
             cyclic_period: &cyclic_period,
         };
         let (s_ps, z_ps) = model
-            .predict_step_trunk(&s_in, &rel, None, None, None, Some(recycling_steps))
+            .predict_step_trunk(
+                &s_in,
+                &rel,
+                None,
+                None,
+                None,
+                Some(recycling_steps),
+                None,
+            )
             .map_err(|e| anyhow::anyhow!("predict_step_trunk spike: {e}"))?;
         tracing::info!(
             s_predict = ?s_ps.size(),

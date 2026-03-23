@@ -35,8 +35,8 @@ pub mod model;
 #[cfg(feature = "tch-backend")]
 pub use boltz2::{
     AtomEncoderPlaceholder, Boltz2Model, ContactConditioning, ContactFeatures, InputEmbedder,
-    MsaModule, RelPosFeatures, RelativePositionEncoder, TemplateModule, BOLTZ_MSA_PROFILE_IN,
-    BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
+    MsaFeatures, MsaModule, RelPosFeatures, RelativePositionEncoder, TemplateModule,
+    BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{

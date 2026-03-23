@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Run `cargo` with repo .venv on PATH (so torch-sys sees `import torch`).
+# Fixes: "no cxx11 abi returned by python" / ModuleNotFoundError: torch when you
+# run plain `cargo` without `source .venv/bin/activate`.
+#
+# Usage (from repo root):
+#   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
+#
+# Requires: bash scripts/bootstrap_dev_venv.sh (once)
+
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$SCRIPT_DIR/with_dev_venv.sh" cargo "$@"

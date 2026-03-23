@@ -22,3 +22,7 @@ safetensors.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+
+[[test]]
+name = "msa_module_golden"
+required-features = ["tch-backend"]
