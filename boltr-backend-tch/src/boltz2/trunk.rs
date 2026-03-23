@@ -13,7 +13,7 @@ use tch::{Device, Tensor};
 
 use crate::layers::PairformerModule;
 
-use super::msa_module::MsaModule;
+use super::msa_module::{MsaFeatures, MsaModule};
 use super::template_module::TemplateModule;
 
 /// TrunkV2 - Main trunk that owns PairformerModule
@@ -45,7 +45,7 @@ pub struct TrunkV2 {
     // Owned PairformerModule
     pairformer: PairformerModule,
 
-    /// Pre-pairformer MSA path (stub until full `MSAModule` port).
+    /// Pre-pairformer MSA path (`msa_module` in Lightning).
     msa: MsaModule,
     /// Template bias on `z` (stub until `TemplateV2Module` port).
     template: TemplateModule,
@@ -162,6 +162,20 @@ impl TrunkV2 {
             device,
         );
 
+        let msa = MsaModule::new(
+            root.sub("msa_module"),
+            token_s,
+            token_z,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            device,
+        );
+
         Self {
             token_s,
             token_z,
@@ -173,7 +187,7 @@ impl TrunkV2 {
             s_recycle,
             z_recycle,
             pairformer,
-            msa: MsaModule,
+            msa,
             template: TemplateModule,
             device,
         }
@@ -277,6 +291,7 @@ impl TrunkV2 {
         &self,
         s_inputs: &Tensor,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> anyhow::Result<(Tensor, Tensor)> {
         let recycling_steps = recycling_steps.unwrap_or(0);
         let batch_size = s_inputs.size()[0];
@@ -306,7 +321,9 @@ impl TrunkV2 {
 
             s = s_recycled;
             z = z_recycled;
-            z = self.msa.forward_trunk_step(&z, &s);
+            z = self
+                .msa
+                .forward_trunk_step(&z, &s, msa_feats, false, None, false);
             z = self.template.forward_trunk_step(&z);
 
             // Run owned pairformer module
@@ -326,6 +343,7 @@ impl TrunkV2 {
         s_init: &Tensor,
         z_init: &Tensor,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> anyhow::Result<(Tensor, Tensor)> {
         let recycling_steps = recycling_steps.unwrap_or(0);
         let batch_size = s_init.size()[0];
@@ -347,7 +365,9 @@ impl TrunkV2 {
             let (s_recycled, z_recycled) = self.apply_recycling(s_init, z_init, &s, &z);
             s = s_recycled;
             z = z_recycled;
-            z = self.msa.forward_trunk_step(&z, &s);
+            z = self
+                .msa
+                .forward_trunk_step(&z, &s, msa_feats, false, None, false);
             z = self.template.forward_trunk_step(&z);
             let (s_new, z_new) = self.forward_pairformer(&s, &z, &pair_mask, &pair_mask);
             s = s_new;
@@ -486,7 +506,7 @@ mod tests {
             (tch::Kind::Float, device),
         );
 
-        let (s_out, z_out) = trunk.forward(&s_inputs, Some(1)).unwrap();
+        let (s_out, z_out) = trunk.forward(&s_inputs, Some(1), None).unwrap();
 
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(

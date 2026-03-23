@@ -33,7 +33,6 @@ pub struct PairformerNoSeqLayer {
     tri_att_start: TriangleAttention,
     tri_att_end: TriangleAttention,
     transition_z: Transition,
-    device: Device,
 }
 
 impl PairformerNoSeqLayer {
@@ -86,7 +85,6 @@ impl PairformerNoSeqLayer {
             tri_att_start,
             tri_att_end,
             transition_z,
-            device,
         }
     }
 

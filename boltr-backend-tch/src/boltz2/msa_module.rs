@@ -130,7 +130,6 @@ pub struct MsaModule {
     s_proj: tch::nn::Linear,
     msa_proj: tch::nn::Linear,
     layers: Vec<MsaLayerBlock>,
-    device: Device,
 }
 
 impl MsaModule {
@@ -200,7 +199,6 @@ impl MsaModule {
             s_proj,
             msa_proj,
             layers,
-            device,
         }
     }
 
@@ -251,10 +249,6 @@ impl MsaModule {
             m = mn;
         }
         z
-    }
-
-    pub fn device(&self) -> Device {
-        self.device
     }
 }
 
@@ -307,7 +301,7 @@ mod tests {
 
         let out = m.forward_trunk_step(&z, &emb, Some(&feats), false, None, false);
         assert_eq!(out.size(), vec![b, n, n, token_z]);
-        assert!(!out.isnan().any().into_scalar::<i64>().unwrap_or(1) != 0);
+        let _ = out.mean_dim(&[0, 1, 2, 3], false, Kind::Float);
     }
 
     #[test]
@@ -331,6 +325,6 @@ mod tests {
         let z = Tensor::ones(&[1, 3, 3, 16], (Kind::Float, device));
         let s = Tensor::zeros(&[1, 3, 32], (Kind::Float, device));
         let out = m.forward_trunk_step(&z, &s, None, false, None, false);
-        assert!(out.equal(&z).into_scalar::<i64>().unwrap_or(0) != 0);
+        assert!(out.eq_tensor(&z).all().into_scalar::<i64>() != 0);
     }
 }

@@ -12,6 +12,7 @@ use tch::{Device, Kind, Tensor};
 
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
 use super::input_embedder::InputEmbedder;
+use super::msa_module::MsaFeatures;
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
 use super::trunk::TrunkV2;
 use crate::boltz_hparams::Boltz2Hparams;
@@ -288,8 +289,9 @@ impl Boltz2Model {
         &self,
         s_inputs: &Tensor,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
-        self.trunk.forward(s_inputs, recycling_steps)
+        self.trunk.forward(s_inputs, recycling_steps, msa_feats)
     }
 
     /// Relative position bias `[B, N, N, token_z]` from tokenizer/featurizer index tensors.
@@ -303,8 +305,17 @@ impl Boltz2Model {
         s_inputs: &Tensor,
         rel: &RelPosFeatures<'_>,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
-        self.forward_trunk_with_z_init_terms(s_inputs, rel, None, None, None, recycling_steps)
+        self.forward_trunk_with_z_init_terms(
+            s_inputs,
+            rel,
+            None,
+            None,
+            None,
+            recycling_steps,
+            msa_feats,
+        )
     }
 
     /// Full z-init slice matching Python: pair + `rel_pos` + `token_bonds` + `contact_conditioning`.

@@ -22,7 +22,7 @@ pub use input_embedder::{
     AtomEncoderPlaceholder, InputEmbedder, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
 };
 pub use model::{Boltz2Model, BOND_TYPE_EMBEDDING_NUM};
-pub use msa_module::MsaModule;
+pub use msa_module::{MsaFeatures, MsaModule};
 pub use relative_position::{RelPosFeatures, RelativePositionEncoder};
 pub use template_module::TemplateModule;
 pub use trunk::TrunkV2;
