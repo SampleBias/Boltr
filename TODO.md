@@ -78,7 +78,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2025-03-22 | **Pairformer stack (§5.5)** in `boltr-backend-tch` | Full layer implementations: `AttentionPairBiasV2`, triangle mult/attn (fallback path), `Transition`, `OuterProductMean`, `PairformerLayer`, `PairformerModule`. See [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md). **Unit tests** exist behind `--features tch-backend` + LibTorch. |
 | 2025-03-22 | **`PairformerModule` owned by `TrunkV2`** | [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs): `initialize`, recycling projections + norms, `forward_pairformer`, recycling loop calling pairformer. Submodule constructors use **`tch::nn::Path`** (`vs.root().sub("…")`) — **no** `Path::fork()` (not in tch 0.16). |
 | 2025-03-22 | **`Boltz2Model` wraps `TrunkV2`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): single `VarStore`, `forward_trunk(s_inputs, recycling_steps, msa_feats)`, `forward_s_init`. VarStore names **`pairformer_module.layers.{i}.…`** to match Lightning (was `pairformer` / `layers_{i}`). |
-| | **Still open** | **`Boltz2Model` / full `predict_step`** does not call this trunk yet. **MSA / templates / embedder** not hooked into `TrunkV2::forward`. **§5.1** checkpoint key map + **golden-tensor parity** for pairformer block vs Python still **pending**. |
+| | **Still open (snapshot)** | **`Boltz2Model`** exposes **`forward_trunk`**, **`predict_step_trunk`**, and z-init helpers — **not** a full end-to-end **`predict_step`** (§5.10: diffusion / confidence / writers). **`MsaModule`** + optional **`MsaFeatures`** are **wired** on **`TrunkV2`** (§5.4). **`TemplateModule`** is a **no-op stub** (§5.3). **`InputEmbedder`** remains **partial** (§5.2). **§5.1** full VarStore key audit + **golden-tensor** parity (pairformer / MSA; ignored tests until exports run) **pending**. |
 | 2026-03-23 | **`RelativePositionEncoder` + `z_init` path** | [boltz2/relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) mirrors `encodersv2.py` (incl. optional cyclic). `TrunkV2::forward_from_init`, `Boltz2Model::forward_trunk_with_rel_pos`. **`rel_pos` on model root** for `load_partial` (`rel_pos.linear_layer.weight`). Defaults: `fix_sym_check=false`, `cyclic_pos_enc=false` (match typical Boltz2). |
 | 2026-03-23 | **`token_bonds` / `token_bonds_type`** | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): `token_bonds` linear + optional `Embedding(7, token_z)` via `Boltz2Model::with_options_bonds(..., bond_type_feature)`. `forward_token_bonds_bias`, `forward_trunk_with_z_init_terms`. |
 | 2026-03-23 | **`ContactConditioning`** | [boltz2/contact_conditioning.rs](boltr-backend-tch/src/boltz2/contact_conditioning.rs): `FourierEmbedding` + encoder + `encoding_unspecified` / `encoding_unselected`; `ContactFeatures`, `forward_contact_conditioning`, wired into `forward_trunk_with_z_init_terms` (optional; `None` → zero bias). Cutoffs **4 / 20** Å like `Boltz2`. |
@@ -95,6 +95,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **`StructureV2` preprocess `.npz` I/O** | [boltr-io/src/structure_v2_npz.rs](boltr-io/src/structure_v2_npz.rs): `read_structure_v2_npz_*`, `write_structure_v2_npz_*` (aligned write; read supports packed/aligned record sizes). CLI: `boltr tokens-to-npz -i structure.npz`. **Golden:** [boltr-io/tests/fixtures/structure_v2_numpy_packed_ala.npz](boltr-io/tests/fixtures/structure_v2_numpy_packed_ala.npz) (NumPy packed dtypes + non-empty `interfaces` + 3-row `ensemble`); regen [`scripts/gen_structure_v2_numpy_golden.py`](scripts/gen_structure_v2_numpy_golden.py). **Note:** optional `pocket` key from Boltz `asdict` not read yet. |
 | 2026-03-23 | **Phase-1 collate golden + plan wiring** | [boltr-io/tests/fixtures/collate_golden/](boltr-io/tests/fixtures/collate_golden/) `manifest.json` + `trunk_smoke_collate.safetensors` (regen `cargo run -p boltr-io --bin write_collate_golden`). [boltr-io/src/collate_golden.rs](boltr-io/src/collate_golden.rs), [boltr-io/src/featurizer/](boltr-io/src/featurizer/) token keys + ALA smoke. **Backend:** `Boltz2Model::load_from_safetensors_require_all_vars` / `predict_step_trunk`, [boltr-backend-tch/src/boltz_hparams.rs](boltr-backend-tch/src/boltz_hparams.rs), MSA/template **stubs** in trunk loop ([msa_module.rs](boltr-backend-tch/src/boltz2/msa_module.rs), [template_module.rs](boltr-backend-tch/src/boltz2/template_module.rs)). Scripts: [`dump_collate_golden.py`](scripts/dump_collate_golden.py), [`export_hparams_from_ckpt.py`](scripts/export_hparams_from_ckpt.py), [`export_pairformer_golden.py`](scripts/export_pairformer_golden.py) (stub). Pairformer numeric golden: ignored test [boltr-backend-tch/tests/pairformer_golden.rs](boltr-backend-tch/tests/pairformer_golden.rs). |
 | 2026-03-23 | **`MSAModule` (§5.4)** | Real `msa_module` stack (`PairWeightedAveraging`, Python-aligned `OuterProductMeanMsa`, `PairformerNoSeqLayer`), `MsaFeatures` plumbed through `TrunkV2` / `Boltz2Model`. Optional `None` preserves prior no-op MSA behavior. [`export_msa_module_golden.py`](scripts/export_msa_module_golden.py) + ignored [tests/msa_module_golden.rs](boltr-backend-tch/tests/msa_module_golden.rs). |
+| 2026-03-23 | **`boltr-backend-tch` builds on tch 0.16** | API alignment: `layer_norm` + `LayerNormConfig`, `g_*` vs fallible `f_*`, `sum_dim_intlist` `&[i64][..]`, tensor move fixes, [`tch_compat.rs`](boltr-backend-tch/src/tch_compat.rs) `layer_norm_1d`. |
 
 ---
 
@@ -102,7 +103,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Details |
 |--------|------|---------|
-| [x] | LibTorch build matrix | Document CPU vs CUDA; `LIBTORCH` / `LIBTORCH_USE_PYTORCH` ([DEVELOPMENT.md](DEVELOPMENT.md)). |
+| [x] | LibTorch build matrix | Document CPU vs CUDA; `LIBTORCH` / `LIBTORCH_USE_PYTORCH` ([DEVELOPMENT.md](DEVELOPMENT.md)). **tch 0.16:** repo `.venv` via [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh) (Python **3.10–3.12**, **`torch==2.3.0`**, `setuptools`); run Cargo through [`scripts/cargo-tch`](scripts/cargo-tch) or [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh); diagnostics [`scripts/check_tch_prereqs.sh`](scripts/check_tch_prereqs.sh). Arch: **`python312`** from **AUR** if needed (see DEVELOPMENT.md). |
 | [x] | CLI device flags | `--device`, `BOLTR_DEVICE`; CUDA availability check in backend. |
 | [x] | Default feature policy | **Resolved for now:** `default = []` on `boltr-cli` so `cargo test` works without LibTorch; document `--features tch` in [README.md](README.md) / [DEVELOPMENT.md](DEVELOPMENT.md). Revisit optional `full` alias if needed. |
 | [ ] | Optional CUDA CI job | Nightly or manual workflow with CUDA LibTorch smoke test (single matmul or `s_init` forward). |
@@ -203,13 +204,13 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 | [~] | `RelativePositionEncoder` | `modules/encodersv2.py` | [boltz2/relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — forward + `forward_trunk_with_rel_pos`; golden parity **pending** |
 | [~] | `s_init`, `z_init_*`, bonds, contact conditioning | `trunkv2.py` | [boltz2/model.rs](boltr-backend-tch/src/boltz2/model.rs): **`z_init`** = pair + **`rel_pos`** + **`token_bonds`** (+ optional type) + **`contact_conditioning`**; golden parity **pending** |
 | [x] | LayerNorm / recycling projections | `trunkv2.py` | [boltz2/trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs): `s_norm` / `z_norm`, `s_recycle` / `z_recycle` (gating init zeros) |
-| [~] | **Wire `PairformerModule` into trunk** | `trunkv2.py` | `TrunkV2` **owns** `PairformerModule` and runs it in `forward` / `forward_pairformer`. **`MsaModule` + `MsaFeatures`** optional on `forward` / `forward_from_init` / `Boltz2Model` trunk APIs (`None` → identity on `z`). **Still missing:** templates (§5.3), full embedder → trunk from IO, **§5.1** checkpoint key audit. |
+| [~] | **Wire `PairformerModule` into trunk** | `trunkv2.py` | `TrunkV2` **owns** `PairformerModule` and runs it in `forward` / `forward_pairformer`. **`MsaModule` + optional `MsaFeatures`** on `forward` / `forward_from_init` / `Boltz2Model` trunk APIs (`None` → skip MSA path). **`TemplateModule`** present but **stub** (no template bias yet; §5.3). **Still missing:** real template stack, full embedder → trunk from IO, **§5.1** checkpoint key audit. |
 
 ### 5.3 Templates
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | `TemplateV2Module` / `TemplateModule` | `trunkv2.py`, template args | `boltz2/template.rs`; gated by YAML templates. |
+| [~] | `TemplateV2Module` / `TemplateModule` | `trunkv2.py`, template args | [boltz2/template_module.rs](boltr-backend-tch/src/boltz2/template_module.rs) — **stub** (`forward_trunk_step` returns `z` unchanged); wired in `TrunkV2`. **TBD:** real template pairformer / bias + YAML gating. |
 
 ### 5.4 MSA module
 
@@ -268,7 +269,7 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | `predict_step` / inference path | `boltz2.py` | Single entry that runs recycling, trunk, diffusion sampling, confidence, optional affinity. |
+| [ ] | `predict_step` / inference path | `boltz2.py` | Single entry that runs recycling, trunk, diffusion sampling, confidence, optional affinity. **Partial today:** [`Boltz2Model::predict_step_trunk`](boltr-backend-tch/src/boltz2/model.rs) (recycling + trunk incl. pairformer + optional MSA; template stub). |
 | [ ] | Recycling loop | `boltz2.py` | Match step counts from `predict_args`. |
 
 **Acceptance:** End-to-end: collated batch → coordinates + confidence tensors → writer output matches Python on a **small** regression complex.
@@ -315,7 +316,7 @@ Do **not** delete `boltz-reference/` chunks until Rust replaces them with tests.
 These can proceed **in parallel** once interfaces are agreed (tensor names/shapes in `docs/TENSOR_CONTRACT.md`):
 
 1. **Featurizer team:** §4.3–4.5 (blocked only on §4.1–4.2 for parser outputs).
-2. **Trunk integration team:** §5.2 (embedder + **§5.4 MSA** + §5.3 templates into `TrunkV2::forward`; §5.1 VarStore key map). **Pairformer ↔ trunk slice is in place; data path + weights are the bottleneck.**
+2. **Trunk integration team:** §5.2 (embedder + §5.3 **real** `TemplateV2Module` to replace stub; §5.1 VarStore key map). **Pairformer + optional MSA path are on `TrunkV2`;** templates + IO→embedder→trunk + goldens are the main gaps.**
 3. **Diffusion team:** §5.6 (blocked on trunk output tensors).
 4. **Writers team:** §4.6 (can start from Python dumps of expected files).
 5. **Affinity team:** §5.8 (blocked on affinity featurizer path).
@@ -343,4 +344,4 @@ These can proceed **in parallel** once interfaces are agreed (tensor names/shape
 
 ---
 
-*Last updated: 2026-03-23 — `MSAModule` implemented and wired (optional `MsaFeatures`); templates + full predict + §5.1 key audit still open.*
+*Last updated: 2026-03-23 — `MSAModule` implemented and wired (optional `MsaFeatures`); `Boltz2Model` trunk / `predict_step_trunk` paths exist; **tch 0.16** build/docs (`bootstrap_dev_venv`, `cargo-tch`, `f_*`→`g_*` API fixes). Still open: template module (stub), full `predict_step`, §5.1 key audit, golden parity (ignored tests).*
