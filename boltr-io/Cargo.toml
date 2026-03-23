@@ -30,3 +30,7 @@ path = "src/bin/msa_npz_golden.rs"
 [[bin]]
 name = "write_collate_golden"
 path = "src/bin/write_collate_golden.rs"
+
+[[bin]]
+name = "write_token_features_ala_golden"
+path = "src/bin/write_token_features_ala_golden.rs"

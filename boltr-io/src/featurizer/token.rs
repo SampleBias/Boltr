@@ -1,7 +1,7 @@
 //! Token-feature slice toward Python `process_token_features`.
 //!
-//! Full tensor construction (one-hot `res_type`, bond matrices, contact maps) is **TBD**; this
-//! module anchors the contract via key names and a tokenizer smoke path.
+//! Tensor construction lives in [`super::process_token_features`]; this module anchors the
+//! contract via key names and a tokenizer smoke path. Golden tests: `token_features_golden`.
 
 use crate::fixtures::structure_v2_single_ala;
 use crate::tokenize::boltz2::{tokenize_structure, TokenData};

@@ -28,8 +28,9 @@ Use a **golden export** from Python (pick one small input, dump `collate` output
 |----------|----------|
 | Key manifest (names, ranks, nominal shapes) | [`boltr-io/tests/fixtures/collate_golden/manifest.json`](../boltr-io/tests/fixtures/collate_golden/manifest.json) |
 | Minimal collated tensors for trunk smoke (`s_inputs`, MSA block, template dummies) | [`boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors`](../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) |
+| ALA `process_token_features` golden (per-example + `B=1` collated) | [`token_features_ala_golden.safetensors`](../boltr-io/tests/fixtures/collate_golden/token_features_ala_golden.safetensors), [`token_features_ala_collated_golden.safetensors`](../boltr-io/tests/fixtures/collate_golden/token_features_ala_collated_golden.safetensors) — regenerate: `cargo run -p boltr-io --bin write_token_features_ala_golden`; Python: [`scripts/dump_token_features_ala_golden.py`](../scripts/dump_token_features_ala_golden.py) with `BOLTZ_SRC`. |
 
-Regenerate the safetensors file: `cargo run -p boltr-io --bin write_collate_golden`.  
+Regenerate trunk smoke safetensors: `cargo run -p boltr-io --bin write_collate_golden`.  
 Python script: [`scripts/dump_collate_golden.py`](../scripts/dump_collate_golden.py).
 
 ## Checkpoint keys

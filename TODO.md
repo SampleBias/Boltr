@@ -150,7 +150,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [~] | Constants / enums | `data/const.py` | **Core tables ported:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs), [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs), [boltr-io/src/vdw_radii.rs](boltr-io/src/vdw_radii.rs) (`VDW_RADII`, `vdw_radius`), [boltr-io/src/ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs) (`is_ligand_excluded`), template `MIN_COVERAGE_*`, [boltr-io/src/ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs) + [boltr-io/data/ambiguous_atoms.json](boltr-io/data/ambiguous_atoms.json). **Still TBD:** other large `const.py` maps. |
-| [ ] | `process_token_features` | `feature/featurizerv2.py` | Token-level tensors. |
+| [~] | `process_token_features` | `feature/featurizerv2.py` | [boltr-io/src/featurizer/process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs): `process_token_features`, `TokenFeatureTensors` (inference-style). Golden: [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs) vs `token_features_ala_golden.safetensors` + collated `B=1`; regen `cargo run -p boltr-io --bin write_token_features_ala_golden` / [scripts/dump_token_features_ala_golden.py](scripts/dump_token_features_ala_golden.py) with `BOLTZ_SRC`. |
 | [ ] | `process_atom_features` | same | Atom-level tensors, distograms, windows. |
 | [ ] | `process_msa_features` | same | MSA embedding path; affinity variant (`affinity=True`). |
 | [ ] | `process_template_features` | same + dummy templates | Real + dummy template tensors. |

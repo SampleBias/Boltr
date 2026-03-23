@@ -11,10 +11,10 @@ use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore
 use tch::{Device, Kind, Tensor};
 
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
-use crate::boltz_hparams::Boltz2Hparams;
 use super::input_embedder::InputEmbedder;
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
 use super::trunk::TrunkV2;
+use crate::boltz_hparams::Boltz2Hparams;
 use crate::checkpoint::load_tensor_from_safetensors;
 
 /// `len(const.bond_types) + 1` in Boltz (`boltz-reference/.../const.py`).

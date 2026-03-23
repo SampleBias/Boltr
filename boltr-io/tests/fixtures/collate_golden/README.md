@@ -10,6 +10,9 @@ This directory holds **machine-readable** artifacts for the Boltz2 inference bat
 |------|---------|
 | `manifest.json` | Authoritative **key names** and notes for `process_token_features`, MSA, dummy templates, and the merged `process()` return. |
 | `trunk_smoke_collate.safetensors` | Minimal **single-example** tensors (`batch=1`) for trunk smoke tests: `s_inputs`, `token_pad_mask`, MSA-related keys, template dummy keys. Regenerate with [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py). |
+| `ala_structure_v2.npz` | Single-chain ALA `StructureV2` matching Rust [`fixtures::structure_v2_single_ala`](../../src/fixtures.rs). Written by `write_token_features_ala_golden`. |
+| `token_features_ala_golden.safetensors` | Full **`process_token_features`** dict for that structure (no leading batch axis). Rust golden + tests: `cargo run -p boltr-io --bin write_token_features_ala_golden`. |
+| `token_features_ala_collated_golden.safetensors` | Same tensors with **`B=1`** prepended on every key (collate-style). |
 
 ## Regeneration
 
@@ -26,7 +29,17 @@ pip install torch safetensors
 python3 scripts/dump_collate_golden.py
 ```
 
-Optional: with the full `boltz` package installed, extend the script to dump a real `collate()` dict from `Boltz2InferenceDataModule` and merge into this directory.
+**Token features (Boltz Python, authoritative):** with a full [jwohlwend/boltz](https://github.com/jwohlwend/boltz) checkout and `BOLTZ_SRC` set:
+
+```bash
+cargo run -p boltr-io --bin write_token_features_ala_golden   # refresh npz + Rust-derived safetensors
+pip install torch safetensors numpy
+python3 scripts/dump_token_features_ala_golden.py
+```
+
+CI compares the checked-in safetensors to live Rust `process_token_features`; after regenerating from Python, run `cargo test -p boltr-io --lib token_features_ala` and fix any Rust drift.
+
+Optional: extend [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py) to dump a full merged `collate()` dict from `Boltz2InferenceDataModule`.
 
 ## Reference
 

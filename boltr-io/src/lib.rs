@@ -45,7 +45,10 @@ pub use boltz_const::{
 };
 pub use collate_golden::{trunk_smoke_collate_shapes, trunk_smoke_collate_shapes_from_path};
 pub use config::BoltzInput;
-pub use featurizer::{ala_tokenized_smoke, token_feature_key_names};
+pub use featurizer::{
+    ala_tokenized_smoke, process_token_features, token_feature_key_names, TokenFeatureTensors,
+    CONTACT_CONDITIONING_NUM_CLASSES,
+};
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};
 pub use pad::{
