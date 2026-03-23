@@ -11,6 +11,7 @@ use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::Tensor;
 
 /// `len(const.tokens)` in Boltz (`boltz-reference/src/boltz/data/const.py`).
+/// Must match `boltr_io::boltz_const::NUM_TOKENS` / Boltz `const.num_tokens`.
 pub const BOLTZ_NUM_TOKENS: i64 = 33;
 
 /// `num_tokens + 1` for `torch.cat([profile, deletion_mean.unsqueeze(-1)], dim=-1)`.

@@ -8,6 +8,7 @@
 // - Output formatting
 
 pub mod a3m;
+pub mod boltz_const;
 pub mod config;
 pub mod download;
 pub mod format;
@@ -17,6 +18,10 @@ pub mod msa_npz;
 pub mod parser;
 
 pub use a3m::{parse_a3m_path, parse_a3m_str, A3mMsa, A3mSequenceMeta};
+pub use boltz_const::{
+    chain_type_id, dna_letter_to_token_id, prot_letter_to_token_id, rna_letter_to_token_id, token_id,
+    token_name, unk_token_id, CHAIN_TYPES, NUM_TOKENS, TOKENS,
+};
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};
 pub use config::BoltzInput;

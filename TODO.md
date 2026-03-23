@@ -84,6 +84,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **`ContactConditioning`** | [boltz2/contact_conditioning.rs](boltr-backend-tch/src/boltz2/contact_conditioning.rs): `FourierEmbedding` + encoder + `encoding_unspecified` / `encoding_unselected`; `ContactFeatures`, `forward_contact_conditioning`, wired into `forward_trunk_with_z_init_terms` (optional; `None` → zero bias). Cutoffs **4 / 20** Å like `Boltz2`. |
 | 2026-03-23 | **`InputEmbedder` (partial)** | [boltz2/input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs): `res_type_encoding` + `msa_profile_encoding` under `input_embedder/` (`BOLTZ_NUM_TOKENS=33`). `forward_with_atom_repr` / `Boltz2Model::forward_input_embedder` — caller supplies atom-attn **`a`**. **Next:** `AtomEncoder` + `AtomAttentionEncoder`, optional conditioning flags, golden parity. |
 | 2026-03-23 | **A3M + MSA npz (`boltr-io`)** | [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) (A3M/CSV parse). [boltr-io/src/msa_npz.rs](boltr-io/src/msa_npz.rs): `write_msa_npz_compressed` / `read_msa_npz_*`. **Golden:** [`scripts/verify_msa_npz_golden.py`](scripts/verify_msa_npz_golden.py) + [`boltr-io/src/bin/msa_npz_golden.rs`](boltr-io/src/bin/msa_npz_golden.rs); CI [`.github/workflows/msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml). |
+| 2026-03-23 | **`boltz_const` (tokens / chains)** | [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs): `TOKENS`, `token_id`, `prot_letter_to_token_id`, DNA/RNA maps, `unk_token_id`, `CHAIN_TYPES`. [boltr-io/src/a3m.rs](boltr-io/src/a3m.rs) uses it for alignment rows. §4.4 atoms/bonds still open. |
 
 ---
 
@@ -139,7 +140,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | Constants / enums | `data/const.py` | Port ids, atom names, bond types, mol types used in features. |
+| [~] | Constants / enums | `data/const.py` | **Tokens + chains:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs) (`TOKENS`, `token_id`, protein/DNA/RNA letter maps, `unk_token_id`, `CHAIN_TYPES`). **Still TBD:** elements, chirality, atom tables, bond enums at scale. |
 | [ ] | `process_token_features` | `feature/featurizerv2.py` | Token-level tensors. |
 | [ ] | `process_atom_features` | same | Atom-level tensors, distograms, windows. |
 | [ ] | `process_msa_features` | same | MSA embedding path; affinity variant (`affinity=True`). |

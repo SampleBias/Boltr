@@ -10,6 +10,8 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use flate2::read::GzDecoder;
 
+use crate::boltz_const;
+
 /// Layout matches Boltz `MSASequence` dtype fields (indices into flat `residues` / `deletions`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct A3mSequenceMeta {
@@ -29,80 +31,10 @@ pub struct A3mMsa {
     pub sequences: Vec<A3mSequenceMeta>,
 }
 
-/// Boltz `const.tokens` order — must stay in sync with `boltz-reference/.../const.py`.
-fn token_id_for_name(name: &str) -> Option<i32> {
-    let i: i32 = match name {
-        "<pad>" => 0,
-        "-" => 1,
-        "ALA" => 2,
-        "ARG" => 3,
-        "ASN" => 4,
-        "ASP" => 5,
-        "CYS" => 6,
-        "GLN" => 7,
-        "GLU" => 8,
-        "GLY" => 9,
-        "HIS" => 10,
-        "ILE" => 11,
-        "LEU" => 12,
-        "LYS" => 13,
-        "MET" => 14,
-        "PHE" => 15,
-        "PRO" => 16,
-        "SER" => 17,
-        "THR" => 18,
-        "TRP" => 19,
-        "TYR" => 20,
-        "VAL" => 21,
-        "UNK" => 22,
-        "A" => 23,
-        "G" => 24,
-        "C" => 25,
-        "U" => 26,
-        "N" => 27,
-        "DA" => 28,
-        "DG" => 29,
-        "DC" => 30,
-        "DT" => 31,
-        "DN" => 32,
-        _ => return None,
-    };
-    Some(i)
-}
-
-fn prot_letter_to_token_name(c: char) -> Result<&'static str> {
-    match c {
-        'A' => Ok("ALA"),
-        'R' => Ok("ARG"),
-        'N' => Ok("ASN"),
-        'D' => Ok("ASP"),
-        'C' => Ok("CYS"),
-        'E' => Ok("GLU"),
-        'Q' => Ok("GLN"),
-        'G' => Ok("GLY"),
-        'H' => Ok("HIS"),
-        'I' => Ok("ILE"),
-        'L' => Ok("LEU"),
-        'K' => Ok("LYS"),
-        'M' => Ok("MET"),
-        'F' => Ok("PHE"),
-        'P' => Ok("PRO"),
-        'S' => Ok("SER"),
-        'T' => Ok("THR"),
-        'W' => Ok("TRP"),
-        'Y' => Ok("TYR"),
-        'V' => Ok("VAL"),
-        'X' | 'J' | 'B' | 'Z' | 'O' => Ok("UNK"),
-        'U' => Ok("UNK"),
-        '-' => Ok("-"),
-        _ => Err(anyhow!("unknown A3M residue letter: {c:?}")),
-    }
-}
-
 fn residue_char_to_id(c: char) -> Result<i32> {
     let u = c.to_ascii_uppercase();
-    let name = prot_letter_to_token_name(u)?;
-    token_id_for_name(name).ok_or_else(|| anyhow!("internal: token {name}"))
+    boltz_const::prot_letter_to_token_id(u)
+        .ok_or_else(|| anyhow!("unknown A3M residue letter: {c:?}"))
 }
 
 /// Boltz A3M/CSV alignment row → flat residues + deletion pairs (shared by `parse_csv*`).
