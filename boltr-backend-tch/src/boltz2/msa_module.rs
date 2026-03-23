@@ -31,7 +31,6 @@ struct MsaLayerBlock {
     outer_product_mean: OuterProductMeanMsa,
     pairformer_layer: PairformerNoSeqLayer,
     msa_dropout: f64,
-    z_dropout: f64,
 }
 
 impl MsaLayerBlock {
@@ -83,7 +82,6 @@ impl MsaLayerBlock {
             outer_product_mean,
             pairformer_layer,
             msa_dropout,
-            z_dropout,
         }
     }
 
