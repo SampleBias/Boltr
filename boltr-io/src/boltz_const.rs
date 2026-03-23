@@ -232,6 +232,72 @@ pub const MAX_PAIRED_SEQS: usize = 8192;
 
 pub const CHUNK_SIZE_THRESHOLD: usize = 384;
 
+// --- Method conditioning (`const.py`; keys are lowercased in Python) ---
+
+/// Distinct embedding indices used for method type (`num_method_types` in Python).
+pub const NUM_METHOD_TYPES: usize = 12;
+
+#[must_use]
+pub fn method_type_id(method: &str) -> i32 {
+    match method.trim().to_ascii_lowercase().as_str() {
+        "md" => 0,
+        "x-ray diffraction" => 1,
+        "electron microscopy" => 2,
+        "solution nmr" => 3,
+        "solid-state nmr"
+        | "neutron diffraction"
+        | "electron crystallography"
+        | "fiber diffraction"
+        | "powder diffraction"
+        | "infrared spectroscopy"
+        | "fluorescence transfer"
+        | "epr"
+        | "theoretical model"
+        | "solution scattering"
+        | "other" => 4,
+        "afdb" => 5,
+        "boltz-1" => 6,
+        "future1" => 7,
+        "future2" => 8,
+        "future3" => 9,
+        "future4" => 10,
+        "future5" => 11,
+        _ => 4,
+    }
+}
+
+/// Half-open bins in Kelvin: `[265,280)`, `[280,295)`, `[295,310)`; else `"other"` index.
+pub const NUM_TEMP_BINS: usize = 4;
+
+#[must_use]
+pub fn temperature_bin_id(temp_k: f64) -> i32 {
+    if (265.0..280.0).contains(&temp_k) {
+        0
+    } else if (280.0..295.0).contains(&temp_k) {
+        1
+    } else if (295.0..310.0).contains(&temp_k) {
+        2
+    } else {
+        3
+    }
+}
+
+/// Half-open pH bins: `[0,6)`, `[6,8)`, `[8,14)`; else `"other"` index.
+pub const NUM_PH_BINS: usize = 4;
+
+#[must_use]
+pub fn ph_bin_id(ph: f64) -> i32 {
+    if (0.0..6.0).contains(&ph) {
+        0
+    } else if (6.0..8.0).contains(&ph) {
+        1
+    } else if (8.0..14.0).contains(&ph) {
+        2
+    } else {
+        3
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
