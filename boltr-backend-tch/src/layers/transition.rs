@@ -3,7 +3,7 @@
 //! Reference: boltz-reference/src/boltz/model/layers/transition.py
 
 use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
-use tch::{Kind, Device, Tensor};
+use tch::{Device, Kind, Tensor};
 
 /// Transition layer (two-layer MLP with SwiGLU activation)
 ///

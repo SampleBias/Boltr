@@ -4,39 +4,9 @@
 
 /// Same order as Python `boltz.data.const.tokens` (ids = index).
 pub const TOKENS: [&str; 33] = [
-    "<pad>",
-    "-",
-    "ALA",
-    "ARG",
-    "ASN",
-    "ASP",
-    "CYS",
-    "GLN",
-    "GLU",
-    "GLY",
-    "HIS",
-    "ILE",
-    "LEU",
-    "LYS",
-    "MET",
-    "PHE",
-    "PRO",
-    "SER",
-    "THR",
-    "TRP",
-    "TYR",
-    "VAL",
-    "UNK",
-    "A",
-    "G",
-    "C",
-    "U",
-    "N",
-    "DA",
-    "DG",
-    "DC",
-    "DT",
-    "DN",
+    "<pad>", "-", "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU",
+    "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL", "UNK", "A", "G", "C", "U", "N",
+    "DA", "DG", "DC", "DT", "DN",
 ];
 
 pub const NUM_TOKENS: usize = TOKENS.len();
@@ -188,22 +158,14 @@ pub fn hybridization_type_id(name: &str) -> Option<i32> {
 }
 
 pub const BOND_TYPES: [&str; 6] = [
-    "OTHER",
-    "SINGLE",
-    "DOUBLE",
-    "TRIPLE",
-    "AROMATIC",
-    "COVALENT",
+    "OTHER", "SINGLE", "DOUBLE", "TRIPLE", "AROMATIC", "COVALENT",
 ];
 
 pub const UNK_BOND_TYPE: &str = "OTHER";
 
 #[inline]
 pub fn bond_type_id(name: &str) -> Option<i32> {
-    BOND_TYPES
-        .iter()
-        .position(|&b| b == name)
-        .map(|i| i as i32)
+    BOND_TYPES.iter().position(|&b| b == name).map(|i| i as i32)
 }
 
 pub const ATOM_INTERFACE_CUTOFF: f64 = 5.0;

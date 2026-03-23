@@ -97,7 +97,11 @@ fn validate_msa_for_npz(msa: &A3mMsa) -> Result<()> {
         let re = s.res_end as i64;
         let ds = s.del_start as i64;
         let de = s.del_end as i64;
-        if rs < i32::MIN as i64 || re > i32::MAX as i64 || ds < i32::MIN as i64 || de > i32::MAX as i64 {
+        if rs < i32::MIN as i64
+            || re > i32::MAX as i64
+            || ds < i32::MIN as i64
+            || de > i32::MAX as i64
+        {
             bail!("sequence {i}: index range too large for i32 in npz");
         }
     }
@@ -201,8 +205,8 @@ fn parse_npy_1d_shape_and_payload(data: &[u8]) -> Result<(usize, &[u8])> {
         bail!("truncated NPY header");
     }
     let header_raw = &data[10..10 + hlen];
-    let header_str = std::str::from_utf8(header_raw)
-        .map_err(|_| anyhow!("NPY header is not UTF-8/latin1"))?;
+    let header_str =
+        std::str::from_utf8(header_raw).map_err(|_| anyhow!("NPY header is not UTF-8/latin1"))?;
     let shape_1d = parse_shape_1d(header_str)?;
     let payload_off = 10 + hlen;
     let payload = data
@@ -264,7 +268,11 @@ fn read_zip_npy<R: Read + Seek>(archive: &mut ZipArchive<R>, name: &str) -> Resu
     Ok(v)
 }
 
-fn decode_msa_from_npy_payloads(seq_npy: Vec<u8>, del_npy: Vec<u8>, res_npy: Vec<u8>) -> Result<A3mMsa> {
+fn decode_msa_from_npy_payloads(
+    seq_npy: Vec<u8>,
+    del_npy: Vec<u8>,
+    res_npy: Vec<u8>,
+) -> Result<A3mMsa> {
     let (n_seq, seq_payload) = parse_npy_1d_shape_and_payload(&seq_npy)?;
     let (n_del, del_payload) = parse_npy_1d_shape_and_payload(&del_npy)?;
     let (n_res, res_payload) = parse_npy_1d_shape_and_payload(&res_npy)?;

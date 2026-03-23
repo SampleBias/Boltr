@@ -20,8 +20,14 @@ pub struct FourierEmbedding {
 impl FourierEmbedding {
     pub fn new(path: Path<'_>, dim: i64) -> Self {
         let cfg = LinearConfig {
-            ws_init: Init::Randn { mean: 0., stdev: 1. },
-            bs_init: Some(Init::Randn { mean: 0., stdev: 1. }),
+            ws_init: Init::Randn {
+                mean: 0.,
+                stdev: 1.,
+            },
+            bs_init: Some(Init::Randn {
+                mean: 0.,
+                stdev: 1.,
+            }),
             bias: true,
         };
         let proj = linear(path.sub("proj"), 1, dim, cfg);
@@ -67,16 +73,8 @@ impl ContactConditioning {
             token_z,
             LinearConfig::default(),
         );
-        let encoding_unspecified = path.var(
-            "encoding_unspecified",
-            &[token_z],
-            Init::Const(0.),
-        );
-        let encoding_unselected = path.var(
-            "encoding_unselected",
-            &[token_z],
-            Init::Const(0.),
-        );
+        let encoding_unspecified = path.var("encoding_unspecified", &[token_z], Init::Const(0.));
+        let encoding_unselected = path.var("encoding_unselected", &[token_z], Init::Const(0.));
         Self {
             fourier_embedding,
             encoder,
@@ -95,9 +93,7 @@ impl ContactConditioning {
 
         let thresh = feats.contact_threshold;
         let denom = self.cutoff_max - self.cutoff_min;
-        let contact_threshold_normalized = thresh
-            .g_sub_scalar(self.cutoff_min)
-            .div_scalar(denom);
+        let contact_threshold_normalized = thresh.g_sub_scalar(self.cutoff_min).div_scalar(denom);
 
         let sz = contact_threshold_normalized.size();
         let flat = contact_threshold_normalized.flatten(0, 2);

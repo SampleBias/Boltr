@@ -11,6 +11,7 @@ use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore
 use tch::{Device, Kind, Tensor};
 
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
+use crate::boltz_hparams::Boltz2Hparams;
 use super::input_embedder::InputEmbedder;
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
 use super::trunk::TrunkV2;
@@ -38,6 +39,17 @@ pub struct Boltz2Model {
 }
 
 impl Boltz2Model {
+    /// Build from exported Lightning `hyper_parameters` JSON ([`Boltz2Hparams`]).
+    pub fn from_hparams_json(device: Device, json_bytes: &[u8]) -> Result<Self> {
+        let h = Boltz2Hparams::from_json_slice(json_bytes)?;
+        Ok(Self::with_options(
+            device,
+            h.resolved_token_s(),
+            h.resolved_token_z(),
+            h.resolved_num_pairformer_blocks(),
+        ))
+    }
+
     /// Build with default pairformer depth (`4` blocks) and `token_z = 128`.
     pub fn new(device: Device, token_s: i64) -> Self {
         Self::with_options(device, token_s, 128, None)
@@ -96,12 +108,8 @@ impl Boltz2Model {
                 EmbeddingConfig::default(),
             )
         });
-        let contact_conditioning = ContactConditioning::new(
-            root.sub("contact_conditioning"),
-            token_z,
-            4.0,
-            20.0,
-        );
+        let contact_conditioning =
+            ContactConditioning::new(root.sub("contact_conditioning"), token_z, 4.0, 20.0);
         let input_embedder = InputEmbedder::new(root.sub("input_embedder"), token_s);
         Self {
             device,
@@ -225,6 +233,49 @@ impl Boltz2Model {
             .map_err(|e| anyhow::anyhow!("VarStore::load_partial: {e}"))
     }
 
+    /// VarStore keys with no matching tensor name in the file (without loading).
+    pub fn var_store_keys_missing_in_safetensors(&self, path: &Path) -> Result<Vec<String>> {
+        crate::checkpoint::var_store_keys_missing_in_safetensors(path, &self.var_store)
+    }
+
+    /// Safetensors keys not used by this graph (e.g. diffusion heads in a full checkpoint).
+    pub fn safetensors_keys_unused_by_model(&self, path: &Path) -> Result<Vec<String>> {
+        crate::checkpoint::safetensor_names_not_in_var_store(path, &self.var_store)
+    }
+
+    /// [`load_partial_from_safetensors`] then fail if any model parameter was not found in the file.
+    pub fn load_from_safetensors_require_all_vars(&mut self, path: &Path) -> Result<()> {
+        let missing = self.load_partial_from_safetensors(path)?;
+        if !missing.is_empty() {
+            anyhow::bail!(
+                "safetensors missing {} VarStore keys (export/strip-prefix mismatch?): {:?}",
+                missing.len(),
+                missing
+            );
+        }
+        Ok(())
+    }
+
+    /// Load weights and optionally enforce a **fully consumed** checkpoint (no extra tensors).
+    pub fn load_from_safetensors_strict(
+        &mut self,
+        path: &Path,
+        reject_unused_file_keys: bool,
+    ) -> Result<()> {
+        self.load_from_safetensors_require_all_vars(path)?;
+        if reject_unused_file_keys {
+            let extra = self.safetensors_keys_unused_by_model(path)?;
+            if !extra.is_empty() {
+                anyhow::bail!(
+                    "safetensors contains {} keys not in this VarStore: {:?}",
+                    extra.len(),
+                    extra
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Same transform as Python `self.s_init(s_inputs)` on `[B, N, token_s]`.
     pub fn forward_s_init(&self, s: &Tensor) -> Tensor {
         self.trunk.apply_s_init(s)
@@ -253,14 +304,7 @@ impl Boltz2Model {
         rel: &RelPosFeatures<'_>,
         recycling_steps: Option<i64>,
     ) -> Result<(Tensor, Tensor)> {
-        self.forward_trunk_with_z_init_terms(
-            s_inputs,
-            rel,
-            None,
-            None,
-            None,
-            recycling_steps,
-        )
+        self.forward_trunk_with_z_init_terms(s_inputs, rel, None, None, None, recycling_steps)
     }
 
     /// Full z-init slice matching Python: pair + `rel_pos` + `token_bonds` + `contact_conditioning`.
@@ -280,13 +324,11 @@ impl Boltz2Model {
         let z_bonds = self.forward_token_bonds_bias(b, n, token_bonds, type_bonds)?;
         let z_contact = match contact {
             Some(c) => self.contact_conditioning.forward(c),
-            None => Tensor::zeros(
-                &[b, n, n, self.token_z],
-                (Kind::Float, self.device),
-            ),
+            None => Tensor::zeros(&[b, n, n, self.token_z], (Kind::Float, self.device)),
         };
         let z_init = z_pair + z_rel + z_bonds + z_contact;
-        self.trunk.forward_from_init(&s_init, &z_init, recycling_steps)
+        self.trunk
+            .forward_from_init(&s_init, &z_init, recycling_steps)
     }
 
     /// Full structure forward is not wired until diffusion + featurizer match Python.
@@ -295,12 +337,60 @@ impl Boltz2Model {
             "Boltz2 full structure forward not yet implemented; use forward_trunk(s_inputs, ...) with embedder outputs"
         )
     }
+
+    /// `predict_step`-shaped entry: **trunk only** (recycling + MSA/template stubs + pairformer).
+    /// Diffusion sampling and confidence heads are not called yet (§5.6–5.7).
+    pub fn predict_step_trunk(
+        &self,
+        s_inputs: &Tensor,
+        rel: &RelPosFeatures<'_>,
+        token_bonds: Option<&Tensor>,
+        type_bonds: Option<&Tensor>,
+        contact: Option<&ContactFeatures<'_>>,
+        recycling_steps: Option<i64>,
+    ) -> Result<(Tensor, Tensor)> {
+        self.forward_trunk_with_z_init_terms(
+            s_inputs,
+            rel,
+            token_bonds,
+            type_bonds,
+            contact,
+            recycling_steps,
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::boltz2::contact_conditioning::{ContactFeatures, CONTACT_CONDITIONING_CHANNELS};
+
+    #[test]
+    fn var_store_keys_missing_in_empty_safetensors() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let m = Boltz2Model::with_options(device, 64, 32, Some(1));
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("empty.safetensors");
+        // Valid empty safetensors file (matches safetensors crate `test_empty`).
+        const EMPTY: &[u8] = &[8, 0, 0, 0, 0, 0, 0, 0, 123, 125, 32, 32, 32, 32, 32, 32];
+        std::fs::write(&p, EMPTY).unwrap();
+        let missing = m.var_store_keys_missing_in_safetensors(&p).unwrap();
+        assert!(
+            missing.len() > 5,
+            "expected many unfilled keys, got {}",
+            missing.len()
+        );
+        let mut m2 = Boltz2Model::with_options(device, 64, 32, Some(1));
+        let err = m2
+            .load_from_safetensors_require_all_vars(&p)
+            .expect_err("strict load should fail");
+        let s = format!("{err:#}");
+        assert!(
+            s.contains("missing") || s.contains("VarStore"),
+            "unexpected error: {s}"
+        );
+    }
 
     #[test]
     fn s_init_linear_runs() {
@@ -463,14 +553,7 @@ mod tests {
             contact_threshold: &ct,
         };
         let (s, z) = m
-            .forward_trunk_with_z_init_terms(
-                &s_in,
-                &rel,
-                None,
-                None,
-                Some(&contact),
-                Some(0),
-            )
+            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0))
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
@@ -480,14 +563,14 @@ mod tests {
     fn safetensors_partial_load_roundtrip_var_store() {
         tch::maybe_init_cuda();
         let device = Device::Cpu;
-        let path = std::env::temp_dir().join(format!(
-            "boltr_vs_rt_{}.safetensors",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("boltr_vs_rt_{}.safetensors", std::process::id()));
         let _ = std::fs::remove_file(&path);
 
         let m = Boltz2Model::with_options(device, 64, 32, Some(1));
-        m.var_store().save(&path).expect("VarStore::save safetensors");
+        m.var_store()
+            .save(&path)
+            .expect("VarStore::save safetensors");
 
         let mut m2 = Boltz2Model::with_options(device, 64, 32, Some(1));
         let missing = m2

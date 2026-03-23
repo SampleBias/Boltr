@@ -6,9 +6,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use csv::StringRecord;
 
-use crate::a3m::{
-    msa_sequence_dedup_key, parse_alignment_sequence_line, A3mMsa, A3mSequenceMeta,
-};
+use crate::a3m::{msa_sequence_dedup_key, parse_alignment_sequence_line, A3mMsa, A3mSequenceMeta};
 
 fn validate_headers(headers: &StringRecord) -> Result<(usize, usize)> {
     let names: Vec<String> = headers.iter().map(String::from).collect();

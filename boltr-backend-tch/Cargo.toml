@@ -19,3 +19,6 @@ anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 safetensors.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -76,3 +76,15 @@ pub fn safetensor_names_not_in_var_store(path: &Path, vs: &VarStore) -> Result<V
     extra.sort();
     Ok(extra)
 }
+
+/// [`VarStore`] parameter names that have **no** tensor in the safetensors file (pre-load check).
+pub fn var_store_keys_missing_in_safetensors(path: &Path, vs: &VarStore) -> Result<Vec<String>> {
+    let file_keys: HashSet<String> = list_safetensor_names(path)?.into_iter().collect();
+    let mut missing: Vec<String> = vs
+        .variables()
+        .into_keys()
+        .filter(|k| !file_keys.contains(k))
+        .collect();
+    missing.sort();
+    Ok(missing)
+}

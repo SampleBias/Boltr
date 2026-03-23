@@ -66,18 +66,13 @@ impl RelativePositionEncoder {
         let token_index = rel.token_index;
         let sym_id = rel.sym_id;
 
-        let b_same_chain = asym_id
-            .unsqueeze(2)
-            .eq_tensor(&asym_id.unsqueeze(1));
+        let b_same_chain = asym_id.unsqueeze(2).eq_tensor(&asym_id.unsqueeze(1));
         let b_same_residue = residue_index
             .unsqueeze(2)
             .eq_tensor(&residue_index.unsqueeze(1));
-        let b_same_entity = entity_id
-            .unsqueeze(2)
-            .eq_tensor(&entity_id.unsqueeze(1));
+        let b_same_entity = entity_id.unsqueeze(2).eq_tensor(&entity_id.unsqueeze(1));
 
-        let mut d_residue =
-            residue_index.unsqueeze(2) - residue_index.unsqueeze(1);
+        let mut d_residue = residue_index.unsqueeze(2) - residue_index.unsqueeze(1);
 
         if self.cyclic_pos_enc {
             let z0 = Tensor::zeros_like(rel.cyclic_period);
@@ -98,8 +93,8 @@ impl RelativePositionEncoder {
         d_residue = d_residue.where_self(&b_same_chain, &off_chain);
         let a_rel_pos = d_residue.one_hot(r2 + 2);
 
-        let mut d_token = (token_index.unsqueeze(2) - token_index.unsqueeze(1) + self.r_max)
-            .clamp(0, r2);
+        let mut d_token =
+            (token_index.unsqueeze(2) - token_index.unsqueeze(1) + self.r_max).clamp(0, r2);
         let same_res = b_same_chain.bitwise_and_tensor(&b_same_residue);
         let off_tok = Tensor::full_like(&d_token, r2 + 1, (Kind::Int64, self.device));
         d_token = d_token.where_self(&same_res, &off_tok);
@@ -143,15 +138,8 @@ mod tests {
         let token_z = 64_i64;
 
         let vs = VarStore::new(device);
-        let enc = RelativePositionEncoder::new(
-            vs.root(),
-            token_z,
-            None,
-            None,
-            false,
-            false,
-            device,
-        );
+        let enc =
+            RelativePositionEncoder::new(vs.root(), token_z, None, None, false, false, device);
 
         let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
         let residue_index = Tensor::arange(n, (Kind::Int64, device))

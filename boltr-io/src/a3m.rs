@@ -165,7 +165,11 @@ mod tests {
     fn parses_simple_block_and_dedupes() {
         let raw = ">q\nACDEF\n>hit1\nACDEF\n>hit2\nAC-EK\n";
         let m = parse_a3m_str(raw, None).unwrap();
-        assert_eq!(m.sequences.len(), 2, "duplicate row dropped; query + AC-EK hit");
+        assert_eq!(
+            m.sequences.len(),
+            2,
+            "duplicate row dropped; query + AC-EK hit"
+        );
         // Gaps (`-`) are stored as token `-` (id 1), same as Python.
         assert_eq!(m.residues.len(), 10);
     }

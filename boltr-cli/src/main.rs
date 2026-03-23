@@ -70,13 +70,16 @@ enum Commands {
         #[arg(long)]
         max_seqs: Option<usize>,
     },
-    /// Tokenize a built-in demo `StructureV2` and write columnar token `.npz` ([`boltr_io::token_npz`])
+    /// Tokenize `StructureV2` and write columnar token `.npz` ([`boltr_io::token_npz`])
     TokensToNpz {
-        /// Demo structure: `ala` (single standard ALA, five atoms)
-        demo: String,
-        /// Output `.npz` path
+        /// Boltz preprocess `StructureV2` `.npz` (atoms/residues/chains/…); mutually exclusive with `DEMO`
+        #[arg(short = 'i', long = "structure-npz")]
+        structure_npz: Option<PathBuf>,
+        /// Output token `.npz` path
         #[arg(short, long)]
         output: PathBuf,
+        /// Demo structure when `--structure-npz` is omitted (`ala` = single standard ALA)
+        demo: Option<String>,
         /// If set, tokens on chains with this `asym_id` get `affinity_mask` (see `tokenize_structure`)
         #[arg(long)]
         affinity_asym_id: Option<i32>,
@@ -137,22 +140,37 @@ async fn main() -> Result<()> {
             run_msa_to_npz(&input, output.as_deref(), max_seqs)?;
         }
         Commands::TokensToNpz {
-            demo,
+            structure_npz,
             output,
+            demo,
             affinity_asym_id,
         } => {
-            run_tokens_to_npz(&demo, &output, affinity_asym_id)?;
+            run_tokens_to_npz(
+                structure_npz.as_deref(),
+                demo.as_deref(),
+                &output,
+                affinity_asym_id,
+            )?;
         }
     }
     Ok(())
 }
 
-fn run_tokens_to_npz(demo: &str, output: &Path, affinity_asym_id: Option<i32>) -> Result<()> {
-    let structure = match demo.to_ascii_lowercase().as_str() {
-        "ala" => boltr_io::structure_v2_single_ala(),
-        other => anyhow::bail!(
-            "unknown demo {other:?} (supported: ala). Structure-from-npz is not implemented yet."
-        ),
+fn run_tokens_to_npz(
+    structure_npz: Option<&Path>,
+    demo: Option<&str>,
+    output: &Path,
+    affinity_asym_id: Option<i32>,
+) -> Result<()> {
+    let structure = match (structure_npz, demo) {
+        (Some(path), None) => boltr_io::read_structure_v2_npz_path(path)
+            .with_context(|| format!("read StructureV2 npz {}", path.display()))?,
+        (None, Some(d)) => match d.to_ascii_lowercase().as_str() {
+            "ala" => boltr_io::structure_v2_single_ala(),
+            other => anyhow::bail!("unknown demo {other:?} (supported: ala)"),
+        },
+        (Some(_), Some(_)) => anyhow::bail!("pass either --structure-npz or DEMO, not both"),
+        (None, None) => anyhow::bail!("pass --structure-npz PATH or a DEMO (e.g. ala)"),
     };
     let (tokens, bonds) = boltr_io::tokenize_structure(&structure, affinity_asym_id);
     if let Some(parent) = output.parent() {
@@ -276,6 +294,7 @@ async fn try_model_spike(
 ) -> Result<()> {
     use boltr_backend_tch::{
         cuda_is_available, parse_device_spec, safetensor_names_not_in_var_store, Boltz2Model,
+        RelPosFeatures,
     };
 
     tch::maybe_init_cuda();
@@ -341,8 +360,7 @@ async fn try_model_spike(
         // Exercise full trunk + pairformer + recycling (embedder outputs not yet wired from IO).
         let b = 2_i64;
         let n = 16_i64;
-        let s_in =
-            tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let s_in = tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
         let (s_out, z_out) = model
             .forward_trunk(&s_in, Some(recycling_steps))
             .map_err(|e| anyhow::anyhow!("forward_trunk spike: {e}"))?;
@@ -353,6 +371,32 @@ async fn try_model_spike(
             ?z_sz,
             recycling_steps,
             "forward_trunk (pairformer stack) spike ok"
+        );
+
+        let asym_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let residue_index = tch::Tensor::arange(n, (tch::Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let cyclic_period = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let (s_ps, z_ps) = model
+            .predict_step_trunk(&s_in, &rel, None, None, None, Some(recycling_steps))
+            .map_err(|e| anyhow::anyhow!("predict_step_trunk spike: {e}"))?;
+        tracing::info!(
+            s_predict = ?s_ps.size(),
+            z_predict = ?z_ps.size(),
+            recycling_steps,
+            "predict_step_trunk (z_init + recycling + pairformer) spike ok"
         );
 
         let spike_path = out_dir.join("boltr_backend_spike_ok.txt");
@@ -366,11 +410,15 @@ async fn try_model_spike(
                 .to_string()
         };
         let msg = format!(
-            "Boltz2Model: s_init forward + forward_trunk executed (pairformer + recycling).\n\
+            "Boltz2Model: s_init forward + forward_trunk + predict_step_trunk executed (pairformer + recycling).\n\
              recycling_steps={recycling_steps}\n\
              s_out shape: {s_sz:?}\n\
              z_out shape: {z_sz:?}\n\
-             {load_note}"
+             predict_step_trunk s_out: {:?}\n\
+             predict_step_trunk z_out: {:?}\n\
+             {load_note}",
+            s_ps.size(),
+            z_ps.size()
         );
         tokio::fs::write(&spike_path, msg).await?;
         tracing::info!(path = %spike_path.display(), "backend spike");

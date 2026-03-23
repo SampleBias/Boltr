@@ -4,11 +4,13 @@
 //! Python adds to the atom-attention output `a`. Full `AtomEncoder` + `AtomAttentionEncoder` are
 //! still TBD; callers pass `a` with shape `[B, N, token_s]`.
 //!
+//! Use [`AtomEncoderPlaceholder`] only for shape tests until the atom stack is ported.
+//!
 //! Reference: `boltz-reference/src/boltz/model/modules/trunkv2.py` (`InputEmbedder`).
 //! VarStore prefix: **`input_embedder`** (keys `input_embedder.res_type_encoding.weight`, etc.).
 
 use tch::nn::{linear, LinearConfig, Module, Path};
-use tch::Tensor;
+use tch::{Device, Kind, Tensor};
 
 /// `len(const.tokens)` in Boltz (`boltz-reference/src/boltz/data/const.py`).
 /// Must match `boltr_io::boltz_const::NUM_TOKENS` / Boltz `const.num_tokens`.
@@ -18,6 +20,17 @@ pub const BOLTZ_NUM_TOKENS: i64 = 33;
 pub const BOLTZ_MSA_PROFILE_IN: i64 = BOLTZ_NUM_TOKENS + 1;
 
 /// `res_type_encoding` + `msa_profile_encoding` under `input_embedder/`.
+/// Zero `a` tensor for tests / scaffolding (`trunkv2.py` atom attention output).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AtomEncoderPlaceholder;
+
+impl AtomEncoderPlaceholder {
+    #[must_use]
+    pub fn zeros_a(batch: i64, n_tokens: i64, token_s: i64, device: Device) -> Tensor {
+        Tensor::zeros(&[batch, n_tokens, token_s], (Kind::Float, device))
+    }
+}
+
 pub struct InputEmbedder {
     res_type_encoding: tch::nn::Linear,
     msa_profile_encoding: tch::nn::Linear,

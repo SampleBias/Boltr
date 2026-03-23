@@ -30,23 +30,13 @@ impl OuterProductMean {
     /// * `c_z` - Output dimension (pairwise representation)
     /// * `num_bins` - Number of bins for outer product
     /// * `device` - Computation device
-    pub fn new(
-        vs: &VarStore,
-        c_m: i64,
-        c_z: i64,
-        num_bins: Option<i64>,
-        device: Device,
-    ) -> Self {
+    pub fn new(vs: &VarStore, c_m: i64, c_z: i64, num_bins: Option<i64>, device: Device) -> Self {
         let num_bins = num_bins.unwrap_or(16);
 
         let root = vs.root();
 
-        let layer_norm = tch::nn::LayerNorm::new(
-            root.sub("layer_norm"),
-            vec![c_m],
-            c_m as f64 * 1e-5,
-            true,
-        );
+        let layer_norm =
+            tch::nn::LayerNorm::new(root.sub("layer_norm"), vec![c_m], c_m as f64 * 1e-5, true);
 
         let proj_bin = linear(
             root.sub("proj_bin"),
@@ -89,8 +79,20 @@ impl OuterProductMean {
         let b_bins = self.proj_bin.forward(&b_normed); // [B, N, M, num_bins * c_z]
 
         // Reshape to [B, N, M, num_bins, c_z]
-        let a_bins = a_bins.view([a.size()[0], a.size()[1], a.size()[2], self.num_bins, self.c_z]);
-        let b_bins = b_bins.view([b.size()[0], b.size()[1], b.size()[2], self.num_bins, self.c_z]);
+        let a_bins = a_bins.view([
+            a.size()[0],
+            a.size()[1],
+            a.size()[2],
+            self.num_bins,
+            self.c_z,
+        ]);
+        let b_bins = b_bins.view([
+            b.size()[0],
+            b.size()[1],
+            b.size()[2],
+            self.num_bins,
+            self.c_z,
+        ]);
 
         // Compute outer product mean
         // For simplicity, implement mean over bins dimension

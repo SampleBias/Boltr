@@ -227,7 +227,12 @@ pub fn tokenize_structure(
                 let unk_id = unk_token_id("PROTEIN").expect("UNK");
                 let atom_st = usize::try_from(atom_start).unwrap_or(0);
                 let atom_en = usize::try_from(atom_end).unwrap_or(0);
-                for (i, atom) in struct_.atoms.get(atom_st..atom_en).unwrap_or(&[]).iter().enumerate()
+                for (i, atom) in struct_
+                    .atoms
+                    .get(atom_st..atom_en)
+                    .unwrap_or(&[])
+                    .iter()
+                    .enumerate()
                 {
                     let index = atom_start + i as i32;
                     let is_present = res.is_present && atom.is_present;
@@ -331,7 +336,11 @@ mod tests {
         for (a, b) in t.frame_rot.iter().zip(expected_rot.iter()) {
             assert!((a - b).abs() < 1e-4);
         }
-        assert!((t.frame_t[0] - 1.0).abs() < 1e-4 && t.frame_t[1].abs() < 1e-4 && t.frame_t[2].abs() < 1e-4);
+        assert!(
+            (t.frame_t[0] - 1.0).abs() < 1e-4
+                && t.frame_t[1].abs() < 1e-4
+                && t.frame_t[2].abs() < 1e-4
+        );
     }
 
     #[test]
@@ -363,6 +372,8 @@ mod tests {
                 sym_id: 0,
                 asym_id: 0,
                 entity_id: 0,
+                atom_idx: 0,
+                atom_num: 2,
                 res_idx: 0,
                 res_num: 1,
                 cyclic_period: 0,

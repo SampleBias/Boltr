@@ -3,14 +3,14 @@
 //! Reference: boltz-reference/src/boltz/model/layers/pairformer.py
 //! Combines attention, triangular operations, and transitions
 
+use super::transition::Transition;
 use super::triangular_attention::TriangleAttention;
 use super::triangular_mult::{TriangleMultiplicationIncoming, TriangleMultiplicationOutgoing};
-use super::transition::Transition;
 
 use crate::attention::pair_bias::AttentionPairBiasV2;
 
 use tch::nn::{LayerNorm, Module, Path};
-use tch::{Kind, Device, Tensor, VarStore};
+use tch::{Device, Kind, Tensor, VarStore};
 
 /// Pairformer Layer
 ///
@@ -112,17 +112,11 @@ impl PairformerLayer {
         };
 
         // Pairwise stack
-        let tri_mul_out = TriangleMultiplicationOutgoing::new(
-            path.sub("tri_mul_out"),
-            Some(token_z),
-            device,
-        );
+        let tri_mul_out =
+            TriangleMultiplicationOutgoing::new(path.sub("tri_mul_out"), Some(token_z), device);
 
-        let tri_mul_in = TriangleMultiplicationIncoming::new(
-            path.sub("tri_mul_in"),
-            Some(token_z),
-            device,
-        );
+        let tri_mul_in =
+            TriangleMultiplicationIncoming::new(path.sub("tri_mul_in"), Some(token_z), device);
 
         let tri_att_start = TriangleAttention::new(
             path.sub("tri_att_start"),
@@ -304,8 +298,7 @@ impl PairformerLayer {
 
         // Create columnwise mask: broadcast over first two dimensions
         let mask = Tensor::empty(&[1, 1, 1, dim], (Kind::Float, self.device));
-        let mask = (mask.rand_like(mask) > self.dropout)
-            .to_kind(Kind::Float)
+        let mask = (mask.rand_like(mask) > self.dropout).to_kind(Kind::Float)
             * (1.0 / (1.0 - self.dropout));
 
         mask.expand(shape.as_slice(), false)
@@ -432,8 +425,7 @@ impl PairformerModule {
 
         for layer in &self.layers {
             // TODO: Implement activation checkpointing
-            let (s_new, z_new) =
-                layer.forward(&s, &z, mask, pair_mask, chunk_size_tri_attn, false);
+            let (s_new, z_new) = layer.forward(&s, &z, mask, pair_mask, chunk_size_tri_attn, false);
             s = s_new;
             z = z_new;
         }
@@ -472,7 +464,10 @@ mod tests {
         );
 
         let s = Tensor::randn(&[batch_size, seq_len, token_s], (Kind::Float, device));
-        let z = Tensor::randn(&[batch_size, seq_len, seq_len, token_z], (Kind::Float, device));
+        let z = Tensor::randn(
+            &[batch_size, seq_len, seq_len, token_z],
+            (Kind::Float, device),
+        );
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
         let pair_mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
 
@@ -510,7 +505,10 @@ mod tests {
         );
 
         let s = Tensor::randn(&[batch_size, seq_len, token_s], (Kind::Float, device));
-        let z = Tensor::randn(&[batch_size, seq_len, seq_len, token_z], (Kind::Float, device));
+        let z = Tensor::randn(
+            &[batch_size, seq_len, seq_len, token_z],
+            (Kind::Float, device),
+        );
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
         let pair_mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
 

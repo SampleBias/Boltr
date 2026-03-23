@@ -167,7 +167,10 @@ fn build_token_npz_blobs(
     for t in tokens {
         res_name.extend_from_slice(&encode_res_name_u32(&t.res_name));
     }
-    cols.insert("t_res_name.npy".to_string(), write_npy(DESCR_U4, &[n, 8], &res_name)?);
+    cols.insert(
+        "t_res_name.npy".to_string(),
+        write_npy(DESCR_U4, &[n, 8], &res_name)?,
+    );
 
     let mut center_c = Vec::with_capacity(n * 12);
     let mut disto_c = Vec::with_capacity(n * 12);
@@ -222,7 +225,10 @@ fn build_token_npz_blobs(
         "t_disto_mask.npy".to_string(),
         write_npy(DESCR_U1, &[n], &db)?,
     );
-    cols.insert("t_modified.npy".to_string(), write_npy(DESCR_U1, &[n], &mb)?);
+    cols.insert(
+        "t_modified.npy".to_string(),
+        write_npy(DESCR_U1, &[n], &mb)?,
+    );
     cols.insert(
         "t_affinity_mask.npy".to_string(),
         write_npy(DESCR_U1, &[n], &ab)?,
@@ -236,15 +242,25 @@ fn build_token_npz_blobs(
         b2.extend_from_slice(&y.to_le_bytes());
         bt.push(ty as u8);
     }
-    cols.insert("bond_token_1.npy".to_string(), write_npy(DESCR_I4, &[m], &b1)?);
-    cols.insert("bond_token_2.npy".to_string(), write_npy(DESCR_I4, &[m], &b2)?);
+    cols.insert(
+        "bond_token_1.npy".to_string(),
+        write_npy(DESCR_I4, &[m], &b1)?,
+    );
+    cols.insert(
+        "bond_token_2.npy".to_string(),
+        write_npy(DESCR_I4, &[m], &b2)?,
+    );
     cols.insert("bond_type.npy".to_string(), write_npy(DESCR_I1, &[m], &bt)?);
 
     Ok(cols)
 }
 
 /// Write tokens and token bonds as a compressed `.npz` (zip of `.npy` columns).
-pub fn write_token_batch_npz_compressed(path: &Path, tokens: &[TokenData], bonds: &[TokenBondV2]) -> Result<()> {
+pub fn write_token_batch_npz_compressed(
+    path: &Path,
+    tokens: &[TokenData],
+    bonds: &[TokenBondV2],
+) -> Result<()> {
     let cols = build_token_npz_blobs(tokens, bonds)?;
     let mut file = File::create(path).with_context(|| path.display().to_string())?;
     let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -258,7 +274,10 @@ pub fn write_token_batch_npz_compressed(path: &Path, tokens: &[TokenData], bonds
 }
 
 /// Same as [`write_token_batch_npz_compressed`] but returns raw `.npz` bytes (for tests / golden hooks).
-pub fn write_token_batch_npz_to_vec(tokens: &[TokenData], bonds: &[TokenBondV2]) -> Result<Vec<u8>> {
+pub fn write_token_batch_npz_to_vec(
+    tokens: &[TokenData],
+    bonds: &[TokenBondV2],
+) -> Result<Vec<u8>> {
     let cols = build_token_npz_blobs(tokens, bonds)?;
     let mut buf = Cursor::new(Vec::new());
     let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -287,9 +306,7 @@ fn parse_shape_tuple(header: &str) -> Result<Vec<usize>> {
     let rest = rest
         .strip_prefix('(')
         .ok_or_else(|| anyhow!("invalid shape"))?;
-    let end = rest
-        .find(')')
-        .ok_or_else(|| anyhow!("unclosed shape"))?;
+    let end = rest.find(')').ok_or_else(|| anyhow!("unclosed shape"))?;
     let inner = rest[..end].trim();
     if inner.is_empty() {
         return Ok(Vec::new());
@@ -322,8 +339,8 @@ fn parse_npy_shape_and_payload(data: &[u8]) -> Result<(Vec<usize>, &[u8])> {
         bail!("truncated NPY header");
     }
     let header_raw = &data[10..10 + hlen];
-    let header_str = std::str::from_utf8(header_raw)
-        .map_err(|_| anyhow!("NPY header is not valid UTF-8"))?;
+    let header_str =
+        std::str::from_utf8(header_raw).map_err(|_| anyhow!("NPY header is not valid UTF-8"))?;
     let shape = parse_shape_tuple(header_str)?;
     let payload_off = 10 + hlen;
     let payload = data
@@ -433,9 +450,7 @@ pub fn read_token_batch_npz_bytes(zip_bytes: &[u8]) -> Result<(Vec<TokenData>, V
     let t1 = read_i4_col(&bond_1, m)?;
     let t2 = read_i4_col(&bond_2, m)?;
     let tty = read_i1_col(&bond_ty, m)?;
-    let bonds: Vec<TokenBondV2> = (0..m)
-        .map(|i| (t1[i], t2[i], tty[i]))
-        .collect();
+    let bonds: Vec<TokenBondV2> = (0..m).map(|i| (t1[i], t2[i], tty[i])).collect();
 
     let idx_npy = read_zip_npy(&mut archive, "t_token_idx")?;
     let n = parse_npy_shape_and_payload(&idx_npy)?

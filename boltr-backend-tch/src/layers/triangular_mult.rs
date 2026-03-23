@@ -4,7 +4,7 @@
 //! Implements the fallback PyTorch path (use_kernels=False)
 
 use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
-use tch::{Kind, Device, Tensor};
+use tch::{Device, Kind, Tensor};
 
 /// Triangle Multiplication Outgoing layer
 ///
@@ -37,12 +37,7 @@ impl TriangleMultiplicationOutgoing {
     pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
         let dim = dim.unwrap_or(128);
 
-        let norm_in = LayerNorm::new(
-            path.sub("norm_in"),
-            vec![dim],
-            dim as f64 * 1e-5,
-            true,
-        );
+        let norm_in = LayerNorm::new(path.sub("norm_in"), vec![dim], dim as f64 * 1e-5, true);
 
         let p_in = linear(
             path.sub("p_in"),
@@ -64,12 +59,7 @@ impl TriangleMultiplicationOutgoing {
             },
         );
 
-        let norm_out = LayerNorm::new(
-            path.sub("norm_out"),
-            vec![dim],
-            dim as f64 * 1e-5,
-            true,
-        );
+        let norm_out = LayerNorm::new(path.sub("norm_out"), vec![dim], dim as f64 * 1e-5, true);
 
         let p_out = linear(
             path.sub("p_out"),
@@ -184,12 +174,7 @@ impl TriangleMultiplicationIncoming {
     pub fn new<'a>(path: Path<'a>, dim: Option<i64>, device: Device) -> Self {
         let dim = dim.unwrap_or(128);
 
-        let norm_in = LayerNorm::new(
-            path.sub("norm_in"),
-            vec![dim],
-            dim as f64 * 1e-5,
-            true,
-        );
+        let norm_in = LayerNorm::new(path.sub("norm_in"), vec![dim], dim as f64 * 1e-5, true);
 
         let p_in = linear(
             path.sub("p_in"),
@@ -211,12 +196,7 @@ impl TriangleMultiplicationIncoming {
             },
         );
 
-        let norm_out = LayerNorm::new(
-            path.sub("norm_out"),
-            vec![dim],
-            dim as f64 * 1e-5,
-            true,
-        );
+        let norm_out = LayerNorm::new(path.sub("norm_out"), vec![dim], dim as f64 * 1e-5, true);
 
         let p_out = linear(
             path.sub("p_out"),

@@ -19,7 +19,9 @@ pub fn ref_atom_names(ref_key: &str) -> Option<&'static [&'static str]> {
         "UNK" => &["N", "CA", "C", "O", "CB"],
         "-" => &[],
         "ALA" => &["N", "CA", "C", "O", "CB"],
-        "ARG" => &["N", "CA", "C", "O", "CB", "CG", "CD", "NE", "CZ", "NH1", "NH2"],
+        "ARG" => &[
+            "N", "CA", "C", "O", "CB", "CG", "CD", "NE", "CZ", "NH1", "NH2",
+        ],
         "ASN" => &["N", "CA", "C", "O", "CB", "CG", "OD1", "ND2"],
         "ASP" => &["N", "CA", "C", "O", "CB", "CG", "OD1", "OD2"],
         "CYS" => &["N", "CA", "C", "O", "CB", "SG"],
@@ -31,15 +33,18 @@ pub fn ref_atom_names(ref_key: &str) -> Option<&'static [&'static str]> {
         "LEU" => &["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2"],
         "LYS" => &["N", "CA", "C", "O", "CB", "CG", "CD", "CE", "NZ"],
         "MET" => &["N", "CA", "C", "O", "CB", "CG", "SD", "CE"],
-        "PHE" => &["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ"],
+        "PHE" => &[
+            "N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ",
+        ],
         "PRO" => &["N", "CA", "C", "O", "CB", "CG", "CD"],
         "SER" => &["N", "CA", "C", "O", "CB", "OG"],
         "THR" => &["N", "CA", "C", "O", "CB", "OG1", "CG2"],
         "TRP" => &[
-            "N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3",
-            "CH2",
+            "N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "NE1", "CE2", "CE3", "CZ2", "CZ3", "CH2",
         ],
-        "TYR" => &["N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH"],
+        "TYR" => &[
+            "N", "CA", "C", "O", "CB", "CG", "CD1", "CD2", "CE1", "CE2", "CZ", "OH",
+        ],
         "VAL" => &["N", "CA", "C", "O", "CB", "CG1", "CG2"],
         "A" => &[
             "P", "OP1", "OP2", "O5'", "C5'", "C4'", "O4'", "C3'", "O3'", "C2'", "O2'", "C1'", "N9",
@@ -206,7 +211,11 @@ mod tests {
         assert_eq!(center_atom_index("ALA"), Some(1));
         assert_eq!(disto_atom_index("GLY"), Some(1));
         assert_eq!(disto_atom_index("ALA"), Some(4));
-        let c4 = ref_atom_names("A").unwrap().iter().position(|&a| a == "C4").unwrap();
+        let c4 = ref_atom_names("A")
+            .unwrap()
+            .iter()
+            .position(|&a| a == "C4")
+            .unwrap();
         assert_eq!(disto_atom_index("A"), Some(c4));
     }
 

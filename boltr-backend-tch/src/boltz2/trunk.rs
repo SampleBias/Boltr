@@ -13,6 +13,9 @@ use tch::{Device, Tensor};
 
 use crate::layers::PairformerModule;
 
+use super::msa_module::MsaModule;
+use super::template_module::TemplateModule;
+
 /// TrunkV2 - Main trunk that owns PairformerModule
 ///
 /// The trunk processes sequence (s) and pairwise (z) representations through:
@@ -41,6 +44,11 @@ pub struct TrunkV2 {
 
     // Owned PairformerModule
     pairformer: PairformerModule,
+
+    /// Pre-pairformer MSA path (stub until full `MSAModule` port).
+    msa: MsaModule,
+    /// Template bias on `z` (stub until `TemplateV2Module` port).
+    template: TemplateModule,
 
     device: Device,
 }
@@ -100,8 +108,18 @@ impl TrunkV2 {
         );
 
         // Normalization layers
-        let s_norm = LayerNorm::new(root.sub("s_norm"), vec![token_s], token_s as f64 * 1e-5, true);
-        let z_norm = LayerNorm::new(root.sub("z_norm"), vec![token_z], token_z as f64 * 1e-5, true);
+        let s_norm = LayerNorm::new(
+            root.sub("s_norm"),
+            vec![token_s],
+            token_s as f64 * 1e-5,
+            true,
+        );
+        let z_norm = LayerNorm::new(
+            root.sub("z_norm"),
+            vec![token_z],
+            token_z as f64 * 1e-5,
+            true,
+        );
 
         // Recycling projections (with gating initialization)
         let s_recycle = linear(
@@ -134,13 +152,13 @@ impl TrunkV2 {
             token_s,
             token_z,
             num_blocks,
-            None,  // num_heads (default 16)
-            None,  // dropout (default 0.25)
-            None,  // pairwise_head_width (default 32)
-            None,  // pairwise_num_heads (default 4)
-            None,  // post_layer_norm (default false)
-            None,  // activation_checkpointing (default false)
-            Some(true),  // v2 (use Boltz2 variant)
+            None,       // num_heads (default 16)
+            None,       // dropout (default 0.25)
+            None,       // pairwise_head_width (default 32)
+            None,       // pairwise_num_heads (default 4)
+            None,       // post_layer_norm (default false)
+            None,       // activation_checkpointing (default false)
+            Some(true), // v2 (use Boltz2 variant)
             device,
         );
 
@@ -155,6 +173,8 @@ impl TrunkV2 {
             s_recycle,
             z_recycle,
             pairformer,
+            msa: MsaModule,
+            template: TemplateModule,
             device,
         }
     }
@@ -270,20 +290,24 @@ impl TrunkV2 {
         let pair_mask = mask.unsqueeze(1) * mask.unsqueeze(2); // [B, N, N]
 
         // Initialize recycled embeddings as zeros
-        let mut s = Tensor::zeros(&[batch_size, num_tokens, self.token_s], (s_init.kind(), self.device));
-        let mut z = Tensor::zeros(&[batch_size, num_tokens, num_tokens, self.token_z], (s_init.kind(), self.device));
+        let mut s = Tensor::zeros(
+            &[batch_size, num_tokens, self.token_s],
+            (s_init.kind(), self.device),
+        );
+        let mut z = Tensor::zeros(
+            &[batch_size, num_tokens, num_tokens, self.token_z],
+            (s_init.kind(), self.device),
+        );
 
         // Recycling loop
         for _i in 0..=recycling_steps {
             // Apply recycling
             let (s_recycled, z_recycled) = self.apply_recycling(&s_init, &z_init, &s, &z);
 
-            // Note: In full implementation, other components would add here:
-            // - z += template_module(z, ...)
-            // - z += msa_module(z, s_inputs, ...)
-
             s = s_recycled;
             z = z_recycled;
+            z = self.msa.forward_trunk_step(&z, &s);
+            z = self.template.forward_trunk_step(&z);
 
             // Run owned pairformer module
             let (s_new, z_new) = self.forward_pairformer(&s, &z, &pair_mask, &pair_mask);
@@ -323,6 +347,8 @@ impl TrunkV2 {
             let (s_recycled, z_recycled) = self.apply_recycling(s_init, z_init, &s, &z);
             s = s_recycled;
             z = z_recycled;
+            z = self.msa.forward_trunk_step(&z, &s);
+            z = self.template.forward_trunk_step(&z);
             let (s_new, z_new) = self.forward_pairformer(&s, &z, &pair_mask, &pair_mask);
             s = s_new;
             z = z_new;
@@ -384,13 +410,7 @@ mod tests {
         let vs = VarStore::new(device);
 
         // Create TrunkV2 that owns a PairformerModule
-        let trunk = TrunkV2::new(
-            &vs,
-            Some(token_s),
-            Some(token_z),
-            Some(num_blocks),
-            device,
-        );
+        let trunk = TrunkV2::new(&vs, Some(token_s), Some(token_z), Some(num_blocks), device);
 
         assert_eq!(trunk.pairformer().num_blocks(), num_blocks);
 
@@ -403,7 +423,10 @@ mod tests {
         let (s_init, z_init) = trunk.initialize(&s_inputs);
 
         assert_eq!(s_init.size(), vec![batch_size, num_tokens, token_s]);
-        assert_eq!(z_init.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
+        assert_eq!(
+            z_init.size(),
+            vec![batch_size, num_tokens, num_tokens, token_z]
+        );
 
         // Test apply_recycling method
         let s_prev = Tensor::randn(
@@ -418,17 +441,28 @@ mod tests {
         let (s_recycled, z_recycled) = trunk.apply_recycling(&s_init, &z_init, &s_prev, &z_prev);
 
         assert_eq!(s_recycled.size(), vec![batch_size, num_tokens, token_s]);
-        assert_eq!(z_recycled.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
+        assert_eq!(
+            z_recycled.size(),
+            vec![batch_size, num_tokens, num_tokens, token_z]
+        );
 
         // Test forward_pairformer method (the key API!)
-        let mask = Tensor::ones(&[batch_size, num_tokens, num_tokens], (tch::Kind::Float, device));
-        let pair_mask = Tensor::ones(&[batch_size, num_tokens, num_tokens], (tch::Kind::Float, device));
+        let mask = Tensor::ones(
+            &[batch_size, num_tokens, num_tokens],
+            (tch::Kind::Float, device),
+        );
+        let pair_mask = Tensor::ones(
+            &[batch_size, num_tokens, num_tokens],
+            (tch::Kind::Float, device),
+        );
 
         let (s_out, z_out) = trunk.forward_pairformer(&s_init, &z_init, &mask, &pair_mask);
 
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
-        assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
-
+        assert_eq!(
+            z_out.size(),
+            vec![batch_size, num_tokens, num_tokens, token_z]
+        );
     }
 
     /// Test full forward with recycling
@@ -445,13 +479,7 @@ mod tests {
         let num_tokens = 30;
 
         let vs = VarStore::new(device);
-        let trunk = TrunkV2::new(
-            &vs,
-            Some(token_s),
-            Some(token_z),
-            Some(num_blocks),
-            device,
-        );
+        let trunk = TrunkV2::new(&vs, Some(token_s), Some(token_z), Some(num_blocks), device);
 
         let s_inputs = Tensor::randn(
             &[batch_size, num_tokens, token_s],
@@ -461,8 +489,10 @@ mod tests {
         let (s_out, z_out) = trunk.forward(&s_inputs, Some(1)).unwrap();
 
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
-        assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
-
+        assert_eq!(
+            z_out.size(),
+            vec![batch_size, num_tokens, num_tokens, token_z]
+        );
     }
 
     /// Test API allows easy connection of other components
@@ -489,15 +519,21 @@ mod tests {
         // Initialize
         let (s, z) = trunk.initialize(&s_inputs);
 
-        let mask = Tensor::ones(&[batch_size, num_tokens, num_tokens], (tch::Kind::Float, device));
-        let pair_mask = Tensor::ones(&[batch_size, num_tokens, num_tokens], (tch::Kind::Float, device));
+        let mask = Tensor::ones(
+            &[batch_size, num_tokens, num_tokens],
+            (tch::Kind::Float, device),
+        );
+        let pair_mask = Tensor::ones(
+            &[batch_size, num_tokens, num_tokens],
+            (tch::Kind::Float, device),
+        );
 
         // Simulate MSA module adding to z
         let msa_contribution = Tensor::randn(
             &[batch_size, num_tokens, num_tokens, token_z],
             (tch::Kind::Float, device),
         );
-        let z = z + msa_contribution * 0.1;  // Simulate MSA with small weight
+        let z = z + msa_contribution * 0.1; // Simulate MSA with small weight
 
         // Call pairformer (easy API!)
         let (s, z) = trunk.forward_pairformer(&s, &z, &mask, &pair_mask);

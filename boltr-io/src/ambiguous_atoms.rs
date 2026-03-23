@@ -41,10 +41,7 @@ static AMBIGUOUS_ATOMS: LazyLock<HashMap<String, Rule>> = LazyLock::new(|| {
 /// Strip ASCII digits from an atom name, matching Boltz PDB export: `re.sub(r"\d", "", atom_name)`.
 #[must_use]
 pub fn pdb_atom_key(atom_name: &str) -> String {
-    atom_name
-        .chars()
-        .filter(|c| !c.is_ascii_digit())
-        .collect()
+    atom_name.chars().filter(|c| !c.is_ascii_digit()).collect()
 }
 
 /// Resolve PDB element symbol when `atom_key` is present in the Boltz `ambiguous_atoms` table.
@@ -55,10 +52,7 @@ pub fn pdb_atom_key(atom_name: &str) -> String {
 pub fn resolve_ambiguous_element(atom_key: &str, residue_name: &str) -> Option<String> {
     match AMBIGUOUS_ATOMS.get(atom_key)? {
         Rule::Fixed(s) => Some(s.clone()),
-        Rule::Map(m) => m
-            .get(residue_name)
-            .or_else(|| m.get("*"))
-            .cloned(),
+        Rule::Map(m) => m.get(residue_name).or_else(|| m.get("*")).cloned(),
     }
 }
 
@@ -79,12 +73,18 @@ mod tests {
 
     #[test]
     fn fixed_rule_br() {
-        assert_eq!(resolve_ambiguous_element("BR", "XXX").as_deref(), Some("BR"));
+        assert_eq!(
+            resolve_ambiguous_element("BR", "XXX").as_deref(),
+            Some("BR")
+        );
     }
 
     #[test]
     fn map_rule_ca_oex() {
-        assert_eq!(resolve_ambiguous_element("CA", "OEX").as_deref(), Some("CA"));
+        assert_eq!(
+            resolve_ambiguous_element("CA", "OEX").as_deref(),
+            Some("CA")
+        );
     }
 
     #[test]

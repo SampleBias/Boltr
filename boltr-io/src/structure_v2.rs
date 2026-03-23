@@ -3,14 +3,14 @@
 //! Field layout matches the numpy structured dtypes consumed by [`crate::tokenize::boltz2::tokenize_structure`].
 
 /// One atom row (`AtomV2` in Python: `coords`, `is_present`; tokenizer also reads `coords` for frames).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AtomV2Row {
     pub coords: [f32; 3],
     pub is_present: bool,
 }
 
 /// One residue row (`Residue` dtype).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ResidueRow {
     pub name: String,
     pub res_type: i8,
@@ -24,19 +24,21 @@ pub struct ResidueRow {
 }
 
 /// One chain row (`Chain` dtype).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChainRow {
     pub mol_type: i8,
     pub sym_id: i32,
     pub asym_id: i32,
     pub entity_id: i32,
+    pub atom_idx: i32,
+    pub atom_num: i32,
     pub res_idx: i32,
     pub res_num: i32,
     pub cyclic_period: i32,
 }
 
 /// Bond row subset used by tokenizer (`BondV2`: global atom indices + bond type).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BondV2AtomRow {
     pub atom_1: i32,
     pub atom_2: i32,
@@ -45,7 +47,7 @@ pub struct BondV2AtomRow {
 }
 
 /// Minimal structure matching Boltz `StructureV2` fields needed for `tokenize_structure`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StructureV2Tables {
     pub atoms: Vec<AtomV2Row>,
     pub residues: Vec<ResidueRow>,

@@ -3,7 +3,7 @@
 //! Reference: boltz-reference/src/boltz/model/layers/attentionv2.py
 
 use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
-use tch::{Kind, Device, Tensor};
+use tch::{Device, Kind, Tensor};
 
 /// Attention pair bias layer (Boltz2 variant)
 ///
@@ -290,7 +290,8 @@ mod tests {
         let seq_len = 10;
 
         let vs = VarStore::new(device);
-        let layer = AttentionPairBiasV2::new(vs.root(), c_s, Some(c_z), Some(num_heads), None, device);
+        let layer =
+            AttentionPairBiasV2::new(vs.root(), c_s, Some(c_z), Some(num_heads), None, device);
 
         let s = Tensor::randn(&[batch_size, seq_len, c_s], (Kind::Float, device));
         let z = Tensor::randn(&[batch_size, seq_len, seq_len, c_z], (Kind::Float, device));

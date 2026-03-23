@@ -42,6 +42,8 @@ pub fn structure_v2_single_ala() -> StructureV2Tables {
             sym_id: 0,
             asym_id: 0,
             entity_id: 0,
+            atom_idx: 0,
+            atom_num: 5,
             res_idx: 0,
             res_num: 1,
             cyclic_period: 0,

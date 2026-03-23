@@ -22,6 +22,16 @@ This document tracks the data path Rust must mirror for parity with `boltz-refer
 
 Use a **golden export** from Python (pick one small input, dump `collate` output keys + shapes + dtypes) as the authoritative checklist while porting `boltr-io` featurization.
 
+### Checked-in contract artifacts (Phase 1)
+
+| Artifact | Location |
+|----------|----------|
+| Key manifest (names, ranks, nominal shapes) | [`boltr-io/tests/fixtures/collate_golden/manifest.json`](../boltr-io/tests/fixtures/collate_golden/manifest.json) |
+| Minimal collated tensors for trunk smoke (`s_inputs`, MSA block, template dummies) | [`boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors`](../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) |
+
+Regenerate the safetensors file: `cargo run -p boltr-io --bin write_collate_golden`.  
+Python script: [`scripts/dump_collate_golden.py`](../scripts/dump_collate_golden.py).
+
 ## Checkpoint keys
 
 Lightning checkpoints store a nested `state_dict`. For Rust, export with [`scripts/export_checkpoint_to_safetensors.py`](../scripts/export_checkpoint_to_safetensors.py) and map names explicitly (strip `model.` if present). `boltr-backend-tch` currently validates loading with `s_init.weight` as a first spike.

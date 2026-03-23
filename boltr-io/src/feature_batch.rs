@@ -175,17 +175,23 @@ pub fn collate_feature_batches(examples: &[FeatureBatch]) -> Result<FeatureBatch
                 out.insert_f32(k, stack_f32_views(&views)?);
             }
             FeatureTensor::I64(_) => {
-                let views: Vec<_> = examples.iter().map(|e| match &e.tensors[&k] {
-                    FeatureTensor::I64(a) => a.view(),
-                    _ => unreachable!(),
-                }).collect();
+                let views: Vec<_> = examples
+                    .iter()
+                    .map(|e| match &e.tensors[&k] {
+                        FeatureTensor::I64(a) => a.view(),
+                        _ => unreachable!(),
+                    })
+                    .collect();
                 out.insert_i64(k, stack(Axis(0), &views)?);
             }
             FeatureTensor::I32(_) => {
-                let views: Vec<_> = examples.iter().map(|e| match &e.tensors[&k] {
-                    FeatureTensor::I32(a) => a.view(),
-                    _ => unreachable!(),
-                }).collect();
+                let views: Vec<_> = examples
+                    .iter()
+                    .map(|e| match &e.tensors[&k] {
+                        FeatureTensor::I32(a) => a.view(),
+                        _ => unreachable!(),
+                    })
+                    .collect();
                 out.insert_i32(k, stack(Axis(0), &views)?);
             }
         }

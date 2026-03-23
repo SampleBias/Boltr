@@ -4,7 +4,7 @@
 //! Implements the fallback PyTorch path (use_kernels=False)
 
 use tch::nn::{linear, LayerNorm, LinearConfig, Module, Path};
-use tch::{Kind, Device, Tensor};
+use tch::{Device, Kind, Tensor};
 
 /// Triangle Attention layer (base implementation)
 ///
@@ -61,12 +61,8 @@ impl TriangleAttention {
         let no_heads = no_heads.unwrap_or(4);
         let starting = starting.unwrap_or(true);
 
-        let layer_norm = LayerNorm::new(
-            path.sub("layer_norm"),
-            vec![c_in],
-            c_in as f64 * 1e-5,
-            true,
-        );
+        let layer_norm =
+            LayerNorm::new(path.sub("layer_norm"), vec![c_in], c_in as f64 * 1e-5, true);
 
         let linear = linear(
             path.sub("linear"),
