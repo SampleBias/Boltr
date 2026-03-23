@@ -1,6 +1,6 @@
-//! Boltz `data/const.py` — tokens, chain types, and one-letter ↔ token-name maps used by MSA / featurizer.
+//! Boltz `data/const.py` — tokens, chain types, chemistry ids, limits; see [`crate::ref_atoms`] for `ref_atoms`.
 //!
-//! Reference: `boltz-reference/src/boltz/data/const.py` (residues & tokens, chain_types).
+//! Reference: `boltz-reference/src/boltz/data/const.py`.
 
 /// Same order as Python `boltz.data.const.tokens` (ids = index).
 pub const TOKENS: [&str; 33] = [
@@ -136,6 +136,102 @@ pub fn rna_letter_to_token_id(c: char) -> Option<i32> {
     token_id(name)
 }
 
+// --- Atoms / bonds / contacts / MSA limits (`const.py`) ---
+
+pub const NUM_ELEMENTS: usize = 128;
+
+pub const CHIRALITY_TYPES: [&str; 7] = [
+    "CHI_UNSPECIFIED",
+    "CHI_TETRAHEDRAL_CW",
+    "CHI_TETRAHEDRAL_CCW",
+    "CHI_SQUAREPLANAR",
+    "CHI_OCTAHEDRAL",
+    "CHI_TRIGONALBIPYRAMIDAL",
+    "CHI_OTHER",
+];
+
+pub const UNK_CHIRALITY_TYPE: &str = "CHI_OTHER";
+
+#[inline]
+pub fn chirality_type_id(name: &str) -> Option<i32> {
+    CHIRALITY_TYPES
+        .iter()
+        .position(|&c| c == name)
+        .map(|i| i as i32)
+}
+
+pub const HYBRIDIZATION_MAP: [&str; 9] = [
+    "S",
+    "SP",
+    "SP2",
+    "SP2D",
+    "SP3",
+    "SP3D",
+    "SP3D2",
+    "OTHER",
+    "UNSPECIFIED",
+];
+
+pub const UNK_HYBRIDIZATION_TYPE: &str = "UNSPECIFIED";
+
+#[inline]
+pub fn hybridization_type_id(name: &str) -> Option<i32> {
+    HYBRIDIZATION_MAP
+        .iter()
+        .position(|&h| h == name)
+        .map(|i| i as i32)
+}
+
+pub const BOND_TYPES: [&str; 6] = [
+    "OTHER",
+    "SINGLE",
+    "DOUBLE",
+    "TRIPLE",
+    "AROMATIC",
+    "COVALENT",
+];
+
+pub const UNK_BOND_TYPE: &str = "OTHER";
+
+#[inline]
+pub fn bond_type_id(name: &str) -> Option<i32> {
+    BOND_TYPES
+        .iter()
+        .position(|&b| b == name)
+        .map(|i| i as i32)
+}
+
+pub const ATOM_INTERFACE_CUTOFF: f64 = 5.0;
+pub const INTERFACE_CUTOFF: f64 = 15.0;
+
+#[inline]
+pub fn pocket_contact_id(name: &str) -> Option<i32> {
+    Some(match name {
+        "UNSPECIFIED" => 0,
+        "UNSELECTED" => 1,
+        "POCKET" => 2,
+        "BINDER" => 3,
+        _ => return None,
+    })
+}
+
+#[inline]
+pub fn contact_conditioning_id(name: &str) -> Option<i32> {
+    Some(match name {
+        "UNSPECIFIED" => 0,
+        "UNSELECTED" => 1,
+        "POCKET>BINDER" => 2,
+        "BINDER>POCKET" => 3,
+        "CONTACT" => 4,
+        _ => return None,
+    })
+}
+
+pub const MAX_MSA_SEQS: usize = 16384;
+pub const MAX_PAIRED_SEQS: usize = 8192;
+
+pub const CHUNK_SIZE_THRESHOLD: usize = 384;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +269,19 @@ mod tests {
         assert_eq!(prot_letter_to_token_id('a'), Some(2));
         assert_eq!(prot_letter_to_token_id('x'), Some(22));
         assert_eq!(prot_letter_to_token_id('-'), Some(1));
+    }
+
+    #[test]
+    fn chemistry_ids_match_python_order() {
+        assert_eq!(chirality_type_id("CHI_UNSPECIFIED"), Some(0));
+        assert_eq!(chirality_type_id("CHI_OTHER"), Some(6));
+        assert_eq!(hybridization_type_id("S"), Some(0));
+        assert_eq!(hybridization_type_id("UNSPECIFIED"), Some(8));
+        assert_eq!(bond_type_id("OTHER"), Some(0));
+        assert_eq!(bond_type_id("COVALENT"), Some(5));
+        assert_eq!(pocket_contact_id("POCKET"), Some(2));
+        assert_eq!(contact_conditioning_id("CONTACT"), Some(4));
+        assert_eq!(MAX_MSA_SEQS, 16384);
+        assert_eq!(CHUNK_SIZE_THRESHOLD, 384);
     }
 }
