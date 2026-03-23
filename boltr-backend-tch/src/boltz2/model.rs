@@ -327,6 +327,7 @@ impl Boltz2Model {
         type_bonds: Option<&Tensor>,
         contact: Option<&ContactFeatures<'_>>,
         recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         let b = s_inputs.size()[0];
         let n = s_inputs.size()[1];
@@ -339,7 +340,7 @@ impl Boltz2Model {
         };
         let z_init = z_pair + z_rel + z_bonds + z_contact;
         self.trunk
-            .forward_from_init(&s_init, &z_init, recycling_steps)
+            .forward_from_init(&s_init, &z_init, recycling_steps, msa_feats)
     }
 
     /// Full structure forward is not wired until diffusion + featurizer match Python.
