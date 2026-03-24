@@ -1,23 +1,15 @@
 //! Triangular attention layers (TriangleAttentionStartingNode/EndingNode)
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/triangular_attention/attention.py
-//! Implements the fallback PyTorch path (use_kernels=False)
+//! and primitives.py (`Attention`, `_attention`) with `use_kernels=False`.
+//!
+//! VarStore layout matches Lightning: `mha.linear_{q,k,v,o,g}` under each `tri_att_*`.
 
 use crate::tch_compat::layer_norm_1d;
 use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
 /// Triangle Attention layer (base implementation)
-///
-/// This implements multi-head attention over the pairwise representation.
-/// It can operate in either "starting" or "ending" mode, which determines
-/// which dimension is attended to.
-///
-/// The key operations are:
-/// 1. Apply LayerNorm to input
-/// 2. Compute triangle bias from linear projection
-/// 3. Apply multi-head attention with triangle bias
-/// 4. Transpose if in "ending" mode
 pub struct TriangleAttention {
     c_in: i64,
     c_hidden: i64,
@@ -28,27 +20,18 @@ pub struct TriangleAttention {
     layer_norm: tch::nn::LayerNorm,
     linear: tch::nn::Linear,
 
-    // MHA components
-    q_proj: tch::nn::Linear,
-    k_proj: tch::nn::Linear,
-    v_proj: tch::nn::Linear,
-    o_proj: tch::nn::Linear,
+    /// Boltz `Attention` projections (`pairwise_head_width * pairwise_num_heads` output dim).
+    mha_linear_q: tch::nn::Linear,
+    mha_linear_k: tch::nn::Linear,
+    mha_linear_v: tch::nn::Linear,
+    mha_linear_o: tch::nn::Linear,
+    mha_linear_g: tch::nn::Linear,
 
     device: Device,
 }
 
 impl TriangleAttention {
-    /// Create a new TriangleAttention layer
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - VarStore sub-path for this layer
-    /// * `c_in` - Input dimension
-    /// * `c_hidden` - Hidden dimension for attention
-    /// * `no_heads` - Number of attention heads
-    /// * `starting` - Whether this is a starting node (true) or ending node (false)
-    /// * `inf` - Large negative value for masking
-    /// * `device` - Computation device
+    /// * `c_hidden` — per-head width (`pairwise_head_width`); total Q/K/V dim is `c_hidden * no_heads`.
     pub fn new<'a>(
         path: Path<'a>,
         c_in: i64,
@@ -58,9 +41,10 @@ impl TriangleAttention {
         inf: Option<f64>,
         device: Device,
     ) -> Self {
-        let c_hidden = c_hidden.unwrap_or(c_in);
+        let c_hidden = c_hidden.unwrap_or(32);
         let no_heads = no_heads.unwrap_or(4);
         let starting = starting.unwrap_or(true);
+        let mha_dim = c_hidden * no_heads;
 
         let layer_norm = layer_norm_1d(path.sub("layer_norm"), c_in);
 
@@ -74,40 +58,47 @@ impl TriangleAttention {
             },
         );
 
-        let q_proj = linear(
-            path.sub("q_proj"),
+        let mha = path.sub("mha");
+        let mha_linear_q = linear(
+            mha.sub("linear_q"),
             c_in,
-            c_hidden,
-            LinearConfig {
-                bias: true,
-                ..Default::default()
-            },
-        );
-
-        let k_proj = linear(
-            path.sub("k_proj"),
-            c_in,
-            c_hidden,
+            mha_dim,
             LinearConfig {
                 bias: false,
                 ..Default::default()
             },
         );
-
-        let v_proj = linear(
-            path.sub("v_proj"),
+        let mha_linear_k = linear(
+            mha.sub("linear_k"),
             c_in,
+            mha_dim,
+            LinearConfig {
+                bias: false,
+                ..Default::default()
+            },
+        );
+        let mha_linear_v = linear(
+            mha.sub("linear_v"),
+            c_in,
+            mha_dim,
+            LinearConfig {
+                bias: false,
+                ..Default::default()
+            },
+        );
+        let mha_linear_o = linear(
+            mha.sub("linear_o"),
+            mha_dim,
             c_in,
             LinearConfig {
                 bias: false,
                 ..Default::default()
             },
         );
-
-        let o_proj = linear(
-            path.sub("o_proj"),
+        let mha_linear_g = linear(
+            mha.sub("linear_g"),
             c_in,
-            c_in,
+            mha_dim,
             LinearConfig {
                 bias: false,
                 ..Default::default()
@@ -122,26 +113,16 @@ impl TriangleAttention {
             inf: inf.unwrap_or(1e9),
             layer_norm,
             linear: bias_linear,
-            q_proj,
-            k_proj,
-            v_proj,
-            o_proj,
+            mha_linear_q,
+            mha_linear_k,
+            mha_linear_v,
+            mha_linear_o,
+            mha_linear_g,
             device,
         }
     }
 
-    /// Forward pass with chunking support
-    ///
-    /// # Arguments
-    ///
-    /// * `x` - Input tensor of shape [B, N, N, C_in]
-    /// * `mask` - Optional mask tensor of shape [B, N, N]
-    /// * `chunk_size` - Optional chunk size for memory-efficient computation
-    /// * `_use_kernels` - Placeholder for kernel usage (always uses fallback)
-    ///
-    /// # Returns
-    ///
-    /// Output tensor of shape [B, N, N, C_in]
+    /// Forward pass (`chunk_size` reserved for parity with Python `chunk_layer`; full attention for now).
     pub fn forward(
         &self,
         x: &Tensor,
@@ -149,7 +130,8 @@ impl TriangleAttention {
         chunk_size: Option<i64>,
         _use_kernels: bool,
     ) -> Tensor {
-        // Get or create mask
+        let _ = chunk_size;
+
         let mask_tensor = if let Some(m) = mask {
             m.shallow_clone()
         } else {
@@ -159,30 +141,30 @@ impl TriangleAttention {
         let mut x = x.shallow_clone();
         let mut mask_tensor = mask_tensor;
 
-        // Transpose if ending node
         if !self.starting {
             x = x.transpose(-2, -3);
             mask_tensor = mask_tensor.transpose(-1, -2);
         }
 
-        // Apply LayerNorm
         x = self.layer_norm.forward(&x);
 
-        // Prepare mask bias: [*, I, 1, 1, J]
+        // [*, I, 1, 1, J] — same as `mask[..., :, None, None, :]` in Python.
         let mask_expanded = mask_tensor.unsqueeze(-2).unsqueeze(-3);
         let mask_bias = mask_expanded * self.inf - self.inf;
 
-        // Compute triangle bias: [*, H, I, J]
+        // [*, I, J, H] -> `permute_final_dims(..., (2,0,1))` -> [*, H, I, J]
         let triangle_bias = self.linear.forward(&x);
-        let triangle_bias = triangle_bias.transpose(-1, -3); // [*, H, I, J]
-
-        // Expand to [*, 1, H, I, J]
+        let sh = triangle_bias.size();
+        let z = sh.len() - 3;
+        let mut perm: Vec<i64> = (0..z as i64).collect();
+        perm.push((z + 2) as i64);
+        perm.push(z as i64);
+        perm.push((z + 1) as i64);
+        let triangle_bias = triangle_bias.permute(perm.as_slice());
         let triangle_bias = triangle_bias.unsqueeze(-4);
 
-        // Multi-head attention with bias
-        let output = self.mha_with_bias(&x, &mask_bias, &triangle_bias, mask, chunk_size);
+        let output = self.mha_with_bias(&x, &mask_bias, &triangle_bias);
 
-        // Transpose back if ending node
         if !self.starting {
             output.transpose(-2, -3)
         } else {
@@ -190,93 +172,52 @@ impl TriangleAttention {
         }
     }
 
-    /// Multi-head attention with triangle bias
-    ///
-    /// This performs the core attention computation with the triangle bias
-    /// added to the attention scores.
+    /// `_attention` in primitives.py: softmax over keys, biases broadcast onto `[*, H, J, J]`.
     fn mha_with_bias(
         &self,
         x: &Tensor,
-        _mask_bias: &Tensor,
-        _triangle_bias: &Tensor,
-        _mask: Option<&Tensor>,
-        _chunk_size: Option<i64>,
+        mask_bias: &Tensor,
+        triangle_bias: &Tensor,
     ) -> Tensor {
-        let shape = x.size();
-        let _num_dims = shape.len();
+        let b = x.size()[0];
+        let i = x.size()[1];
+        let j = x.size()[2];
+        let h = self.no_heads;
+        let d = self.c_hidden;
 
-        // Reshape for batch processing
-        // Input: [B, I, J, C_in]
-        let b = shape[0];
-        let i = shape[1];
-        let j = shape[2];
+        let q = self.mha_linear_q.forward(x);
+        let k = self.mha_linear_k.forward(x);
+        let v = self.mha_linear_v.forward(x);
 
-        // Project Q, K, V
-        let q = self.q_proj.forward(x); // [B, I, J, c_hidden]
-        let k = self.k_proj.forward(x); // [B, I, J, c_hidden]
-        let v = self.v_proj.forward(x); // [B, I, J, c_in]
+        let q = q
+            .reshape(&[b, i, j, h, d])
+            .transpose(2, 3)
+            .to_kind(Kind::Float)
+            / (d as f64).sqrt();
+        let k = k.reshape(&[b, i, j, h, d]).transpose(2, 3).to_kind(Kind::Float);
+        let v = v.reshape(&[b, i, j, h, d]).transpose(2, 3).to_kind(Kind::Float);
 
-        // Reshape for multi-head: [B, I, J, H, D]
-        let head_dim = self.c_hidden / self.no_heads;
-        let q = q.view([b, i, j, self.no_heads, head_dim]);
-        let k = k.view([b, i, j, self.no_heads, head_dim]);
-        let v = v.view([b, i, j, 1, self.c_in]); // Keep last dim as c_in
+        let kt = k.transpose(-1, -2);
+        let mut a = q.matmul(&kt);
+        a = a + mask_bias.to_kind(Kind::Float);
+        a = a + triangle_bias.to_kind(Kind::Float);
+        a = a.softmax(-1, Kind::Float);
 
-        // Compute attention scores
-        // Starting node: attend over I dimension, ending node: attend over J dimension
-        let (attn, v_reshaped) = if self.starting {
-            // Attend over I (first sequence dimension)
-            // q: [B, I, J, H, D] -> [B, J, H, I, D]
-            // k: [B, I, J, H, D] -> [B, J, H, I, D]
-            let q_t = q.transpose(1, 2).transpose(1, 3); // [B, J, H, I, D]
-            let k_t = k.transpose(1, 2).transpose(1, 3); // [B, J, H, I, D]
+        let mut o = a.matmul(&v);
+        o = o.transpose(2, 3);
 
-            // v: [B, I, J, 1, C_in] -> [B, J, 1, I, C_in]
-            let v_t = v.transpose(1, 2).transpose(1, 3); // [B, J, 1, I, C_in]
+        let g = self.mha_linear_g.forward(x).sigmoid();
+        let g = g.reshape(&[b, i, j, h, d]).to_kind(o.kind());
+        o = o * g;
 
-            // Compute scores: [B, J, H, I, I]
-            let scores = q_t.matmul(&k_t.transpose(-1, -2)) / (head_dim as f64).sqrt();
-
-            // Add biases (need to reshape appropriately)
-            // mask_bias: [B, I, 1, 1, J] -> need to reshape for attention pattern
-            // For now, we'll use a simpler approach without chunking
-
-            (scores, v_t)
-        } else {
-            // Attend over J (second sequence dimension)
-            // q: [B, I, J, H, D]
-            // k: [B, I, J, H, D]
-            let scores = q.matmul(&k.transpose(-2, -3)) / (head_dim as f64).sqrt();
-
-            (scores, v)
-        };
-
-        // Apply mask bias and triangle bias
-        // For simplicity in initial implementation, skip exact bias application
-        // TODO: Implement proper bias broadcasting
-
-        // Softmax and compute output
-        let attn_weights = attn.softmax(-1, Kind::Float);
-        let output = attn_weights.matmul(&v_reshaped);
-
-        // Project output
-        let output = output.view([b, i, j, self.c_in]);
-        self.o_proj.forward(&output)
+        let o = o.reshape(&[b, i, j, h * d]);
+        self.mha_linear_o.forward(&o)
     }
 }
 
-/// TriangleAttentionStartingNode - Algorithm 13
-///
-/// Implements triangle attention where the "starting" node attends to other positions
 pub type TriangleAttentionStartingNode = TriangleAttention;
 
-/// TriangleAttentionEndingNode - Algorithm 14
-///
-/// Implements triangle attention where the "ending" node is attended from other positions
-///
-/// This is just a TriangleAttention with starting=false
 impl TriangleAttention {
-    /// Create a TriangleAttentionEndingNode
     pub fn new_ending_node<'a>(
         path: Path<'a>,
         c_in: i64,

@@ -611,4 +611,22 @@ mod tests {
             missing
         );
     }
+
+    /// Pinned smoke weights: `tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors`
+    /// (regenerate with `cargo run -p boltr-backend-tch --bin gen_boltz2_smoke_safetensors --features tch-backend`).
+    #[test]
+    fn pinned_smoke_safetensors_require_all_vars_loads() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors");
+        assert!(
+            path.is_file(),
+            "missing {}; run: cargo run -p boltr-backend-tch --bin gen_boltz2_smoke_safetensors --features tch-backend",
+            path.display()
+        );
+        let mut m = Boltz2Model::with_options(device, 64, 32, Some(1));
+        m.load_from_safetensors_require_all_vars(&path)
+            .unwrap_or_else(|e| panic!("load_from_safetensors_require_all_vars {}: {e:#}", path.display()));
+    }
 }

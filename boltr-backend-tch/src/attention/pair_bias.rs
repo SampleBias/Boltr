@@ -201,22 +201,21 @@ impl AttentionPairBiasV2 {
             .forward(k_in)
             .view([b, -1, self.num_heads, self.head_dim]);
 
-        // Compute pairwise bias
+        // Compute pairwise bias — match Boltz `Rearrange("b ... h -> b h ...")` on [B, N, N, H].
         let bias = if self.compute_pair_bias {
             let ln = self.proj_z_layer_norm.as_ref().unwrap();
             let lin = self.proj_z.as_ref().unwrap();
 
-            // Apply LayerNorm -> Linear -> reshape
             let z_proj = ln.forward(z);
             let z_linear = lin.forward(&z_proj);
-            z_linear
+            z_linear.permute([0, 3, 1, 2])
+        } else if z.dim() == 4 && z.size()[3] == self.num_heads {
+            z.permute([0, 3, 1, 2])
+        } else if z.dim() == 3 {
+            // Shared scalar bias per pair, broadcast over heads (test / simple callers).
+            z.unsqueeze(1).expand(&[b, self.num_heads, z.size()[1], z.size()[2]], false)
         } else {
-            // If z is already bias, just reshape it
-            if z.dim() == 3 {
-                z.view([b, -1, self.num_heads])
-            } else {
-                z.shallow_clone()
-            }
+            z.shallow_clone()
         };
 
         // Repeat bias if multiplicity > 1
@@ -237,35 +236,28 @@ impl AttentionPairBiasV2 {
         let bias_float = bias.to_kind(Kind::Float);
         let mask_float = mask.to_kind(Kind::Float);
 
-        // Compute attention scores: einsum("bihd,bjhd->bhij", q, k)
-        let attn = q_float.matmul(&k_float.transpose(1, 2)); // [B, H, N, N]
+        let attn = Tensor::einsum("bihd,bjhd->bhij", &[&q_float, &k_float], None::<i64>);
 
-        // Scale by sqrt(head_dim)
         let scale = (self.head_dim as f64).sqrt();
         let attn = attn / scale;
 
-        // Add pairwise bias
         let attn = attn + bias_float;
 
-        // Apply mask: add -inf where mask is 0
-        let mask_expanded = mask_float.unsqueeze(1); // [B, 1, N, N]
+        let mask_expanded = mask_float.unsqueeze(1);
         let attn = attn
             + mask_expanded
                 .ones_like()
                 .g_sub(&mask_expanded)
                 .g_mul_scalar(-self.inf);
 
-        // Softmax over last dimension
         let attn = attn.softmax(-1, Kind::Float);
 
-        // Compute output: einsum("bhij,bjhd->bihd", attn, v)
-        let o = attn.matmul(&v_float); // [B, H, N, D]
+        let o = Tensor::einsum("bhij,bjhd->bihd", &[&attn, &v_float], None::<i64>);
 
         // Restore original dtype
         let o = o.to_kind(s.kind());
 
-        // Reshape and apply output projection with gate
-        let o = o.view([b, -1, self.c_s]);
+        let o = o.reshape(&[b, -1, self.c_s]);
         let o = o * g;
         let o = self.proj_o.forward(&o);
 

@@ -94,29 +94,12 @@ impl OuterProductMean {
             self.c_z,
         ]);
 
-        // Compute outer product mean
-        // For simplicity, implement mean over bins dimension
-        let a_mean = a_bins.mean_dim(3, false, a.kind()); // [B, N, M, c_z]
-        let b_mean = b_bins.mean_dim(3, false, b.kind()); // [B, N, M, c_z]
-
-        // Outer product: [B, N, M, c_z] @ [B, N, M, c_z]^T -> [B, N, N, c_z]
-        let batch_size = a.size()[0];
-        let n = a.size()[1];
-        let m = a.size()[2];
-
-        // Reshape for batch matmul
-        let a_flat = a_mean.view([batch_size, n * m, self.c_z]);
-        let b_flat = b_mean.view([batch_size, n * m, self.c_z]);
-
-        // Compute outer product: a_flat @ b_flat^T
-        let outer = a_flat.matmul(&b_flat.transpose(1, 2)); // [B, N*M, N*M, c_z]
-
-        // Reshape back to [B, N, N, c_z] by summing over M dimension
-        let outer = outer.view([batch_size, n, m, n, m, self.c_z]);
-
-        // Sum over m dimensions to get [B, N, N, c_z]
-        // For now, return simplified version
-        outer.sum_dim_intlist(&[2i64, 4][..], false, a.kind())
+        // Mean over bins, then contract M like `torch.einsum("bimc,bjmc->bijc", ...)` / M.
+        let a_mean = a_bins.mean_dim(3, false, a.kind());
+        let b_mean = b_bins.mean_dim(3, false, b.kind());
+        let m = a.size()[2] as f64;
+        let z = Tensor::einsum("bimc,bjmc->bijc", &[&a_mean, &b_mean], None::<i64>);
+        z / m
     }
 }
 

@@ -26,3 +26,17 @@ tempfile = "3"
 [[test]]
 name = "msa_module_golden"
 required-features = ["tch-backend"]
+
+[[test]]
+name = "pairformer_golden"
+required-features = ["tch-backend"]
+
+[[bin]]
+name = "gen_boltz2_smoke_safetensors"
+path = "src/bin/gen_boltz2_smoke_safetensors.rs"
+required-features = ["tch-backend"]
+
+[[bin]]
+name = "verify_boltz2_safetensors"
+path = "src/bin/verify_boltz2_safetensors.rs"
+required-features = ["tch-backend"]

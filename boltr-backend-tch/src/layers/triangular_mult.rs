@@ -127,11 +127,8 @@ impl TriangleMultiplicationOutgoing {
         let a_float = a.to_kind(Kind::Float);
         let b_float = b.to_kind(Kind::Float);
 
-        // Triangular projection: einsum("bikd,bjkd->bijd", a, b)
-        // This computes updates by iterating over k dimension
-        // Result shape: [B, I, J, D] where I and J are sequence positions
-        let b_val = b_float.transpose(2, 3); // [B, N, D/2, N] for better batching
-        let x_triangular = a_float.matmul(&b_val); // [B, N, N, D]
+        // Triangular projection: `torch.einsum("bikd,bjkd->bijd", a, b)` (Boltz reference).
+        let x_triangular = Tensor::einsum("bikd,bjkd->bijd", &[&a_float, &b_float], None::<i64>);
 
         // Output gating
         let x_normed_out = self.norm_out.forward(&x_triangular);
@@ -264,18 +261,8 @@ impl TriangleMultiplicationIncoming {
         let a_float = a.to_kind(Kind::Float);
         let b_float = b.to_kind(Kind::Float);
 
-        // Triangular projection: einsum("bkid,bkjd->bijd", a, b)
-        // This computes updates by iterating over k dimension (first N)
-        // Result shape: [B, I, J, D] where I and J are sequence positions
-        // We need to transpose a and b appropriately
-
-        // For einsum("bkid,bkjd->bijd"), we sum over the middle dimension (k)
-        // a: [B, K, I, D/2], b: [B, K, J, D/2] -> result: [B, I, J, D/2]
-        let a_transposed = a_float.transpose(1, 2); // [B, I, N, D/2]
-        let b_transposed = b_float.transpose(1, 3); // [B, N, J, D/2]
-
-        // Matmul: [B, I, N, D/2] @ [B, N, J, D/2] -> [B, I, J, D/2]
-        let x_triangular = a_transposed.matmul(&b_transposed); // [B, I, J, D]
+        // Triangular projection: `torch.einsum("bkid,bkjd->bijd", a, b)` (Boltz reference).
+        let x_triangular = Tensor::einsum("bkid,bkjd->bijd", &[&a_float, &b_float], None::<i64>);
 
         // Output gating
         let x_normed_out = self.norm_out.forward(&x_triangular);

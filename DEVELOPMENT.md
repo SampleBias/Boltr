@@ -173,6 +173,36 @@ python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ck
 
 (Optional: `--strip-prefix model.` if keys are nested.) See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md).
 
+### VarStore key alignment vs a real export
+
+[`Boltz2Model::load_from_safetensors_require_all_vars`](boltr-backend-tch/src/boltz2/model.rs) fails when any Rust parameter name is missing from the file (extra diffusion / confidence keys in the file are fine).
+
+1. Export with [`scripts/export_checkpoint_to_safetensors.py`](scripts/export_checkpoint_to_safetensors.py) and the same `--strip-prefix` you use in Lightning (often `model.`).
+2. Diff keys (missing / unused):
+
+   ```bash
+   scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- \
+     ~/.cache/boltr/boltz2_conf.safetensors
+   ```
+
+   Match checkpoint hyperparameters when needed:
+
+   ```bash
+   scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- \
+     --token-s 384 --token-z 128 --blocks 4 --bond-type-feature \
+     boltz2_export.safetensors
+   ```
+
+   Exit code **0** means every VarStore key is present; **1** lists missing names (fix Rust `Path` segments under `boltr-backend-tch/src/boltz2/` / `layers/` or adjust export prefix).
+
+3. **Pinned smoke fixture** (architecture 64 / 32 / 1 pairformer block, no bond-type embedding) used in CI to prove strict load on a committed file:
+
+   ```bash
+   scripts/cargo-tch run -p boltr-backend-tch --bin gen_boltz2_smoke_safetensors --features tch-backend
+   ```
+
+   Output: [`boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors`](boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors). Re-run the generator after adding parameters to [`Boltz2Model`](boltr-backend-tch/src/boltz2/model.rs).
+
 ## Project Structure
 
 ```

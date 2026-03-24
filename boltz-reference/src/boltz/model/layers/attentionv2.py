@@ -100,7 +100,13 @@ class AttentionPairBias(nn.Module):
             # Compute attention weights
             attn = torch.einsum("bihd,bjhd->bhij", q.float(), k.float())
             attn = attn / (self.head_dim**0.5) + bias.float()
-            attn = attn + (1 - mask[:, None, None].float()) * -self.inf
+            # Pairwise mask (B, N, N): use (B, 1, N, N) so it broadcasts with (B, H, N, N).
+            # mask[:, None, None] on 3D would be (B, 1, 1, N, N) and incorrectly broadcast attn to 5D.
+            if mask.dim() == 3:
+                mask_b = mask.unsqueeze(1)
+            else:
+                mask_b = mask[:, None, None]
+            attn = attn + (1 - mask_b.float()) * -self.inf
             attn = attn.softmax(dim=-1)
 
             # Compute output

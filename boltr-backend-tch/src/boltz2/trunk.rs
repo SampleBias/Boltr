@@ -134,8 +134,10 @@ impl TrunkV2 {
         );
 
         // Initialize recycling weights for gating (zeros)
-        s_recycle.ws.zero_();
-        z_recycle.ws.zero_();
+        tch::no_grad(|| {
+            let _ = s_recycle.ws.zero_();
+            let _ = z_recycle.ws.zero_();
+        });
 
         // Owned PairformerModule — keys align with Lightning `pairformer_module.*`
         let pairformer = PairformerModule::new(
@@ -204,7 +206,7 @@ impl TrunkV2 {
 
         // Initialize pairwise embeddings from sequence
         let z_init_1 = self.z_init_1.forward(s_inputs).unsqueeze(2); // [B, N, 1, token_z]
-        let z_init_2 = self.z_init_2.forward(s_inputs).unsqueeze(3); // [B, 1, N, token_z]
+        let z_init_2 = self.z_init_2.forward(s_inputs).unsqueeze(1); // [B, 1, N, token_z]
         let z_init = z_init_1 + z_init_2; // [B, N, N, token_z]
 
         (s_init, z_init)
