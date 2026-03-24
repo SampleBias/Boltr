@@ -54,6 +54,7 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 ## Priority 3: Testing Infrastructure
 - [x] Golden fixtures for trunk smoke / token features / MSA / pairformer layer (see `TODO.md` §7 + `docs/TENSOR_CONTRACT.md`)
 - [x] Python export scripts: `export_msa_module_golden.py`, `export_pairformer_golden.py`, checkpoint export
+- [x] **`tch` test runtime:** [`scripts/cargo-tch`](../scripts/cargo-tch) / [`with_dev_venv.sh`](../scripts/with_dev_venv.sh) prepend PyTorch’s `torch/lib` to `LD_LIBRARY_PATH` so CUDA wheels resolve `libtorch_cuda.so` (avoids exit 127 when running `cargo test`)
 - [~] Numerical tolerances: ad hoc rtol/atol in golden tests; document per-key when featurizer collate golden lands
 - [ ] Regression harness: optional `boltz predict` vs `boltr predict` diff
 
@@ -114,13 +115,17 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 4. Create golden fixture test infrastructure
 
 **Notes for Future Work:**
-- Tests require `--features tch` and LibTorch to execute
+- Tests require `--features tch-backend` (or project default) and LibTorch; prefer `scripts/cargo-tch` so `LD_LIBRARY_PATH` includes the venv’s `torch/lib`
 - Golden tensor testing should be prioritized for numerical validation
 - Consider implementing activation checkpointing for memory efficiency
 - Chunking interface exists but could be optimized further
 
 ---
 *Last Updated: 2025-03-22 10:00*
+
+### 2026-03-25 — LibTorch runtime for `cargo test` ([`TODO.md`](../TODO.md))
+
+**Done:** [`scripts/with_dev_venv.sh`](../scripts/with_dev_venv.sh) sets `LD_LIBRARY_PATH` to the venv’s `site-packages/torch/lib` when present, so `cargo test` binaries linked against the PyTorch wheel find `libtorch_cuda.so` / `libtorch_cpu.so`. Documented in `TODO.md` §2a progress + §3 LibTorch row + footer.
 
 ### 2026-03-24 — Doc sync + recommended next builds ([`TODO.md`](../TODO.md))
 
@@ -242,4 +247,4 @@ s_init [B, N, token_s]      z_init_1 [B, N, 1, token_z]
 - Full test coverage for all components
 
 ---
-*Last Updated: 2026-03-24 (see 2026-03-24 subsection above)*
+*Last Updated: 2026-03-25 (see 2026-03-25 / 2026-03-24 subsections above)*
