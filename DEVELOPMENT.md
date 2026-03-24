@@ -127,12 +127,15 @@ System Python refuses `pip install torch` (PEP 668). Use [`scripts/bootstrap_dev
 
 #### Golden export scripts (`ModuleNotFoundError: No module named 'torch'`)
 
-Scripts such as [`scripts/export_msa_module_golden.py`](scripts/export_msa_module_golden.py) need **`torch`** and **`safetensors`**. With the repo venv:
+Scripts such as [`scripts/export_msa_module_golden.py`](scripts/export_msa_module_golden.py) and [`scripts/export_pairformer_golden.py`](scripts/export_pairformer_golden.py) need **`torch`** and **`safetensors`**. With the repo venv:
 
 ```bash
 source .venv/bin/activate   # after bootstrap_dev_venv.sh
 PYTHONPATH=boltz-reference/src python3 scripts/export_msa_module_golden.py
+PYTHONPATH=boltz-reference/src python3 scripts/export_pairformer_golden.py
 ```
+
+Opt-in numeric tests (LibTorch): `BOLTR_RUN_MSA_GOLDEN=1` / `BOLTR_RUN_PAIRFORMER_GOLDEN=1` with `scripts/cargo-tch test -p boltr-backend-tch --features tch-backend` (see fixture READMEs under `tests/fixtures/`).
 
 #### Troubleshooting: `this tch version expects PyTorch 2.3.0, got …`
 
@@ -195,7 +198,9 @@ python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ck
 
    Exit code **0** means every VarStore key is present; **1** lists missing names (fix Rust `Path` segments under `boltr-backend-tch/src/boltz2/` / `layers/` or adjust export prefix).
 
-3. **Pinned smoke fixture** (architecture 64 / 32 / 1 pairformer block, no bond-type embedding) used in CI to prove strict load on a committed file:
+3. **Collate smoke → trunk:** `boltr-io` fixture [`trunk_smoke_collate.safetensors`](boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) is loaded in [`boltr-backend-tch/tests/collate_predict_trunk.rs`](boltr-backend-tch/tests/collate_predict_trunk.rs), which runs `Boltz2Model::predict_step_trunk` with `MsaFeatures` (no full checkpoint required).
+
+4. **Pinned smoke fixture** (architecture 64 / 32 / 1 pairformer block, no bond-type embedding) used in CI to prove strict load on a committed file:
 
    ```bash
    scripts/cargo-tch run -p boltr-backend-tch --bin gen_boltz2_smoke_safetensors --features tch-backend

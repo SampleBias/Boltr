@@ -43,7 +43,9 @@ pub use boltz_const::{
     MIN_COVERAGE_FRACTION, MIN_COVERAGE_RESIDUES, NUM_ELEMENTS, NUM_METHOD_TYPES, NUM_PH_BINS,
     NUM_TEMP_BINS, NUM_TOKENS, TOKENS, UNK_BOND_TYPE, UNK_CHIRALITY_TYPE, UNK_HYBRIDIZATION_TYPE,
 };
-pub use collate_golden::{trunk_smoke_collate_shapes, trunk_smoke_collate_shapes_from_path};
+pub use collate_golden::{
+    trunk_smoke_collate_path, trunk_smoke_collate_shapes, trunk_smoke_collate_shapes_from_path,
+};
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, process_token_features, token_feature_key_names, TokenFeatureTensors,

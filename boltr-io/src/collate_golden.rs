@@ -1,9 +1,14 @@
 //! Helpers for the checked-in collate golden (`tests/fixtures/collate_golden/`).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use safetensors::SafeTensors;
+
+/// Absolute path to [`trunk_smoke_collate.safetensors`](tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) inside this crate.
+pub fn trunk_smoke_collate_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/collate_golden/trunk_smoke_collate.safetensors")
+}
 
 /// Names and shapes of tensors in `trunk_smoke_collate.safetensors`.
 pub fn trunk_smoke_collate_shapes() -> Result<Vec<(String, Vec<usize>)>> {
@@ -42,5 +47,11 @@ mod tests {
             .find(|(n, _)| n == "s_inputs")
             .expect("s_inputs present");
         assert_eq!(s.1, vec![1, 4, 384]);
+    }
+
+    #[test]
+    fn trunk_smoke_collate_path_points_at_file() {
+        let p = trunk_smoke_collate_path();
+        assert!(p.is_file(), "expected {}", p.display());
     }
 }

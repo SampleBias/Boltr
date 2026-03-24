@@ -18,9 +18,10 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [x] Wire PairformerModule into TrunkV2
 - [x] Implement TrunkV2 initialization and recycling
 - [x] Create TrunkV2 smoke test
-- [ ] Implement `predict_step` / inference path
-- [ ] Implement `InputEmbedder` (trunkv2.py)
-- [ ] Implement `RelativePositionEncoder` (encodersv2.py)
+- [x] `predict_step_trunk` (recycling + trunk + optional MSA; no diffusion/confidence)
+- [ ] Implement full `predict_step` / inference path (diffusion, confidence, writers)
+- [~] Implement `InputEmbedder` (partial: res_type + msa_profile + external `a`)
+- [x] Implement `RelativePositionEncoder` (encodersv2-aligned; golden parity still TBD)
 - [ ] Implement full forward pass with all components
 
 ## Priority 2: IO & Preprocessing (boltr-io)
@@ -41,8 +42,8 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [ ] Implement padding utilities
 
 ### Section 4.5 - Dataset & Collate
-- [ ] Implement `load_input` from inferencev2.py
-- [ ] Implement `collate` stacking/padding
+- [~] Implement `load_input` from inferencev2.py (collate smoke → `predict_step_trunk` test landed; full `Input` TBD)
+- [~] Implement `collate` stacking/padding (`FeatureBatch` + `trunk_smoke_collate.safetensors`)
 - [ ] Implement affinity crop
 
 ### Section 4.6 - Output Writers
@@ -51,10 +52,10 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [ ] Implement structure format writers (mmcif, pdb)
 
 ## Priority 3: Testing Infrastructure
-- [ ] Create golden fixture repo layout
-- [ ] Write Python export scripts for golden tensors
-- [ ] Define numerical tolerances per tensor
-- [ ] Implement regression test harness
+- [x] Golden fixtures for trunk smoke / token features / MSA / pairformer layer (see `TODO.md` §7 + `docs/TENSOR_CONTRACT.md`)
+- [x] Python export scripts: `export_msa_module_golden.py`, `export_pairformer_golden.py`, checkpoint export
+- [~] Numerical tolerances: ad hoc rtol/atol in golden tests; document per-key when featurizer collate golden lands
+- [ ] Regression harness: optional `boltz predict` vs `boltr predict` diff
 
 ## Priority 4: CLI Enhancements
 - [ ] Add flags parity (recycling, sampling steps, etc.)
@@ -120,6 +121,17 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 
 ---
 *Last Updated: 2025-03-22 10:00*
+
+### 2026-03-24 — Doc sync + recommended next builds ([`TODO.md`](../TODO.md))
+
+**Done this pass:** `TODO.md` / `tasks/todo.md` / [`docs/TENSOR_CONTRACT.md`](../docs/TENSOR_CONTRACT.md) / [`DEVELOPMENT.md`](../DEVELOPMENT.md) aligned with MSAModule + Pairformer layer goldens, `predict_step_trunk`, pinned smoke VarStore, and `attentionv2` mask fix.
+
+**Highest-impact next (pick one workstream):**
+
+1. **§4.5 full `load_input` / `Input` type** — extend beyond collate smoke tensors to match `inferencev2.py` (dirs + npz paths).
+2. **§5.1 full checkpoint** — run `verify_boltz2_safetensors` on a standard export; fix remaining `Path` gaps or publish an allowlist.
+3. **§5.3 `TemplateV2Module`** — replace stub when YAML/templates matter for your targets.
+4. **§5.2 `InputEmbedder` atom stack** — unlock embedder→trunk without external `a`.
 
 ## Review Section
 
@@ -230,4 +242,4 @@ s_init [B, N, token_s]      z_init_1 [B, N, 1, token_z]
 - Full test coverage for all components
 
 ---
-*Last Updated: 2025-03-22 10:06*
+*Last Updated: 2026-03-24 (see 2026-03-24 subsection above)*

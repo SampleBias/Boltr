@@ -41,6 +41,8 @@ CI compares the checked-in safetensors to live Rust `process_token_features`; af
 
 Optional: extend [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py) to dump a full merged `collate()` dict from `Boltz2InferenceDataModule`.
 
+**Backend wiring:** [`boltr-backend-tch/tests/collate_predict_trunk.rs`](../../../boltr-backend-tch/tests/collate_predict_trunk.rs) loads this file and runs `Boltz2Model::predict_step_trunk` with `MsaFeatures` (default `cargo test -p boltr-backend-tch --features tch-backend` when LibTorch is available).
+
 ## Reference
 
 Upstream merge in `featurizerv2.py` (boltz main):

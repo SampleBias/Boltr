@@ -19,4 +19,13 @@ export PATH="$VENV_BIN:$PATH"
 export LIBTORCH_USE_PYTORCH=1
 # tch 0.16 expects LibTorch ~2.3; newer pip `torch` (e.g. 2.11) triggers a build-script check unless bypassed.
 export LIBTORCH_BYPASS_VERSION_CHECK="${LIBTORCH_BYPASS_VERSION_CHECK:-1}"
+
+# Run-time: `tch` binaries link against the same LibTorch as the wheel (`libtorch_cpu.so`,
+# and with CUDA wheels `libtorch_cuda.so`). Without this, `cargo test` often fails with:
+#   error while loading shared libraries: libtorch_cuda.so: cannot open shared object file
+TORCH_LIB="$("$VENV_BIN/python" -c 'import pathlib, torch; print(pathlib.Path(torch.__file__).resolve().parent / "lib")' 2>/dev/null || true)"
+if [[ -n "${TORCH_LIB}" && -d "${TORCH_LIB}" ]]; then
+  export LD_LIBRARY_PATH="${TORCH_LIB}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
 exec "$@"
