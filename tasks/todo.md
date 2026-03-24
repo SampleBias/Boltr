@@ -42,7 +42,7 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [ ] Implement padding utilities
 
 ### Section 4.5 - Dataset & Collate
-- [~] Implement `load_input` from inferencev2.py (collate smoke → `predict_step_trunk` test landed; full `Input` TBD)
+- [~] Implement `load_input` from inferencev2.py — [`boltr-io/src/inference_dataset.rs`](../boltr-io/src/inference_dataset.rs) + [`tests/load_input_dataset.rs`](../boltr-io/tests/load_input_dataset.rs); **TBD:** affinity/constraints/extra_mols, Python golden diff
 - [~] Implement `collate` stacking/padding (`FeatureBatch` + `trunk_smoke_collate.safetensors`)
 - [ ] Implement affinity crop
 

@@ -17,6 +17,7 @@ pub mod feature_batch;
 pub mod featurizer;
 pub mod fixtures;
 pub mod format;
+pub mod inference_dataset;
 pub mod ligand_exclusion;
 pub mod msa;
 pub mod msa_csv;
@@ -79,6 +80,10 @@ pub use feature_batch::{
 };
 pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;
+pub use inference_dataset::{
+    load_input, parse_manifest_json, parse_manifest_path, Boltz2ChainInfo, Boltz2InferenceInput,
+    Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, StructureInfo, TemplateInfo,
+};
 pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EXCLUSION_COUNT};
 pub use msa::{write_a3m, MsaProcessor};
 pub use parser::parse_input_path as parse_input;

@@ -1,0 +1,20 @@
+{
+  "records": [
+    {
+      "id": "test_ala",
+      "structure": {},
+      "chains": [
+        {
+          "chain_id": 0,
+          "chain_name": "A",
+          "mol_type": 0,
+          "cluster_id": 0,
+          "msa_id": 0,
+          "num_residues": 1,
+          "valid": true
+        }
+      ],
+      "interfaces": []
+    }
+  ]
+}
