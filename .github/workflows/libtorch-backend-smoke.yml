@@ -1,0 +1,25 @@
+# Manual smoke: LibTorch via repo .venv + boltr-backend-tch unit tests (CPU wheel).
+# Use when validating tch + PyTorch header/runtime alignment (see DEVELOPMENT.md).
+
+name: LibTorch backend smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap dev venv (torch 2.3 for tch 0.16)
+        run: bash scripts/bootstrap_dev_venv.sh
+
+      - name: Run boltr-backend-tch library tests
+        run: bash scripts/with_dev_venv.sh cargo test -p boltr-backend-tch --features tch-backend --lib

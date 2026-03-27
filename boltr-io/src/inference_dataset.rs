@@ -150,11 +150,11 @@ fn msa_id_is_active(msa_id: &Value) -> bool {
 
 /// Load preprocess data for one record (Python `load_input`).
 ///
-/// **Supported:** `affinity == false`, structure + MSAs; optional template `.npz` when
-/// `record.templates` and `template_dir` are set.
+/// **Supported:** structure + MSAs; optional template `.npz` when `record.templates` and
+/// `template_dir` are set. When `affinity == true`, loads
+/// `{target_dir}/{id}/pre_affinity_{id}.npz` instead of `{target_dir}/{id}.npz` (Boltz preprocess layout).
 ///
-/// **Not implemented:** `affinity == true`, `constraints_dir`, `extra_mols_dir` (returns an error
-/// if those parameters would change behavior).
+/// **Not implemented:** `constraints_dir`, `extra_mols_dir` (returns an error if set).
 pub fn load_input(
     record: &Boltz2Record,
     target_dir: &Path,
@@ -164,9 +164,6 @@ pub fn load_input(
     extra_mols_dir: Option<&Path>,
     affinity: bool,
 ) -> Result<Boltz2InferenceInput> {
-    if affinity {
-        bail!("load_input: affinity=true is not implemented (pre_affinity npz layout)");
-    }
     if constraints_dir.is_some() {
         bail!("load_input: residue constraints loading is not implemented; pass constraints_dir=None");
     }
@@ -174,7 +171,13 @@ pub fn load_input(
         bail!("load_input: extra_mols pickle loading is not implemented; pass extra_mols_dir=None");
     }
 
-    let structure_path = target_dir.join(format!("{}.npz", record.id));
+    let structure_path = if affinity {
+        target_dir
+            .join(&record.id)
+            .join(format!("pre_affinity_{}.npz", record.id))
+    } else {
+        target_dir.join(format!("{}.npz", record.id))
+    };
     let structure = read_structure_v2_npz_path(&structure_path).with_context(|| {
         format!(
             "StructureV2.load: {}",

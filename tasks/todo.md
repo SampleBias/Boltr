@@ -30,7 +30,7 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [ ] Expand full YAML schema parse (entities, bonds, ligands)
 - [ ] Implement CCD / molecules loading
 - [ ] Implement structure parsers (mmcif, pdb)
-- [ ] Implement constraints serialization
+- [~] Constraints `.npz` layout — [`scripts/verify_constraints_npz_layout.py`](../scripts/verify_constraints_npz_layout.py) vs Boltz `ResidueConstraints` (`types.py`); **TBD:** Rust load in `load_input`
 
 ### Section 4.3-4.4 - Tokenizer & Featurizer
 - [ ] Implement `Boltz2Tokenizer` (boltz2.py)
@@ -55,8 +55,8 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [x] Golden fixtures for trunk smoke / token features / MSA / pairformer layer (see `TODO.md` §7 + `docs/TENSOR_CONTRACT.md`)
 - [x] Python export scripts: `export_msa_module_golden.py`, `export_pairformer_golden.py`, checkpoint export
 - [x] **`tch` test runtime:** [`scripts/cargo-tch`](../scripts/cargo-tch) / [`with_dev_venv.sh`](../scripts/with_dev_venv.sh) prepend PyTorch’s `torch/lib` to `LD_LIBRARY_PATH` so CUDA wheels resolve `libtorch_cuda.so` (avoids exit 127 when running `cargo test`)
-- [~] Numerical tolerances: ad hoc rtol/atol in golden tests; document per-key when featurizer collate golden lands
-- [ ] Regression harness: optional `boltz predict` vs `boltr predict` diff
+- [~] Numerical tolerances: [docs/TENSOR_CONTRACT.md](../docs/TENSOR_CONTRACT.md) § Numerical tolerances; per-key as collate golden lands
+- [~] Regression harness: placeholder [`scripts/regression_compare_predict.sh`](../scripts/regression_compare_predict.sh); full subprocess diff TBD
 
 ## Priority 4: CLI Enhancements
 - [ ] Add flags parity (recycling, sampling steps, etc.)

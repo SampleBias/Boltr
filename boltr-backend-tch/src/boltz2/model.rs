@@ -43,11 +43,12 @@ impl Boltz2Model {
     /// Build from exported Lightning `hyper_parameters` JSON ([`Boltz2Hparams`]).
     pub fn from_hparams_json(device: Device, json_bytes: &[u8]) -> Result<Self> {
         let h = Boltz2Hparams::from_json_slice(json_bytes)?;
-        Ok(Self::with_options(
+        Ok(Self::with_options_bonds(
             device,
             h.resolved_token_s(),
             h.resolved_token_z(),
             h.resolved_num_pairformer_blocks(),
+            h.resolved_bond_type_feature(),
         ))
     }
 

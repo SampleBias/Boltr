@@ -101,6 +101,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-25 | **`LD_LIBRARY_PATH` for `tch` test binaries** | [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh) (used by [`scripts/cargo-tch`](scripts/cargo-tch)) prepends the venv’s `site-packages/torch/lib` so runtimes find **`libtorch_cuda.so`** / **`libtorch_cpu.so`**. Fixes exit **127** / “error while loading shared libraries” when running `cargo test` with CUDA-linked PyTorch without manually exporting `LD_LIBRARY_PATH`. Plain `cargo` without this wrapper still needs manual `LD_LIBRARY_PATH` or CPU-only LibTorch. |
 | 2026-03-23 | **Rust `load_input` + manifest** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): Boltz manifest JSON (`records` or top-level array), `load_input` from preprocess dirs (StructureV2 + MSA npz, optional templates). [`load_input_smoke`](boltr-io/tests/fixtures/load_input_smoke) fixture + [`load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). |
 | 2026-03-23 | **`token_features_from_inference_input`** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): wires `load_input` → `tokenize_structure` → `process_token_features`; [`load_input_token_features_match_canonical_ala_golden_path`](boltr-io/tests/load_input_dataset.rs) matches canonical ALA / `token_features_ala_golden.safetensors`. |
+| 2026-03-23 | **Roadmap tooling + partial parity** | [Makefile](Makefile); [scripts/compare_ckpt_safetensors_counts.py](scripts/compare_ckpt_safetensors_counts.py); [scripts/verify_constraints_npz_layout.py](scripts/verify_constraints_npz_layout.py); [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh); [`.github/workflows/libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml); `Boltz2Hparams` + `from_hparams_json` bond-type; [`dummy_templates`](boltr-io/src/featurizer/dummy_templates.rs); [`INFERENCE_COLLATE_EXCLUDED_KEYS`](boltr-io/src/feature_batch.rs); affinity [`load_input`](boltr-io/src/inference_dataset.rs) path; [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) tolerances; DEVELOPMENT VarStore checklist. |
 
 ---
 
@@ -111,9 +112,9 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | [x] | LibTorch build matrix | Document CPU vs CUDA; `LIBTORCH` / `LIBTORCH_USE_PYTORCH` ([DEVELOPMENT.md](DEVELOPMENT.md)). **tch 0.16:** repo `.venv` via [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh) (Python **3.10–3.12**, **`torch==2.3.0`**, `setuptools`); run Cargo through [`scripts/cargo-tch`](scripts/cargo-tch) or [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh); diagnostics [`scripts/check_tch_prereqs.sh`](scripts/check_tch_prereqs.sh). Arch: **`python312`** from **AUR** if needed (see DEVELOPMENT.md). **Run-time:** `with_dev_venv.sh` sets `LD_LIBRARY_PATH` to PyTorch’s `torch/lib` so `cargo test` binaries load `libtorch_cuda.so` when the wheel is CUDA-enabled. |
 | [x] | CLI device flags | `--device`, `BOLTR_DEVICE`; CUDA availability check in backend. |
 | [x] | Default feature policy | **Resolved for now:** `default = []` on `boltr-cli` so `cargo test` works without LibTorch; document `--features tch` in [README.md](README.md) / [DEVELOPMENT.md](DEVELOPMENT.md). Revisit optional `full` alias if needed. |
-| [ ] | Optional CUDA CI job | Nightly or manual workflow with CUDA LibTorch smoke test (single matmul or `s_init` forward). |
-| [ ] | Checkpoint export automation | Makefile / `xtask` to run export script + verify key count vs Lightning `state_dict`. |
-| [~] | Hyperparameter manifest | [`scripts/export_hparams_from_ckpt.py`](scripts/export_hparams_from_ckpt.py) → JSON; Rust [`Boltz2Hparams`](boltr-backend-tch/src/boltz_hparams.rs) + [`Boltz2Model::from_hparams_json`](boltr-backend-tch/src/boltz2/model.rs). **Still TBD:** full key coverage / `hparams.yaml` parity / single `from_config` naming. |
+| [x] | Optional CUDA CI job | Manual workflow: [`.github/workflows/libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml) (`workflow_dispatch`, CPU LibTorch via venv + `with_dev_venv.sh`). Add a self-hosted CUDA runner matrix if needed. |
+| [x] | Checkpoint export automation | [Makefile](Makefile): `export-safetensors`, `export-hparams`, `verify-safetensors`, `compare-ckpt-safetensors-counts`; [scripts/compare_ckpt_safetensors_counts.py](scripts/compare_ckpt_safetensors_counts.py). |
+| [~] | Hyperparameter manifest | [`scripts/export_hparams_from_ckpt.py`](scripts/export_hparams_from_ckpt.py) → JSON; Rust [`Boltz2Hparams`](boltr-backend-tch/src/boltz_hparams.rs) (`bond_type_feature` + pairformer dims) + [`Boltz2Model::from_hparams_json`](boltr-backend-tch/src/boltz2/model.rs). **Still TBD:** full Lightning dict / `hparams.yaml` parity / single `from_config` naming. |
 
 **Acceptance:** A new machine can go from clone → `cargo test` (no GPU) and optionally → GPU build with documented env vars.
 
@@ -129,7 +130,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | [ ] | Full schema parse | `schema.py` | Port `parse_boltz_schema` pipeline: entities, bonds, ligands (SMILES/CCD), polymer types. **Depends on:** CCD/molecule loading. |
 | [ ] | CCD / molecules | `mol.py`, `main.py` (ccd.pkl, mols.tar) | Load or interface with `ccd.pkl`; ligand graphs for featurizer. Consider thin FFI or subprocess only if unavoidable—document tradeoff. |
 | [ ] | Structure parsers | `parse/mmcif.py`, `parse/pdb.py`, `mmcif_with_constraints.py` | Parse inputs for templates and processed structures. |
-| [ ] | Constraints serialization | preprocess in `main.py` | Match npz layouts consumed by `load_input` in inferencev2. |
+| [~] | Constraints serialization | preprocess in `main.py` | Layout check: [`scripts/verify_constraints_npz_layout.py`](scripts/verify_constraints_npz_layout.py). **TBD:** Rust `npz` load into typed structs for `load_input`. |
 
 **Acceptance:** Given the same YAML + assets as Python, Rust produces the **same** internal `Record` / target representation (or byte-identical intermediate files).
 
@@ -170,8 +171,8 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs), [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs) (`tokenize_structure` + `process_token_features`; same tensors as `token_features_ala_golden` when structure matches packed ALA). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** affinity / `ResidueConstraints` / `extra_mols`, `process_msa_features` + full collate allclose vs Python. |
-| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs): `FeatureBatch`, `collate_feature_batches`, `stack_f32_views` (stack pre-padded identical shapes). Per-key pad rules + exclusions still **TBD** vs Python. |
+| [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs) (incl. affinity `pre_affinity_{id}.npz` path), [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** `ResidueConstraints` / `extra_mols` load, `process_msa_features` + full collate allclose vs Python. |
+| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs): `FeatureBatch`, `collate_feature_batches`, `INFERENCE_COLLATE_EXCLUDED_KEYS` (mirror Python non-stacked keys). **TBD:** `pad_to_max` per-key + full parity vs Python. |
 | [ ] | Affinity crop | `crop/affinity.py` | If parity with affinity inference is required. |
 
 **Acceptance:** Batch dict from Rust equals Python on golden fixture.
@@ -297,9 +298,9 @@ Implement in **topological** order: lower modules first, then composite. Suggest
 | Status | Task | Details |
 |--------|------|---------|
 | [~] | Golden fixture repo layout | [boltr-io/tests/fixtures/](boltr-io/tests/fixtures/) has minimal YAML; expand with npz + README for featurizer/collate goldens. |
-| [~] | Python export scripts | `export_checkpoint_to_safetensors.py`; [`export_msa_module_golden.py`](scripts/export_msa_module_golden.py); [`export_pairformer_golden.py`](scripts/export_pairformer_golden.py). Still TBD: featurizer **full collate** batch dumps + multi-block pairformer if desired. |
-| [ ] | Numerical tolerances | Document per-tensor rtol/atol; strict for embeddings, looser for sampling. |
-| [ ] | Regression test harness | Optional: subprocess `boltz predict` vs `boltr predict` diff. |
+| [~] | Python export scripts | `export_checkpoint_to_safetensors.py`; [`export_msa_module_golden.py`](scripts/export_msa_module_golden.py); [`export_pairformer_golden.py`](scripts/export_pairformer_golden.py); [Makefile](Makefile) wrappers. Still TBD: featurizer **full collate** batch dumps + multi-block pairformer if desired. |
+| [~] | Numerical tolerances | [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) § Numerical tolerances (guidelines; per-test values as goldens land). |
+| [~] | Regression test harness | Placeholder: [`scripts/regression_compare_predict.sh`](scripts/regression_compare_predict.sh); full subprocess diff TBD when CLI pipeline complete. |
 | [~] | Backend layer unit tests | Pairformer-related modules include `#[test]`; integration [tests/collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). Use [`scripts/cargo-tch`](scripts/cargo-tch) (sets `torch/lib` on `LD_LIBRARY_PATH` for CUDA wheels). **Does not** replace Python golden parity. |
 
 ---
@@ -349,4 +350,4 @@ These can proceed **in parallel** once interfaces are agreed (tensor names/shape
 
 ---
 
-*Last updated: 2026-03-23 — §4.5 `token_features_from_inference_input` + golden test; `load_input` MVP. Still open: `process_msa_features` + full collate allclose, affinity/constraints/extra_mols `load_input`, full `predict_step`, real `TemplateV2Module`, §5.1 full-checkpoint VarStore audit.*
+*Last updated: 2026-03-23 — Roadmap batch: [Makefile](Makefile) export/verify/counts; [`compare_ckpt_safetensors_counts.py`](scripts/compare_ckpt_safetensors_counts.py); [`verify_constraints_npz_layout.py`](scripts/verify_constraints_npz_layout.py); [`libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml); `Boltz2Hparams::bond_type_feature` + `from_hparams_json`; `load_dummy_templates_features`; `INFERENCE_COLLATE_EXCLUDED_KEYS`; affinity `load_input` path; `TENSOR_CONTRACT` tolerances; placeholder regression script; module roadmap docs (diffusion/confidence/affinity). Large items still open: full schema/CCD, `process_msa_features`, diffusion/confidence/affinity implementations, **`predict_step`**, writers, CLI wiring.*

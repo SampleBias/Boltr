@@ -176,6 +176,17 @@ python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ck
 
 (Optional: `--strip-prefix model.` if keys are nested.) See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md).
 
+**Makefile shortcuts** (repo root [Makefile](Makefile)):
+
+```bash
+make export-safetensors CKPT=path/to.ckpt OUT=out.safetensors
+make verify-safetensors SAFETENSORS=out.safetensors
+make export-hparams CKPT=path/to.ckpt HPARAMS_JSON=hparams.json
+make compare-ckpt-safetensors-counts CKPT=path/to.ckpt SAFETENSORS=out.safetensors
+```
+
+Hyperparameters JSON for [`Boltz2Hparams`](boltr-backend-tch/src/boltz_hparams.rs) / [`Boltz2Model::from_hparams_json`](boltr-backend-tch/src/boltz2/model.rs) can include `bond_type_feature` (bool) when the checkpoint was trained with bond-type embeddings.
+
 ### VarStore key alignment vs a real export
 
 [`Boltz2Model::load_from_safetensors_require_all_vars`](boltr-backend-tch/src/boltz2/model.rs) fails when any Rust parameter name is missing from the file (extra diffusion / confidence keys in the file are fine).
@@ -199,6 +210,8 @@ python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ck
    Exit code **0** means every VarStore key is present; **1** lists missing names (fix Rust `Path` segments under `boltr-backend-tch/src/boltz2/` / `layers/` or adjust export prefix).
 
    A **full** Lightning export contains many tensors the Rust trunk model does not load yet (diffusion, confidence, affinity heads, optimiser buffers, etc.). The tool prints **unused file keys** for visibility only; a successful run requires **no missing** VarStore keys, not an empty unused list.
+
+   **Full checkpoint audit checklist (Phase 4):** (1) Export with `--strip-prefix` matching Lightning. (2) Run `verify_boltz2_safetensors` with `--token-s` / `--token-z` / `--blocks` / `--bond-type-feature` as needed. (3) Fix **missing** Rust keys (rename `Path` segments in `boltr-backend-tch`). (4) Record **unused** prefixes for heads not ported yet. (5) Re-run after adding modules.
 
 3. **Collate smoke → trunk:** `boltr-io` fixture [`trunk_smoke_collate.safetensors`](boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) is loaded in [`boltr-backend-tch/tests/collate_predict_trunk.rs`](boltr-backend-tch/tests/collate_predict_trunk.rs), which runs `Boltz2Model::predict_step_trunk` with `MsaFeatures` (no full checkpoint required).
 

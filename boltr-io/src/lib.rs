@@ -49,7 +49,8 @@ pub use collate_golden::{
 };
 pub use config::BoltzInput;
 pub use featurizer::{
-    ala_tokenized_smoke, process_token_features, token_feature_key_names, TokenFeatureTensors,
+    ala_tokenized_smoke, load_dummy_templates_features, process_token_features,
+    token_feature_key_names, DummyTemplateTensors, TokenFeatureTensors,
     CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
@@ -77,6 +78,7 @@ pub type BoltzConfig = BoltzInput;
 pub use download::download_model_assets;
 pub use feature_batch::{
     collate_feature_batches, stack_f32_views, CollateError, FeatureBatch, FeatureTensor,
+    INFERENCE_COLLATE_EXCLUDED_KEYS,
 };
 pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;

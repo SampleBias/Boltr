@@ -43,3 +43,16 @@ Lightning checkpoints store a nested `state_dict`. For Rust, export with [`scrip
 ## CUDA / kernels
 
 Python optional `[cuda]` extra installs **cuequivariance** kernels for faster triangle ops. LibTorch via `tch-rs` does not load those; Boltr targets the **same math** as the PyTorch fallback path (`use_kernels=False`). GPU acceleration uses **CUDA LibTorch** for standard torch ops.
+
+## Numerical tolerances (Phase 7)
+
+Document per-test `rtol` / `atol` as goldens land (TODO.md §7):
+
+| Class | Typical policy |
+|-------|------------------|
+| Embeddings / linear outputs | `rtol ≈ 1e-5`, `atol ≈ 1e-6` (see `token_features_golden.rs`) |
+| Pairformer / MSA module (opt-in goldens) | match export script + same dtype (F32); tighten if CPU/CUDA diverge |
+| Sampling / diffusion | looser; compare distributions or fixed-seed step parity |
+| Collated batch dict | per-key in `#[test]` once Rust `collate` matches Python |
+
+Add a **regression harness** (`boltz predict` vs `boltr predict`) when the CLI pipeline is complete (placeholder: [`scripts/regression_compare_predict.sh`](../scripts/regression_compare_predict.sh)).

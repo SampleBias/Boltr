@@ -2,6 +2,21 @@
 //!
 //! Full `collate()` in Python pads per key; here we provide **stack-after-pad** for fixed-shape
 //! examples and typed storage. Extend when golden keys/shapes are frozen.
+//!
+//! Keys listed in [`INFERENCE_COLLATE_EXCLUDED_KEYS`] are **not** stacked in Python `collate()` in
+//! `boltz-reference/.../inferencev2.py`; future Rust collate should mirror that for parity.
+
+/// Keys skipped by Python `Boltz2InferenceDataModule` collate (not stacked like tensor batches).
+pub const INFERENCE_COLLATE_EXCLUDED_KEYS: &[&str] = &[
+    "all_coords",
+    "all_resolved_mask",
+    "crop_to_all_atom_map",
+    "chain_symmetries",
+    "amino_acids_symmetries",
+    "ligand_symmetries",
+    "record",
+    "affinity_mw",
+];
 
 use std::collections::HashMap;
 
