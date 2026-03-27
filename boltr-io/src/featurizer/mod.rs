@@ -6,6 +6,8 @@ pub mod process_atom_features;
 pub mod process_msa_features;
 pub mod process_token_features;
 #[cfg(test)]
+mod msa_features_golden;
+#[cfg(test)]
 mod token_features_golden;
 pub mod token;
 
