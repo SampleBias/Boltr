@@ -38,6 +38,15 @@ const TRUNK_SMOKE_BYTES: &[u8] =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ndarray::arr2;
+    use safetensors::tensor::Dtype;
+
+    use crate::collate_inference_batches;
+    use crate::feature_batch::FeatureBatch;
+
+    /// [`collate_two_msa_golden.safetensors`](../../tests/fixtures/collate_golden/collate_two_msa_golden.safetensors) (`scripts/dump_collate_two_example_golden.py`).
+    const COLLATE_TWO_MSA_BYTES: &[u8] =
+        include_bytes!("../tests/fixtures/collate_golden/collate_two_msa_golden.safetensors");
 
     #[test]
     fn trunk_smoke_includes_s_inputs() {
@@ -53,5 +62,32 @@ mod tests {
     fn trunk_smoke_collate_path_points_at_file() {
         let p = trunk_smoke_collate_path();
         assert!(p.is_file(), "expected {}", p.display());
+    }
+
+    fn read_i64_le(buf: &[u8]) -> Vec<i64> {
+        buf.chunks_exact(8)
+            .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+            .collect()
+    }
+
+    /// Python `pad_to_max` / NumPy mirror (`dump_collate_two_example_golden.py`) vs Rust `collate_inference_batches`.
+    #[test]
+    fn collate_two_msa_matches_golden_pad_to_max() {
+        let st = safetensors::SafeTensors::deserialize(COLLATE_TWO_MSA_BYTES).unwrap();
+        let tv = st.tensor("msa").expect("msa");
+        assert_eq!(tv.dtype(), Dtype::I64);
+        assert_eq!(tv.shape(), &[2, 2, 3]);
+        let exp_flat = read_i64_le(tv.data());
+
+        let mut a = FeatureBatch::new();
+        a.insert_i64("msa", arr2(&[[1_i64, 2], [3, 4]]).into_dyn());
+        let mut b = FeatureBatch::new();
+        b.insert_i64("msa", arr2(&[[10_i64, 20, 30], [40, 50, 60]]).into_dyn());
+
+        let out = collate_inference_batches(&[a, b], 0.0, 0, 0).unwrap();
+        let got = out.batch.get_i64("msa").unwrap();
+        assert_eq!(got.shape(), &[2, 2, 3]);
+        let got_flat: Vec<i64> = got.iter().copied().collect();
+        assert_eq!(got_flat, exp_flat);
     }
 }

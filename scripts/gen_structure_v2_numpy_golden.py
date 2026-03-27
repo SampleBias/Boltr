@@ -99,8 +99,12 @@ def main() -> None:
         [1.5, 1.0, 0.0],
     ]
 
+    # PDB names must match Boltz `ref_atoms` order for ALA: N, CA, C, O, CB (`process_atom_features`
+    # looks up each atom in the RDKit mol by name).
+    ala_atom_names = ["N", "CA", "C", "O", "CB"]
     atoms = np.zeros(5, dtype=AtomV2)
     for i, c in enumerate(coords_data):
+        atoms[i]["name"] = ala_atom_names[i]
         atoms[i]["coords"] = np.array(c, dtype=np.float32)
         atoms[i]["is_present"] = True
         atoms[i]["bfactor"] = 0.0

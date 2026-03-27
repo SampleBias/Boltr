@@ -3,6 +3,8 @@
 pub mod dummy_templates;
 pub mod msa_pairing;
 pub mod process_atom_features;
+#[cfg(test)]
+mod atom_features_golden;
 pub mod process_msa_features;
 pub mod process_token_features;
 #[cfg(test)]
@@ -14,6 +16,7 @@ pub mod token;
 pub use dummy_templates::{
     dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
 };
+pub use process_atom_features::{ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA};
 pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
 pub use process_token_features::{
     process_token_features, TokenFeatureTensors, CONTACT_CONDITIONING_NUM_CLASSES,

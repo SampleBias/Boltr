@@ -51,8 +51,10 @@ pub use collate_golden::{
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, dummy_templates_as_feature_batch, load_dummy_templates_features,
-    process_msa_features, process_token_features, token_feature_key_names, DummyTemplateTensors,
-    MsaFeatureTensors, TokenFeatureTensors, CONTACT_CONDITIONING_NUM_CLASSES,
+    process_msa_features, process_token_features, token_feature_key_names,
+    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
+    DummyTemplateTensors, MsaFeatureTensors, TokenFeatureTensors,
+    CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};

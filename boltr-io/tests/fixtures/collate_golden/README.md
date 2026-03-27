@@ -13,6 +13,8 @@ This directory holds **machine-readable** artifacts for the Boltz2 inference bat
 | `ala_structure_v2.npz` | Single-chain ALA `StructureV2` matching Rust [`fixtures::structure_v2_single_ala`](../../src/fixtures.rs). Written by `write_token_features_ala_golden`. |
 | `token_features_ala_golden.safetensors` | Full **`process_token_features`** dict for that structure (no leading batch axis). Rust golden + tests: `cargo run -p boltr-io --bin write_token_features_ala_golden`. |
 | `token_features_ala_collated_golden.safetensors` | Same tensors with **`B=1`** prepended on every key (collate-style). |
+| `atom_features_ala_golden.safetensors` | Python **`process_atom_features`** for single-token ALA + canonical `mols/*.pkl`. Regenerate: [`scripts/dump_atom_features_golden.py`](../../../scripts/dump_atom_features_golden.py) (`--mol-dir` / `BOLTZ_MOL_DIR`). Rust schema tests: [`atom_features_golden.rs`](../../src/featurizer/atom_features_golden.rs). |
+| `collate_two_msa_golden.safetensors` | Two-example **`msa`** after `pad_to_max` (variable last dim), for Rust `collate_inference_batches` parity. Regenerate: [`scripts/dump_collate_two_example_golden.py`](../../../scripts/dump_collate_two_example_golden.py) (NumPy + `safetensors` only). |
 
 ## Regeneration
 
