@@ -71,6 +71,23 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 ---
 
+## 2b. `boltr-io` featurizer + collate — single ordered plan
+
+Use this as the **one checklist** for preprocess → features → batch (see also [`.cursor/plans/featurizer_collate_parity_e7ccf120.plan.md`](.cursor/plans/featurizer_collate_parity_e7ccf120.plan.md) for file-level detail).
+
+| Order | Deliverable | Status | Notes |
+|-------|-------------|--------|--------|
+| **1** | `pad_to_max` + inference `collate` | **Done** | [`collate_pad.rs`](boltr-io/src/collate_pad.rs): `pad_to_max_f32`, `collate_inference_batches`, `InferenceCollateResult`; [`INFERENCE_COLLATE_EXCLUDED_KEYS`](boltr-io/src/feature_batch.rs) matches Python `inferencev2.collate`. |
+| **2** | `construct_paired_msa` + `process_msa_features` + golden | **Done** | [`msa_pairing.rs`](boltr-io/src/featurizer/msa_pairing.rs), [`process_msa_features.rs`](boltr-io/src/featurizer/process_msa_features.rs), [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs). **Golden:** [`scripts/dump_msa_features_golden.py`](scripts/dump_msa_features_golden.py) → `msa_features_load_input_smoke_golden.safetensors` + [`msa_features_golden.rs`](boltr-io/src/featurizer/msa_features_golden.rs). RNG only affects `msa_sampling=True` path. |
+| **3a** | Dummy templates + merged `FeatureBatch` | **Done** | [`dummy_templates.rs`](boltr-io/src/featurizer/dummy_templates.rs); [`TokenFeatureTensors::to_feature_batch`](boltr-io/src/featurizer/process_token_features.rs) / [`MsaFeatureTensors::to_feature_batch`](boltr-io/src/featurizer/process_msa_features.rs); [`trunk_smoke_feature_batch_from_inference_input`](boltr-io/src/inference_dataset.rs) merges token + MSA + dummy templates (no atoms, no `s_inputs`). Test: [`trunk_smoke_feature_batch_covers_collate_manifest_keys`](boltr-io/tests/load_input_dataset.rs). |
+| **3b** | Real `process_template_features` | **Open** | Needs `template_tokens` per template name (tokenizer / bookkeeping); port `compute_template_features` + stacking + `template_force` / thresholds ([`featurizerv2.py`](boltz-reference/src/boltz/data/feature/featurizerv2.py) ~1696–1837). |
+| **4** | `process_atom_features` | **Open** | RDKit `Mol` in Python; Rust: golden-first + structure-only tensors + documented gaps ([`process_atom_features.rs`](boltr-io/src/featurizer/process_atom_features.rs)). |
+| **5** | §4.4 collate acceptance | **Partial** | Unit tests for pad/collate + smoke keys; **TBD:** `allclose` vs frozen **multi-example** Python `collate` dict (full trunk featurizer output). |
+
+**Out of scope for this track (separate checklists):** affinity MSA variant, symmetry / ensemble / constraint feature maps, affinity crop — see §4.4 notes and §5.8.
+
+---
+
 ## 2a. Recent progress log
 
 | When | What landed | Notes |
@@ -102,6 +119,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-23 | **Rust `load_input` + manifest** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): Boltz manifest JSON (`records` or top-level array), `load_input` from preprocess dirs (StructureV2 + MSA npz, optional templates). [`load_input_smoke`](boltr-io/tests/fixtures/load_input_smoke) fixture + [`load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). |
 | 2026-03-23 | **`token_features_from_inference_input`** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): wires `load_input` → `tokenize_structure` → `process_token_features`; [`load_input_token_features_match_canonical_ala_golden_path`](boltr-io/tests/load_input_dataset.rs) matches canonical ALA / `token_features_ala_golden.safetensors`. |
 | 2026-03-23 | **Roadmap tooling + partial parity** | [Makefile](Makefile); [scripts/compare_ckpt_safetensors_counts.py](scripts/compare_ckpt_safetensors_counts.py); [scripts/verify_constraints_npz_layout.py](scripts/verify_constraints_npz_layout.py); [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh); [`.github/workflows/libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml); `Boltz2Hparams` + `from_hparams_json` bond-type; [`dummy_templates`](boltr-io/src/featurizer/dummy_templates.rs); [`INFERENCE_COLLATE_EXCLUDED_KEYS`](boltr-io/src/feature_batch.rs); affinity [`load_input`](boltr-io/src/inference_dataset.rs) path; [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) tolerances; DEVELOPMENT VarStore checklist. |
+| 2026-03-27 | **Inference collate + MSA + trunk `FeatureBatch` (§2b phases 1–3a)** | [`collate_pad.rs`](boltr-io/src/collate_pad.rs) `pad_to_max_f32` / `collate_inference_batches`. [`construct_paired_msa`](boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](boltr-io/src/featurizer/process_msa_features.rs) + [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs). **MSA golden:** [`scripts/dump_msa_features_golden.py`](scripts/dump_msa_features_golden.py), [`msa_features_load_input_smoke_golden.safetensors`](boltr-io/tests/fixtures/load_input_smoke/) (force-add if `*.safetensors` gitignored), [`msa_features_golden.rs`](boltr-io/src/featurizer/msa_features_golden.rs). **Merge API:** `TokenFeatureTensors::to_feature_batch`, `MsaFeatureTensors::to_feature_batch`, [`trunk_smoke_feature_batch_from_inference_input`](boltr-io/src/inference_dataset.rs). **Next (§2b):** real templates → atom features → full collate dict golden. |
 
 ---
 
@@ -158,24 +176,24 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [~] | Constants / enums | `data/const.py` | **Core tables ported:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs), [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs), [boltr-io/src/vdw_radii.rs](boltr-io/src/vdw_radii.rs) (`VDW_RADII`, `vdw_radius`), [boltr-io/src/ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs) (`is_ligand_excluded`), template `MIN_COVERAGE_*`, [boltr-io/src/ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs) + [boltr-io/data/ambiguous_atoms.json](boltr-io/data/ambiguous_atoms.json). **Still TBD:** other large `const.py` maps. |
-| [~] | `process_token_features` | `feature/featurizerv2.py` | [boltr-io/src/featurizer/process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs): `process_token_features`, `TokenFeatureTensors` (inference-style). Golden: [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs) vs `token_features_ala_golden.safetensors` + collated `B=1`; regen `cargo run -p boltr-io --bin write_token_features_ala_golden` / [scripts/dump_token_features_ala_golden.py](scripts/dump_token_features_ala_golden.py) with `BOLTZ_SRC`. |
-| [ ] | `process_atom_features` | same | Atom-level tensors, distograms, windows. |
-| [~] | `process_msa_features` | same | [`construct_paired_msa`](boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](boltr-io/src/featurizer/process_msa_features.rs); [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs). **TBD:** allclose golden vs Python; affinity variant (`affinity=True`). |
-| [~] | `process_template_features` | same + dummy templates | [`dummy_templates_as_feature_batch`](boltr-io/src/featurizer/dummy_templates.rs). **TBD:** real templates + `template_tokens` (tokenizer). |
+| [x] | `process_token_features` (inference) | `feature/featurizerv2.py` | [process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs): `TokenFeatureTensors`, `to_feature_batch`. Golden: [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs) vs `token_features_ala_golden.safetensors`; regen `cargo run -p boltr-io --bin write_token_features_ala_golden` / [dump_token_features_ala_golden.py](scripts/dump_token_features_ala_golden.py). Training-only augmentations still out of scope. |
+| [ ] | `process_atom_features` | same | **Not implemented** — module documents RDKit gap ([process_atom_features.rs](boltr-io/src/featurizer/process_atom_features.rs)). **Next:** golden export script + subset parity on structure-derived keys. |
+| [x] | `process_msa_features` (non-affinity) | same | [`construct_paired_msa`](boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](boltr-io/src/featurizer/process_msa_features.rs); [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs); `MsaFeatureTensors::to_feature_batch`. **Golden:** [dump_msa_features_golden.py](scripts/dump_msa_features_golden.py) + [msa_features_golden.rs](boltr-io/src/featurizer/msa_features_golden.rs) on `load_input_smoke`. **TBD:** `affinity=True` MSA keys. |
+| [~] | `process_template_features` | same | **Dummy path:** [`load_dummy_templates_features`](boltr-io/src/featurizer/dummy_templates.rs), [`dummy_templates_as_feature_batch`](boltr-io/src/featurizer/dummy_templates.rs). **Real path TBD:** `template_tokens` + `compute_template_features` + forces ([featurizerv2.py](boltz-reference/src/boltz/data/feature/featurizerv2.py) ~1762+). |
 | [ ] | Ensemble / symmetry / constraints | same + `feature/symmetry.py` | Optional flags parity with inference. |
-| [~] | Padding utilities | `pad.py` | [boltr-io/src/pad.rs](boltr-io/src/pad.rs): `pad_1d`, `pad_ragged_rows`, `stack_tokens_2d`, `token_pad_mask` (post-padding + lengths). Extend when collate keys are frozen. |
+| [x] | Padding for inference collate | `pad.py` | **Per-key pad + collate:** [collate_pad.rs](boltr-io/src/collate_pad.rs) (`pad_to_max_f32`, `collate_inference_batches`). **Token axis helpers:** [pad.rs](boltr-io/src/pad.rs) (`pad_1d`, `pad_ragged_rows`, …) for featurizer padding. |
 
-**Acceptance:** For one **frozen** Python export (`dict[str, Tensor]` after `collate`), Rust produces **allclose** tensors (document rtol/atol per key in test).
+**Acceptance (§4.4 product bar):** For one **frozen** Python export (`dict[str, Tensor]` after `collate`), Rust produces **allclose** tensors (document rtol/atol per key). **Done for:** token (ALA), MSA (`load_input_smoke`). **Remaining:** full post-collate dict for variable-`N` batch, atoms, real templates.
 
 ### 4.5 Inference dataset / collate
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs) (incl. affinity `pre_affinity_{id}.npz` path), [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** `ResidueConstraints` / `extra_mols` load, `process_msa_features` + full collate allclose vs Python. |
-| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs) + [`collate_pad`](boltr-io/src/collate_pad.rs): `pad_to_max_f32`, `collate_inference_batches`, `INFERENCE_COLLATE_EXCLUDED_KEYS`. **TBD:** full allclose vs Python on multi-key batch dump. |
+| [~] | `load_input` | `module/inferencev2.py` | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs) (structure + MSA npz + optional template **structures**; affinity `pre_affinity_{id}.npz` path). Helpers: [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs), [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs), [`trunk_smoke_feature_batch_from_inference_input`](boltr-io/src/inference_dataset.rs) (token + MSA + dummy templates). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** `ResidueConstraints` / `extra_mols` pickle load. |
+| [~] | `collate` | same | [feature_batch.rs](boltr-io/src/feature_batch.rs) (`collate_feature_batches` same-shape stack) + [collate_pad.rs](boltr-io/src/collate_pad.rs) (`pad_to_max_f32`, `collate_inference_batches`, `INFERENCE_COLLATE_EXCLUDED_KEYS`). [collate_golden/manifest.json](boltr-io/tests/fixtures/collate_golden/manifest.json) lists key names. **TBD:** end-to-end **allclose** vs Python on a **variable-size** two-example collate dump (§2b phase 5). |
 | [ ] | Affinity crop | `crop/affinity.py` | If parity with affinity inference is required. |
 
-**Acceptance:** Batch dict from Rust equals Python on golden fixture.
+**Acceptance:** Batch dict from Rust equals Python on golden fixture; **partially met** for token/MSA slices + smoke keys — extend as atom/template paths land.
 
 ### 4.6 Output writers
 
@@ -321,12 +339,12 @@ Do **not** delete `boltz-reference/` chunks until Rust replaces them with tests.
 
 These can proceed **in parallel** once interfaces are agreed (tensor names/shapes in `docs/TENSOR_CONTRACT.md`):
 
-1. **Featurizer team:** §4.3–4.5 (blocked only on §4.1–4.2 for parser outputs).
-2. **Trunk integration team:** §5.2 (embedder + §5.3 **real** `TemplateV2Module` to replace stub; §5.1 VarStore key map). **Pairformer + optional MSA path are on `TrunkV2`;** templates + IO→embedder→trunk + goldens are the main gaps.**
+1. **Featurizer team (current bottleneck):** Follow **§2b** — **next:** `process_atom_features` (golden-first), then **real** `process_template_features` (§2b phases 4–3b), then **full collate dict** golden (§2b phase 5). §4.1–4.2 still block full YAML/CCD parity.
+2. **Trunk integration team:** §5.2 (embedder + §5.3 **real** `TemplateV2Module` to replace stub; §5.1 VarStore key map). **Pairformer + MSA path are on `TrunkV2`.** Feed with [`trunk_smoke_feature_batch_from_inference_input`](boltr-io/src/inference_dataset.rs) until atoms/templates are complete.
 3. **Diffusion team:** §5.6 (blocked on trunk output tensors).
 4. **Writers team:** §4.6 (can start from Python dumps of expected files).
 5. **Affinity team:** §5.8 (blocked on affinity featurizer path).
-6. **Numerical parity team:** §7 — pairformer **layer** + **MSA** module goldens are opt-in; next: featurizer **collate** batch + trunk slice goldens.
+6. **Numerical parity team:** §7 — pairformer layer + MSA module goldens opt-in; **featurizer:** token + MSA smoke goldens **done**; next: **collate** multi-example + atom subset.
 
 ---
 
@@ -350,4 +368,4 @@ These can proceed **in parallel** once interfaces are agreed (tensor names/shape
 
 ---
 
-*Last updated: 2026-03-23 — Roadmap batch: [Makefile](Makefile) export/verify/counts; [`compare_ckpt_safetensors_counts.py`](scripts/compare_ckpt_safetensors_counts.py); [`verify_constraints_npz_layout.py`](scripts/verify_constraints_npz_layout.py); [`libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml); `Boltz2Hparams::bond_type_feature` + `from_hparams_json`; `load_dummy_templates_features`; `INFERENCE_COLLATE_EXCLUDED_KEYS`; affinity `load_input` path; `TENSOR_CONTRACT` tolerances; placeholder regression script; module roadmap docs (diffusion/confidence/affinity). Large items still open: full schema/CCD, `process_msa_features`, diffusion/confidence/affinity implementations, **`predict_step`**, writers, CLI wiring.*
+*Last updated: 2026-03-27 — Added **§2b** (single ordered featurizer + collate plan). Marked §4.4 token/MSA/collate-pad rows to match code: MSA golden, `trunk_smoke_feature_batch_from_inference_input`, `to_feature_batch`. **Still open:** `process_atom_features`, real templates, full §4.4 collate dict vs Python, full schema/CCD, diffusion/confidence/affinity, **`predict_step`**, writers, CLI wiring. See §2a row 2026-03-27 for file pointers.*

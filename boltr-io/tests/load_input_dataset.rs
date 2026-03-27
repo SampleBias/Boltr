@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use boltr_io::{
     load_input, msa_features_from_inference_input, parse_manifest_path, process_token_features,
     structure_v2_single_ala, token_features_from_inference_input,
-    tokenize::boltz2::tokenize_structure, A3mMsa, A3mSequenceMeta,
+    tokenize::boltz2::tokenize_structure, trunk_smoke_feature_batch_from_inference_input, A3mMsa,
+    A3mSequenceMeta,
 };
 
 fn fixture_dir() -> PathBuf {
@@ -80,6 +81,34 @@ fn load_input_msa_features_runs() {
     let m = msa_features_from_inference_input(&input);
     assert_eq!(m.msa.ncols(), m.profile.nrows());
     assert_eq!(m.profile.ncols(), boltr_io::NUM_TOKENS);
+}
+
+/// Featurizer keys expected by [`boltr_io::collate_golden::trunk_smoke_collate_path`] minus `s_inputs`
+/// (computed inside the model, not the featurizer).
+#[test]
+fn trunk_smoke_feature_batch_covers_collate_manifest_keys() {
+    let dir = fixture_dir();
+    let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+    let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+        .expect("load_input");
+    let batch = trunk_smoke_feature_batch_from_inference_input(&input, 1);
+    for key in [
+        "token_pad_mask",
+        "msa",
+        "msa_paired",
+        "msa_mask",
+        "has_deletion",
+        "deletion_value",
+        "deletion_mean",
+        "profile",
+        "template_restype",
+        "template_mask",
+    ] {
+        assert!(
+            batch.tensors.contains_key(key),
+            "trunk smoke batch missing {key}"
+        );
+    }
 }
 
 #[test]

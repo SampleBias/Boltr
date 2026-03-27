@@ -89,8 +89,9 @@ pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;
 pub use inference_dataset::{
     load_input, msa_features_from_inference_input, parse_manifest_json, parse_manifest_path,
-    token_features_from_inference_input, Boltz2ChainInfo, Boltz2InferenceInput,
-    Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, StructureInfo, TemplateInfo,
+    token_features_from_inference_input, trunk_smoke_feature_batch_from_inference_input,
+    Boltz2ChainInfo, Boltz2InferenceInput, Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record,
+    StructureInfo, TemplateInfo,
 };
 pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EXCLUSION_COUNT};
 pub use msa::{write_a3m, MsaProcessor};

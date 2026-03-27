@@ -14,7 +14,11 @@ use serde_json::Value;
 
 use crate::a3m::A3mMsa;
 use crate::boltz_const::MAX_MSA_SEQS;
-use crate::featurizer::{process_msa_features, process_token_features, MsaFeatureTensors, TokenFeatureTensors};
+use crate::featurizer::{
+    dummy_templates_as_feature_batch, process_msa_features, process_token_features, MsaFeatureTensors,
+    TokenFeatureTensors,
+};
+use crate::feature_batch::FeatureBatch;
 use crate::msa_npz::read_msa_npz_path;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
@@ -253,6 +257,26 @@ pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFea
         false,
         false,
     )
+}
+
+/// Token + MSA + dummy template tensors in one [`FeatureBatch`] (no atom features, no `s_inputs`).
+///
+/// Matches the featurizer slice Boltz merges before the input embedder: `process_token_features`,
+/// `process_msa_features`, and [`load_dummy_templates_features`](crate::featurizer::load_dummy_templates_features)
+/// with `template_dim` template slots and `num_tokens` from the token path. Use `template_dim = 1` to mirror
+/// Python when templates are absent.
+#[must_use]
+pub fn trunk_smoke_feature_batch_from_inference_input(
+    input: &Boltz2InferenceInput,
+    template_dim: usize,
+) -> FeatureBatch {
+    let tok = token_features_from_inference_input(input);
+    let n = tok.token_index.len();
+    let msa = msa_features_from_inference_input(input);
+    let mut batch = tok.to_feature_batch();
+    batch.merge(msa.to_feature_batch());
+    batch.merge(dummy_templates_as_feature_batch(template_dim, n));
+    batch
 }
 
 #[cfg(test)]

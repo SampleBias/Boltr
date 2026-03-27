@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use ndarray::{s, Array1, Array2, Axis};
 
 use crate::boltz_const::NUM_TOKENS;
+use crate::feature_batch::FeatureBatch;
 use crate::featurizer::msa_pairing::construct_paired_msa;
 use crate::structure_v2::StructureV2Tables;
 use crate::tokenize::boltz2::TokenData;
@@ -68,6 +69,22 @@ pub struct MsaFeatureTensors {
     pub deletion_mean: Array1<f32>,
     pub profile: Array2<f32>,
     pub msa_mask: Array2<i64>,
+}
+
+impl MsaFeatureTensors {
+    /// Pack into [`FeatureBatch`] with keys matching Python non-affinity `process_msa_features`.
+    #[must_use]
+    pub fn to_feature_batch(&self) -> FeatureBatch {
+        let mut b = FeatureBatch::new();
+        b.insert_i64("msa", self.msa.clone().into_dyn());
+        b.insert_i64("msa_paired", self.msa_paired.clone().into_dyn());
+        b.insert_f32("deletion_value", self.deletion_value.clone().into_dyn());
+        b.insert_i64("has_deletion", self.has_deletion.clone().into_dyn());
+        b.insert_f32("deletion_mean", self.deletion_mean.clone().into_dyn());
+        b.insert_f32("profile", self.profile.clone().into_dyn());
+        b.insert_i64("msa_mask", self.msa_mask.clone().into_dyn());
+        b
+    }
 }
 
 /// Inference MSA path: paired construction + transforms + optional padding.

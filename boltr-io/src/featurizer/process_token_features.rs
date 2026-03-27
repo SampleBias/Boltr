@@ -6,6 +6,7 @@
 use ndarray::{Array1, Array2, Array3};
 
 use crate::boltz_const::{contact_conditioning_id, method_type_id, NUM_TOKENS};
+use crate::feature_batch::FeatureBatch;
 use crate::pad::pad_1d;
 use crate::tokenize::boltz2::{TokenBondV2, TokenData};
 
@@ -46,6 +47,40 @@ pub struct TokenFeatureTensors {
     pub modified: Array1<i64>,
     pub cyclic_period: Array1<f32>,
     pub affinity_token_mask: Array1<f32>,
+}
+
+impl TokenFeatureTensors {
+    /// Pack into [`FeatureBatch`] with keys matching Python `process_token_features` return dict.
+    #[must_use]
+    pub fn to_feature_batch(&self) -> FeatureBatch {
+        let mut b = FeatureBatch::new();
+        b.insert_i64("token_index", self.token_index.clone().into_dyn());
+        b.insert_i64("residue_index", self.residue_index.clone().into_dyn());
+        b.insert_i64("asym_id", self.asym_id.clone().into_dyn());
+        b.insert_i64("entity_id", self.entity_id.clone().into_dyn());
+        b.insert_i64("sym_id", self.sym_id.clone().into_dyn());
+        b.insert_i64("mol_type", self.mol_type.clone().into_dyn());
+        b.insert_f32("res_type", self.res_type.clone().into_dyn());
+        b.insert_f32("disto_center", self.disto_center.clone().into_dyn());
+        b.insert_f32("token_bonds", self.token_bonds.clone().into_dyn());
+        b.insert_i64("type_bonds", self.type_bonds.clone().into_dyn());
+        b.insert_f32("token_pad_mask", self.token_pad_mask.clone().into_dyn());
+        b.insert_f32("token_resolved_mask", self.token_resolved_mask.clone().into_dyn());
+        b.insert_f32("token_disto_mask", self.token_disto_mask.clone().into_dyn());
+        b.insert_f32(
+            "contact_conditioning",
+            self.contact_conditioning.clone().into_dyn(),
+        );
+        b.insert_f32("contact_threshold", self.contact_threshold.clone().into_dyn());
+        b.insert_i64("method_feature", self.method_feature.clone().into_dyn());
+        b.insert_i64("modified", self.modified.clone().into_dyn());
+        b.insert_f32("cyclic_period", self.cyclic_period.clone().into_dyn());
+        b.insert_f32(
+            "affinity_token_mask",
+            self.affinity_token_mask.clone().into_dyn(),
+        );
+        b
+    }
 }
 
 fn one_hot_pairwise(ids: &Array2<i64>, num_classes: usize) -> Array3<f32> {
