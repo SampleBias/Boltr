@@ -100,6 +100,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | 2026-03-24 | **Collate smoke → `predict_step_trunk`** | [`trunk_smoke_collate.safetensors`](boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) loaded in [tests/collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs): `MsaFeatures` + synthetic `RelPosFeatures`, `Boltz2Model::with_options(384, 128, 4)`, `recycling_steps=0`. [`boltr_io::collate_golden::trunk_smoke_collate_path`](boltr-io/src/collate_golden.rs). |
 | 2026-03-25 | **`LD_LIBRARY_PATH` for `tch` test binaries** | [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh) (used by [`scripts/cargo-tch`](scripts/cargo-tch)) prepends the venv’s `site-packages/torch/lib` so runtimes find **`libtorch_cuda.so`** / **`libtorch_cpu.so`**. Fixes exit **127** / “error while loading shared libraries” when running `cargo test` with CUDA-linked PyTorch without manually exporting `LD_LIBRARY_PATH`. Plain `cargo` without this wrapper still needs manual `LD_LIBRARY_PATH` or CPU-only LibTorch. |
 | 2026-03-23 | **Rust `load_input` + manifest** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): Boltz manifest JSON (`records` or top-level array), `load_input` from preprocess dirs (StructureV2 + MSA npz, optional templates). [`load_input_smoke`](boltr-io/tests/fixtures/load_input_smoke) fixture + [`load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). |
+| 2026-03-23 | **`token_features_from_inference_input`** | [`inference_dataset.rs`](boltr-io/src/inference_dataset.rs): wires `load_input` → `tokenize_structure` → `process_token_features`; [`load_input_token_features_match_canonical_ala_golden_path`](boltr-io/tests/load_input_dataset.rs) matches canonical ALA / `token_features_ala_golden.safetensors`. |
 
 ---
 
@@ -169,7 +170,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_json` / `parse_manifest_path`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs) (structure + per-chain MSA `.npz`, optional template structures; errors on `affinity`, `constraints_dir`, `extra_mols_dir`). Fixture [`tests/fixtures/load_input_smoke/`](boltr-io/tests/fixtures/load_input_smoke), tests [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** affinity `pre_affinity_*.npz`, `ResidueConstraints`, pickle `extra_mols`, Python golden diff. |
+| [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs), [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs) (`tokenize_structure` + `process_token_features`; same tensors as `token_features_ala_golden` when structure matches packed ALA). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** affinity / `ResidueConstraints` / `extra_mols`, `process_msa_features` + full collate allclose vs Python. |
 | [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs): `FeatureBatch`, `collate_feature_batches`, `stack_f32_views` (stack pre-padded identical shapes). Per-key pad rules + exclusions still **TBD** vs Python. |
 | [ ] | Affinity crop | `crop/affinity.py` | If parity with affinity inference is required. |
 
@@ -348,4 +349,4 @@ These can proceed **in parallel** once interfaces are agreed (tensor names/shape
 
 ---
 
-*Last updated: 2026-03-23 — §4.5 `load_input` MVP in `boltr-io` (`inference_dataset` + `load_input_smoke` tests); [DEVELOPMENT.md](DEVELOPMENT.md) notes unused safetensors keys on full Lightning exports. Still open: affinity/constraints/extra_mols `load_input`, full `predict_step`, real `TemplateV2Module`, §5.1 full-checkpoint VarStore audit, featurizer collate allclose golden.*
+*Last updated: 2026-03-23 — §4.5 `token_features_from_inference_input` + golden test; `load_input` MVP. Still open: `process_msa_features` + full collate allclose, affinity/constraints/extra_mols `load_input`, full `predict_step`, real `TemplateV2Module`, §5.1 full-checkpoint VarStore audit.*

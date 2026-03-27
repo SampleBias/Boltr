@@ -2,7 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use boltr_io::{load_input, parse_manifest_path, A3mMsa, A3mSequenceMeta};
+use boltr_io::{
+    load_input, parse_manifest_path, process_token_features, structure_v2_single_ala,
+    token_features_from_inference_input, tokenize::boltz2::tokenize_structure, A3mMsa,
+    A3mSequenceMeta,
+};
 
 fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke")
@@ -63,4 +67,19 @@ fn load_input_skips_msa_id_minus_one() {
 
     let input = load_input(&record, &dir, &dir, None, None, None, false).expect("load");
     assert!(input.msas.is_empty());
+}
+
+/// `test_ala.npz` is the packed ALA golden; same tables as `structure_v2_single_ala`, so token
+/// features match `token_features_ala_golden.safetensors` (see `featurizer::token_features_golden`).
+#[test]
+fn load_input_token_features_match_canonical_ala_golden_path() {
+    let dir = fixture_dir();
+    let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+    let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+        .expect("load_input");
+    let got = token_features_from_inference_input(&input);
+
+    let (tokens, bonds) = tokenize_structure(&structure_v2_single_ala(), None);
+    let expected = process_token_features(&tokens, &bonds, None);
+    assert_eq!(got, expected);
 }

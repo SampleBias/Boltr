@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::a3m::A3mMsa;
+use crate::featurizer::{process_token_features, TokenFeatureTensors};
 use crate::msa_npz::read_msa_npz_path;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
+use crate::tokenize::boltz2::tokenize_structure;
 
 fn default_true() -> bool {
     true
@@ -214,6 +216,17 @@ pub fn load_input(
         record: record.clone(),
         templates,
     })
+}
+
+/// Token-level features after `load_input`: `tokenize_structure` + `process_token_features`.
+///
+/// Aligns with Python `Boltz2Tokenizer.tokenize` → `Boltz2Featurizer.process` **token** slice only
+/// (non-affinity). `msas`, templates, and molecules are ignored here; add `process_msa_features` /
+/// atom paths separately.
+#[must_use]
+pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> TokenFeatureTensors {
+    let (tokens, bonds) = tokenize_structure(&input.structure, None);
+    process_token_features(&tokens, &bonds, None)
 }
 
 #[cfg(test)]
