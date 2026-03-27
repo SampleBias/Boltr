@@ -6,6 +6,7 @@
 use ndarray::{Array2, Array3, Array4};
 
 use crate::boltz_const::NUM_TOKENS;
+use crate::feature_batch::FeatureBatch;
 
 /// Dummy template block matching Python `load_dummy_templates_features(tdim, num_tokens)` tensor shapes
 /// (before batching). `template_restype` is one-hot float with last dim `NUM_TOKENS`.
@@ -39,6 +40,24 @@ pub fn load_dummy_templates_features(tdim: usize, num_tokens: usize) -> DummyTem
         query_to_template: Array2::zeros((tdim, num_tokens)),
         visibility_ids: Array2::zeros((tdim, num_tokens)),
     }
+}
+
+/// Pack [`DummyTemplateTensors`] into a [`FeatureBatch`] (keys match Python `load_dummy_templates_features`).
+#[must_use]
+pub fn dummy_templates_as_feature_batch(tdim: usize, num_tokens: usize) -> FeatureBatch {
+    let t = load_dummy_templates_features(tdim, num_tokens);
+    let mut b = FeatureBatch::new();
+    b.insert_f32("template_restype", t.template_restype.into_dyn());
+    b.insert_f32("template_frame_rot", t.template_frame_rot.into_dyn());
+    b.insert_f32("template_frame_t", t.template_frame_t.into_dyn());
+    b.insert_f32("template_cb", t.template_cb.into_dyn());
+    b.insert_f32("template_ca", t.template_ca.into_dyn());
+    b.insert_f32("template_mask_cb", t.template_mask_cb.into_dyn());
+    b.insert_f32("template_mask_frame", t.template_mask_frame.into_dyn());
+    b.insert_f32("template_mask", t.template_mask.into_dyn());
+    b.insert_i64("query_to_template", t.query_to_template.into_dyn());
+    b.insert_f32("visibility_ids", t.visibility_ids.into_dyn());
+    b
 }
 
 #[cfg(test)]

@@ -36,8 +36,8 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [ ] Implement `Boltz2Tokenizer` (boltz2.py)
 - [ ] Implement token/atom bookkeeping types
 - [ ] Implement `process_token_features`
-- [ ] Implement `process_atom_features`
-- [ ] Implement `process_msa_features`
+- [~] Implement `process_atom_features` — placeholder module; **TBD:** RDKit / golden
+- [~] Implement `process_msa_features` — [`process_msa_features.rs`](../boltr-io/src/featurizer/process_msa_features.rs), [`msa_pairing.rs`](../boltr-io/src/featurizer/msa_pairing.rs); **TBD:** Python allclose golden
 - [ ] Implement `process_template_features`
 - [ ] Implement padding utilities
 

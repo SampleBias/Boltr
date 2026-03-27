@@ -56,3 +56,9 @@ Document per-test `rtol` / `atol` as goldens land (TODO.md §7):
 | Collated batch dict | per-key in `#[test]` once Rust `collate` matches Python |
 
 Add a **regression harness** (`boltz predict` vs `boltr predict`) when the CLI pipeline is complete (placeholder: [`scripts/regression_compare_predict.sh`](../scripts/regression_compare_predict.sh)).
+
+### Collate + MSA (Rust)
+
+- **Inference collate:** [`collate_inference_batches`](../boltr-io/src/collate_pad.rs) + [`pad_to_max_f32`](../boltr-io/src/collate_pad.rs) mirror Python [`pad_to_max`](../../boltz-reference/src/boltz/data/pad.py) / [`inferencev2.collate`](../../boltz-reference/src/boltz/data/module/inferencev2.py) for tensor keys; excluded keys are collected per-example in [`InferenceCollateResult::excluded`](../boltr-io/src/collate_pad.rs).
+- **MSA:** [`construct_paired_msa`](../boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](../boltr-io/src/featurizer/process_msa_features.rs); integration via [`msa_features_from_inference_input`](../boltr-io/src/inference_dataset.rs). Optional Python golden stub: [`scripts/dump_msa_features_golden.py`](../scripts/dump_msa_features_golden.py).
+- **Atom features:** [`process_atom_features`](../boltr-io/src/featurizer/process_atom_features.rs) module placeholder (RDKit-dependent); golden-first when implementing.

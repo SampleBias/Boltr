@@ -160,8 +160,8 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | [~] | Constants / enums | `data/const.py` | **Core tables ported:** [boltr-io/src/boltz_const.rs](boltr-io/src/boltz_const.rs), [boltr-io/src/ref_atoms.rs](boltr-io/src/ref_atoms.rs), [boltr-io/src/vdw_radii.rs](boltr-io/src/vdw_radii.rs) (`VDW_RADII`, `vdw_radius`), [boltr-io/src/ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs) (`is_ligand_excluded`), template `MIN_COVERAGE_*`, [boltr-io/src/ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs) + [boltr-io/data/ambiguous_atoms.json](boltr-io/data/ambiguous_atoms.json). **Still TBD:** other large `const.py` maps. |
 | [~] | `process_token_features` | `feature/featurizerv2.py` | [boltr-io/src/featurizer/process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs): `process_token_features`, `TokenFeatureTensors` (inference-style). Golden: [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs) vs `token_features_ala_golden.safetensors` + collated `B=1`; regen `cargo run -p boltr-io --bin write_token_features_ala_golden` / [scripts/dump_token_features_ala_golden.py](scripts/dump_token_features_ala_golden.py) with `BOLTZ_SRC`. |
 | [ ] | `process_atom_features` | same | Atom-level tensors, distograms, windows. |
-| [ ] | `process_msa_features` | same | MSA embedding path; affinity variant (`affinity=True`). |
-| [ ] | `process_template_features` | same + dummy templates | Real + dummy template tensors. |
+| [~] | `process_msa_features` | same | [`construct_paired_msa`](boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](boltr-io/src/featurizer/process_msa_features.rs); [`msa_features_from_inference_input`](boltr-io/src/inference_dataset.rs). **TBD:** allclose golden vs Python; affinity variant (`affinity=True`). |
+| [~] | `process_template_features` | same + dummy templates | [`dummy_templates_as_feature_batch`](boltr-io/src/featurizer/dummy_templates.rs). **TBD:** real templates + `template_tokens` (tokenizer). |
 | [ ] | Ensemble / symmetry / constraints | same + `feature/symmetry.py` | Optional flags parity with inference. |
 | [~] | Padding utilities | `pad.py` | [boltr-io/src/pad.rs](boltr-io/src/pad.rs): `pad_1d`, `pad_ragged_rows`, `stack_tokens_2d`, `token_pad_mask` (post-padding + lengths). Extend when collate keys are frozen. |
 
@@ -172,7 +172,7 @@ Work generally flows **top-to-bottom**. Multiple people can parallelize **within
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [~] | `load_input` | `module/inferencev2.py` | [`boltr-io/src/inference_dataset.rs`](boltr-io/src/inference_dataset.rs): `parse_manifest_*`, [`Boltz2InferenceInput`](boltr-io/src/inference_dataset.rs), [`load_input`](boltr-io/src/inference_dataset.rs) (incl. affinity `pre_affinity_{id}.npz` path), [`token_features_from_inference_input`](boltr-io/src/inference_dataset.rs). [`tests/load_input_dataset.rs`](boltr-io/tests/load_input_dataset.rs). **TBD:** `ResidueConstraints` / `extra_mols` load, `process_msa_features` + full collate allclose vs Python. |
-| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs): `FeatureBatch`, `collate_feature_batches`, `INFERENCE_COLLATE_EXCLUDED_KEYS` (mirror Python non-stacked keys). **TBD:** `pad_to_max` per-key + full parity vs Python. |
+| [~] | `collate` | same | [boltr-io/src/feature_batch.rs](boltr-io/src/feature_batch.rs) + [`collate_pad`](boltr-io/src/collate_pad.rs): `pad_to_max_f32`, `collate_inference_batches`, `INFERENCE_COLLATE_EXCLUDED_KEYS`. **TBD:** full allclose vs Python on multi-key batch dump. |
 | [ ] | Affinity crop | `crop/affinity.py` | If parity with affinity inference is required. |
 
 **Acceptance:** Batch dict from Rust equals Python on golden fixture.

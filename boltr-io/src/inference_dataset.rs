@@ -8,11 +8,13 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
+use rand::SeedableRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::a3m::A3mMsa;
-use crate::featurizer::{process_token_features, TokenFeatureTensors};
+use crate::boltz_const::MAX_MSA_SEQS;
+use crate::featurizer::{process_msa_features, process_token_features, MsaFeatureTensors, TokenFeatureTensors};
 use crate::msa_npz::read_msa_npz_path;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
@@ -230,6 +232,27 @@ pub fn load_input(
 pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> TokenFeatureTensors {
     let (tokens, bonds) = tokenize_structure(&input.structure, None);
     process_token_features(&tokens, &bonds, None)
+}
+
+/// MSA tensors after `load_input`: `tokenize_structure` + [`process_msa_features`](crate::featurizer::process_msa_features).
+///
+/// Uses deterministic RNG seed **42** (matches typical Boltz inference seeding in `inferencev2`).
+/// Templates, constraints, and affinity paths are out of scope here.
+#[must_use]
+pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFeatureTensors {
+    let (tokens, _bonds) = tokenize_structure(&input.structure, None);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+    process_msa_features(
+        &tokens,
+        &input.structure,
+        &input.msas,
+        &mut rng,
+        MAX_MSA_SEQS,
+        MAX_MSA_SEQS,
+        None,
+        false,
+        false,
+    )
 }
 
 #[cfg(test)]
