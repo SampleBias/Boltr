@@ -11,6 +11,7 @@ pub mod a3m;
 pub mod ambiguous_atoms;
 pub mod boltz_const;
 pub mod collate_golden;
+pub mod collate_pad;
 pub mod config;
 pub mod download;
 pub mod feature_batch;
@@ -76,6 +77,10 @@ pub use tokenize::boltz2::{compute_frame, tokenize_structure, TokenBondV2, Token
 /// Backward-compatible name for parsed YAML root.
 pub type BoltzConfig = BoltzInput;
 pub use download::download_model_assets;
+pub use collate_pad::{
+    collate_inference_batches, pad_to_max_f32, InferenceCollateError, InferenceCollateResult,
+    PadToMaxResult,
+};
 pub use feature_batch::{
     collate_feature_batches, stack_f32_views, CollateError, FeatureBatch, FeatureTensor,
     INFERENCE_COLLATE_EXCLUDED_KEYS,

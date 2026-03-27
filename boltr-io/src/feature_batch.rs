@@ -54,7 +54,7 @@ pub enum FeatureTensor {
 }
 
 impl FeatureTensor {
-    fn kind(&self) -> &'static str {
+    pub(crate) fn kind(&self) -> &'static str {
         match self {
             FeatureTensor::F32(_) => "f32",
             FeatureTensor::I64(_) => "i64",
@@ -62,7 +62,7 @@ impl FeatureTensor {
         }
     }
 
-    fn shape(&self) -> Vec<usize> {
+    pub(crate) fn shape(&self) -> Vec<usize> {
         match self {
             FeatureTensor::F32(a) => a.shape().to_vec(),
             FeatureTensor::I64(a) => a.shape().to_vec(),
