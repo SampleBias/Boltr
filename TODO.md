@@ -8,7 +8,7 @@ This file is the **master implementation checklist** for parity with upstream Bo
 
 ## How to use this document
 
-1. Pick a **workstream** (sections 3–7). Read the **Python reference paths** first.
+1. For **featurizer + collate** work in `boltr-io`, follow **§2b** first (ordered phases), then the detailed tables in §4.4–4.5. Otherwise pick a **workstream** (sections 3–7). Read the **Python reference paths** first.
 2. Note **Depends on** before starting; unblock upstream tasks first.
 3. For each task, complete **Deliverables** and **Acceptance**.
 4. Update the checkbox in your PR (`[ ]` → `[x]`) for the rows you finish.

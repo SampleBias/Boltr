@@ -1,5 +1,7 @@
 # Boltr - Rust Native Boltz Implementation Todo List
 
+**Master checklist:** [TODO.md](../TODO.md) — start from **§2b** for the ordered featurizer + collate plan (single table).
+
 Based on TODO.md - Master implementation checklist for parity with upstream Boltz2
 
 ## Priority 1: Core Backend Layers (boltr-backend-tch) ✅ COMPLETED
@@ -33,17 +35,17 @@ Based on TODO.md - Master implementation checklist for parity with upstream Bolt
 - [~] Constraints `.npz` layout — [`scripts/verify_constraints_npz_layout.py`](../scripts/verify_constraints_npz_layout.py) vs Boltz `ResidueConstraints` (`types.py`); **TBD:** Rust load in `load_input`
 
 ### Section 4.3-4.4 - Tokenizer & Featurizer
-- [ ] Implement `Boltz2Tokenizer` (boltz2.py)
-- [ ] Implement token/atom bookkeeping types
-- [ ] Implement `process_token_features`
-- [~] Implement `process_atom_features` — placeholder module; **TBD:** RDKit / golden
-- [~] Implement `process_msa_features` — [`process_msa_features.rs`](../boltr-io/src/featurizer/process_msa_features.rs), [`msa_pairing.rs`](../boltr-io/src/featurizer/msa_pairing.rs); **TBD:** Python allclose golden
-- [ ] Implement `process_template_features`
-- [ ] Implement padding utilities
+- [~] Implement full `Boltz2Tokenizer` / `Input` → `Tokenized` (boltz2.py) — core: [`tokenize_structure`](../boltr-io/src/tokenize/boltz2.rs); **TBD:** template token maps, full `Tokenized` parity
+- [~] Token/atom bookkeeping — `TokenData` / `TokenBondV2` + [`token_npz`](../boltr-io/src/token_npz.rs)
+- [x] **`process_token_features`** (inference) + `to_feature_batch` — [`process_token_features.rs`](../boltr-io/src/featurizer/process_token_features.rs); golden: [`token_features_golden.rs`](../boltr-io/src/featurizer/token_features_golden.rs)
+- [ ] **`process_atom_features`** — docs only; **TBD:** golden-first ([`process_atom_features.rs`](../boltr-io/src/featurizer/process_atom_features.rs))
+- [x] **`process_msa_features`** + pairing + golden — [`msa_pairing.rs`](../boltr-io/src/featurizer/msa_pairing.rs), [`dump_msa_features_golden.py`](../scripts/dump_msa_features_golden.py), [`msa_features_golden.rs`](../boltr-io/src/featurizer/msa_features_golden.rs)
+- [~] **`process_template_features`** — dummy [`dummy_templates.rs`](../boltr-io/src/featurizer/dummy_templates.rs); **TBD:** real templates + forces
+- [x] **Padding for inference collate** — [`collate_pad.rs`](../boltr-io/src/collate_pad.rs) + token helpers [`pad.rs`](../boltr-io/src/pad.rs)
 
 ### Section 4.5 - Dataset & Collate
-- [~] Implement `load_input` from inferencev2.py — [`inference_dataset.rs`](../boltr-io/src/inference_dataset.rs) + [`token_features_from_inference_input`](../boltr-io/src/inference_dataset.rs) + [`tests/load_input_dataset.rs`](../boltr-io/tests/load_input_dataset.rs); **TBD:** `process_msa_features`, full collate allclose, affinity/constraints/extra_mols
-- [~] Implement `collate` stacking/padding (`FeatureBatch` + `trunk_smoke_collate.safetensors`)
+- [~] **`load_input`** + helpers — [`inference_dataset.rs`](../boltr-io/src/inference_dataset.rs): `token_features_from_inference_input`, `msa_features_from_inference_input`, **`trunk_smoke_feature_batch_from_inference_input`**; [`load_input_dataset.rs`](../boltr-io/tests/load_input_dataset.rs). **TBD:** constraints, extra_mols, affinity crop
+- [~] **`collate`** — [`collate_inference_batches`](../boltr-io/src/collate_pad.rs), `FeatureBatch`; **TBD:** full multi-example dict vs Python (see [TODO.md §2b](../TODO.md))
 - [ ] Implement affinity crop
 
 ### Section 4.6 - Output Writers
