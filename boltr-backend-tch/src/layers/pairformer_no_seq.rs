@@ -109,9 +109,9 @@ impl PairformerNoSeqLayer {
         z = z + drop * z_out;
 
         let drop = dropout_mask_pair(self.dropout, &z, training);
-        let z_out = self
-            .tri_att_start
-            .forward(&z, Some(pair_mask), chunk_size_tri_attn, use_kernels);
+        let z_out =
+            self.tri_att_start
+                .forward(&z, Some(pair_mask), chunk_size_tri_attn, use_kernels);
         z = z + drop * z_out;
 
         let drop = dropout_mask_columnwise(self.dropout, &z, training);

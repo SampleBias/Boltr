@@ -464,7 +464,9 @@ mod tests {
             sym_id: &sym_id,
             cyclic_period: &cyclic_period,
         };
-        let (s, z) = m.forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None).unwrap();
+        let (s, z) = m
+            .forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None)
+            .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -574,15 +576,7 @@ mod tests {
             contact_threshold: &ct,
         };
         let (s, z) = m
-            .forward_trunk_with_z_init_terms(
-                &s_in,
-                &rel,
-                None,
-                None,
-                Some(&contact),
-                Some(0),
-                None,
-            )
+            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0), None)
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
@@ -628,6 +622,11 @@ mod tests {
         );
         let mut m = Boltz2Model::with_options(device, 64, 32, Some(1));
         m.load_from_safetensors_require_all_vars(&path)
-            .unwrap_or_else(|e| panic!("load_from_safetensors_require_all_vars {}: {e:#}", path.display()));
+            .unwrap_or_else(|e| {
+                panic!(
+                    "load_from_safetensors_require_all_vars {}: {e:#}",
+                    path.display()
+                )
+            });
     }
 }

@@ -50,16 +50,8 @@ mod tests {
         });
 
         let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
-        let input = load_input(
-            &manifest.records[0],
-            &dir,
-            &dir,
-            None,
-            None,
-            None,
-            false,
-        )
-        .expect("load_input");
+        let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+            .expect("load_input");
         let got = msa_features_from_inference_input(&input);
 
         let st = SafeTensors::deserialize(&bytes).expect("safetensors");

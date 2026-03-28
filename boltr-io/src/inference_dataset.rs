@@ -14,16 +14,16 @@ use serde_json::Value;
 
 use crate::a3m::A3mMsa;
 use crate::boltz_const::MAX_MSA_SEQS;
+use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
     dummy_templates_as_feature_batch, inference_ensemble_features, process_atom_features,
     process_msa_features, process_token_features, AtomFeatureConfig, AtomFeatureTensors,
     MsaFeatureTensors, StandardAminoAcidRefData, TokenFeatureTensors,
 };
-use crate::feature_batch::FeatureBatch;
 use crate::msa_npz::read_msa_npz_path;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
-use crate::tokenize::boltz2::tokenize_structure;
+use crate::tokenize::boltz2::{tokenize_structure, TokenBondV2, TokenData};
 
 fn default_true() -> bool {
     true
@@ -110,8 +110,7 @@ pub struct Boltz2Manifest {
 
 /// Parse manifest JSON (object with `records` or top-level array of records).
 pub fn parse_manifest_json(data: &[u8]) -> Result<Boltz2Manifest> {
-    let v: Value =
-        serde_json::from_slice(data).context("parse manifest JSON: invalid JSON")?;
+    let v: Value = serde_json::from_slice(data).context("parse manifest JSON: invalid JSON")?;
     match v {
         Value::Array(_) => {
             let records: Vec<Boltz2Record> =
@@ -137,6 +136,81 @@ pub struct Boltz2InferenceInput {
     pub record: Boltz2Record,
     /// Template id → structure tables (`{record.id}_{template_id}.npz`).
     pub templates: Option<HashMap<String, StructureV2Tables>>,
+}
+
+/// Token/bond tensors from Boltz [`Boltz2Tokenizer`](TokenizeBoltz2Input) — mirrors Python
+/// `Boltz2Tokenizer.tokenize` output for the **token** slice only (structure / MSA / record are not duplicated).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Boltz2Tokenized {
+    pub tokens: Vec<TokenData>,
+    pub bonds: Vec<TokenBondV2>,
+    pub template_tokens: Option<HashMap<String, Vec<TokenData>>>,
+    pub template_bonds: Option<HashMap<String, Vec<TokenBondV2>>>,
+}
+
+/// Ligand `asym_id` to mark with `affinity_mask`, parsed from manifest `record.affinity` (Python `AffinityInfo.chain_id`).
+#[must_use]
+pub fn affinity_asym_id_from_record(record: &Boltz2Record) -> Option<i32> {
+    let v = record.affinity.as_ref()?;
+    match v {
+        Value::Null => None,
+        Value::Object(map) => {
+            if let Some(n) = map.get("chain_id").and_then(Value::as_i64) {
+                return Some(n as i32);
+            }
+            if let Some(n) = map.get("asym_id").and_then(Value::as_i64) {
+                return Some(n as i32);
+            }
+            map.get("chain_id")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse::<i32>().ok())
+        }
+        Value::Number(n) => n.as_i64().map(|i| i as i32),
+        _ => None,
+    }
+}
+
+/// Full Boltz2 tokenization: main structure (with optional affinity mask) + each template via `tokenize_structure` (Python `Boltz2Tokenizer.tokenize`).
+#[must_use]
+pub fn tokenize_boltz2_inference(input: &Boltz2InferenceInput) -> Boltz2Tokenized {
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, bonds) = tokenize_structure(&input.structure, aff);
+
+    let (template_tokens, template_bonds) = match &input.templates {
+        Some(map) => {
+            let mut tt = HashMap::with_capacity(map.len());
+            let mut tb = HashMap::with_capacity(map.len());
+            for (id, tmpl) in map {
+                let (t, b) = tokenize_structure(tmpl, None);
+                tt.insert(id.clone(), t);
+                tb.insert(id.clone(), b);
+            }
+            (Some(tt), Some(tb))
+        }
+        None => (None, None),
+    };
+
+    Boltz2Tokenized {
+        tokens,
+        bonds,
+        template_tokens,
+        template_bonds,
+    }
+}
+
+/// Mirrors `boltz.data.tokenize.boltz2.Boltz2Tokenizer` (stateless).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Boltz2Tokenizer;
+
+/// Mirrors `boltz.data.tokenize.tokenizer.Tokenizer` + `Boltz2Tokenizer.tokenize`.
+pub trait TokenizeBoltz2Input {
+    fn tokenize(&self, input: &Boltz2InferenceInput) -> Boltz2Tokenized;
+}
+
+impl TokenizeBoltz2Input for Boltz2Tokenizer {
+    fn tokenize(&self, input: &Boltz2InferenceInput) -> Boltz2Tokenized {
+        tokenize_boltz2_inference(input)
+    }
 }
 
 fn msa_id_for_path(msa_id: &Value) -> Result<String> {
@@ -172,7 +246,9 @@ pub fn load_input(
     affinity: bool,
 ) -> Result<Boltz2InferenceInput> {
     if constraints_dir.is_some() {
-        bail!("load_input: residue constraints loading is not implemented; pass constraints_dir=None");
+        bail!(
+            "load_input: residue constraints loading is not implemented; pass constraints_dir=None"
+        );
     }
     if extra_mols_dir.is_some() {
         bail!("load_input: extra_mols pickle loading is not implemented; pass extra_mols_dir=None");
@@ -185,12 +261,8 @@ pub fn load_input(
     } else {
         target_dir.join(format!("{}.npz", record.id))
     };
-    let structure = read_structure_v2_npz_path(&structure_path).with_context(|| {
-        format!(
-            "StructureV2.load: {}",
-            structure_path.display()
-        )
-    })?;
+    let structure = read_structure_v2_npz_path(&structure_path)
+        .with_context(|| format!("StructureV2.load: {}", structure_path.display()))?;
 
     let mut msas = HashMap::new();
     for chain in &record.chains {
@@ -199,9 +271,8 @@ pub fn load_input(
         }
         let fname = msa_id_for_path(&chain.msa_id)?;
         let msa_path = msa_dir.join(format!("{fname}.npz"));
-        let msa = read_msa_npz_path(&msa_path).with_context(|| {
-            format!("MSA.load: {}", msa_path.display())
-        })?;
+        let msa = read_msa_npz_path(&msa_path)
+            .with_context(|| format!("MSA.load: {}", msa_path.display()))?;
         msas.insert(chain.chain_id, msa);
     }
 
@@ -210,9 +281,8 @@ pub fn load_input(
             let mut map = HashMap::new();
             for t in infos {
                 let path = td.join(format!("{}_{}.npz", record.id, t.name));
-                let tables = read_structure_v2_npz_path(&path).with_context(|| {
-                    format!("template StructureV2.load: {}", path.display())
-                })?;
+                let tables = read_structure_v2_npz_path(&path)
+                    .with_context(|| format!("template StructureV2.load: {}", path.display()))?;
                 map.insert(t.name.clone(), tables);
             }
             Some(map)
@@ -230,12 +300,13 @@ pub fn load_input(
 
 /// Token-level features after `load_input`: `tokenize_structure` + `process_token_features`.
 ///
-/// Aligns with Python `Boltz2Tokenizer.tokenize` → `Boltz2Featurizer.process` **token** slice only
-/// (non-affinity). `msas`, templates, and molecules are ignored here; add `process_msa_features` /
-/// atom paths separately.
+/// Aligns with Python `Boltz2Tokenizer.tokenize` → `Boltz2Featurizer.process` **token** slice only.
+/// Uses [`affinity_asym_id_from_record`] like Python `tokenize_structure(..., record.affinity)`.
+/// `msas` and template tensors are handled elsewhere (`process_msa_features`, template featurizer).
 #[must_use]
 pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> TokenFeatureTensors {
-    let (tokens, bonds) = tokenize_structure(&input.structure, None);
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, bonds) = tokenize_structure(&input.structure, aff);
     process_token_features(&tokens, &bonds, None)
 }
 
@@ -247,7 +318,8 @@ pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> Toke
 /// once wired.
 #[must_use]
 pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomFeatureTensors {
-    let (tokens, _bonds) = tokenize_structure(&input.structure, None);
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, _bonds) = tokenize_structure(&input.structure, aff);
     let provider = StandardAminoAcidRefData::new();
     let config = AtomFeatureConfig::default();
     process_atom_features(
@@ -265,7 +337,8 @@ pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomF
 /// Templates, constraints, and affinity paths are out of scope here.
 #[must_use]
 pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFeatureTensors {
-    let (tokens, _bonds) = tokenize_structure(&input.structure, None);
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, _bonds) = tokenize_structure(&input.structure, aff);
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     process_msa_features(
         &tokens,
@@ -308,6 +381,7 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::structure_v2_single_ala;
 
     #[test]
     fn parse_manifest_object_and_array() {
@@ -319,5 +393,63 @@ mod tests {
         let arr = br#"[{"id":"y","structure":{},"chains":[]}]"#;
         let m = parse_manifest_json(arr).unwrap();
         assert_eq!(m.records[0].id, "y");
+    }
+
+    #[test]
+    fn affinity_asym_id_parses_chain_id() {
+        let mut r: Boltz2Record = serde_json::from_str(
+            r#"{"id":"x","structure":{},"chains":[],"affinity":{"chain_id":3}}"#,
+        )
+        .unwrap();
+        assert_eq!(affinity_asym_id_from_record(&r), Some(3));
+        r.affinity = Some(serde_json::json!({"asym_id": 7}));
+        assert_eq!(affinity_asym_id_from_record(&r), Some(7));
+        r.affinity = None;
+        assert_eq!(affinity_asym_id_from_record(&r), None);
+    }
+
+    #[test]
+    fn tokenize_boltz2_matches_structure_only_on_preprocess_fixture() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
+        let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+        let record = &manifest.records[0];
+        let input = load_input(record, &dir, &dir, None, None, None, false).expect("load_input");
+        let out = tokenize_boltz2_inference(&input);
+        let aff = affinity_asym_id_from_record(&input.record);
+        let (t, b) = tokenize_structure(&input.structure, aff);
+        assert_eq!(out.tokens, t);
+        assert_eq!(out.bonds, b);
+        assert!(out.template_tokens.is_none());
+        assert!(out.template_bonds.is_none());
+    }
+
+    #[test]
+    fn tokenize_boltz2_template_loop_matches_isolated_tokenize() {
+        let s = structure_v2_single_ala();
+        let mut templates = HashMap::new();
+        templates.insert("tmpl1".to_string(), s.clone());
+        let record: Boltz2Record = serde_json::from_str(
+            r#"{"id":"demo","structure":{},"chains":[{"chain_id":0,"chain_name":"A","mol_type":0,"cluster_id":0,"msa_id":0,"num_residues":1,"valid":true}],"interfaces":[]}"#,
+        )
+        .unwrap();
+        let input = Boltz2InferenceInput {
+            structure: s.clone(),
+            msas: HashMap::new(),
+            record,
+            templates: Some(templates),
+        };
+        let out = TokenizeBoltz2Input::tokenize(&Boltz2Tokenizer, &input);
+        let (main_t, main_b) = tokenize_structure(&s, None);
+        let (tmpl_t, tmpl_b) = tokenize_structure(&s, None);
+        assert_eq!(out.tokens, main_t);
+        assert_eq!(out.bonds, main_b);
+        assert_eq!(
+            out.template_tokens.as_ref().unwrap().get("tmpl1").unwrap(),
+            &tmpl_t
+        );
+        assert_eq!(
+            out.template_bonds.as_ref().unwrap().get("tmpl1").unwrap(),
+            &tmpl_b
+        );
     }
 }

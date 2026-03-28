@@ -1,4 +1,7 @@
 //! Boltz2 structure tokenization — port of `boltz.data.tokenize.boltz2` (`tokenize_structure`, `compute_frame`).
+//!
+//! Full `Boltz2Tokenizer.tokenize` (main structure + optional template loop) is
+//! [`tokenize_boltz2_inference`] with [`Boltz2Tokenizer`].
 
 use crate::boltz_const::{chain_type_id, unk_token_id};
 use crate::structure_v2::{ChainRow, ResidueRow, StructureV2Tables};

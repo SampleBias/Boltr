@@ -150,8 +150,8 @@ fn atom_name_to_element(name: &str) -> &'static str {
         | "OP2" | "O5'" | "O4'" | "O3'" | "O2'" => "O",
         "SG" => "S",
         "SD" => "S",
-        "NE" | "NE1" | "NE2" | "NH1" | "NH2" | "NZ" | "ND1" | "ND2" | "N9" | "N7" | "N6"
-        | "N1" | "N2" | "N3" | "N4" => "N",
+        "NE" | "NE1" | "NE2" | "NH1" | "NH2" | "NZ" | "ND1" | "ND2" | "N9" | "N7" | "N6" | "N1"
+        | "N2" | "N3" | "N4" => "N",
         "P" => "P",
         "H" | "HA" | "HB" | "HB1" | "HB2" | "HB3" | "HG" | "HD" | "HE" | "HZ" | "HN" => "H",
         _ => "C", // Default fallback for unknown carbon atoms
@@ -179,7 +179,10 @@ fn idealized_conformer(res_name: &str, atom_names: &[&str]) -> Vec<[f32; 3]> {
     // For the golden test we need exact match only for ALA; other residues
     // will be validated when CCD/mol loading is implemented.
     match res_name {
-        "ALA" => atom_names.iter().map(|n| idealized_conformer_ala(n)).collect(),
+        "ALA" => atom_names
+            .iter()
+            .map(|n| idealized_conformer_ala(n))
+            .collect(),
         _ => {
             // Fallback: use backbone template then zero-fill sidechain
             atom_names
@@ -201,9 +204,9 @@ impl StandardAminoAcidRefData {
         let mut data = HashMap::new();
 
         let residues = [
-            "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
-            "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
-            "A", "G", "C", "U", "N", "DA", "DG", "DC", "DT", "DN",
+            "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS",
+            "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL", "A", "G", "C", "U", "N", "DA",
+            "DG", "DC", "DT", "DN",
         ];
 
         for res_name in residues {
@@ -215,7 +218,10 @@ impl StandardAminoAcidRefData {
                 .iter()
                 .map(|&n| element_to_atomic_num(atom_name_to_element(n)))
                 .collect();
-            let charges: Vec<f32> = names.iter().map(|&n| standard_charge(n, res_name)).collect();
+            let charges: Vec<f32> = names
+                .iter()
+                .map(|&n| standard_charge(n, res_name))
+                .collect();
             let chirality_ids: Vec<i64> = names
                 .iter()
                 .map(|_| i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)))
@@ -320,24 +326,45 @@ impl AtomFeatureTensors {
     #[must_use]
     pub fn to_feature_batch(&self) -> FeatureBatch {
         let mut b = FeatureBatch::new();
-        b.insert_f32("atom_backbone_feat", self.atom_backbone_feat.clone().into_dyn());
+        b.insert_f32(
+            "atom_backbone_feat",
+            self.atom_backbone_feat.clone().into_dyn(),
+        );
         b.insert_f32("atom_pad_mask", self.atom_pad_mask.clone().into_dyn());
-        b.insert_f32("atom_resolved_mask", self.atom_resolved_mask.clone().into_dyn());
+        b.insert_f32(
+            "atom_resolved_mask",
+            self.atom_resolved_mask.clone().into_dyn(),
+        );
         b.insert_f32("atom_to_token", self.atom_to_token.clone().into_dyn());
         b.insert_f32("bfactor", self.bfactor.clone().into_dyn());
         b.insert_f32("coords", self.coords.clone().into_dyn());
-        b.insert_f32("disto_coords_ensemble", self.disto_coords_ensemble.clone().into_dyn());
+        b.insert_f32(
+            "disto_coords_ensemble",
+            self.disto_coords_ensemble.clone().into_dyn(),
+        );
         b.insert_f32("disto_target", self.disto_target.clone().into_dyn());
         b.insert_f32("plddt", self.plddt.clone().into_dyn());
-        b.insert_f32("r_set_to_rep_atom", self.r_set_to_rep_atom.clone().into_dyn());
-        b.insert_f32("ref_atom_name_chars", self.ref_atom_name_chars.clone().into_dyn());
+        b.insert_f32(
+            "r_set_to_rep_atom",
+            self.r_set_to_rep_atom.clone().into_dyn(),
+        );
+        b.insert_f32(
+            "ref_atom_name_chars",
+            self.ref_atom_name_chars.clone().into_dyn(),
+        );
         b.insert_f32("ref_charge", self.ref_charge.clone().into_dyn());
         b.insert_i64("ref_chirality", self.ref_chirality.clone().into_dyn());
         b.insert_f32("ref_element", self.ref_element.clone().into_dyn());
         b.insert_f32("ref_pos", self.ref_pos.clone().into_dyn());
         b.insert_i64("ref_space_uid", self.ref_space_uid.clone().into_dyn());
-        b.insert_f32("token_to_center_atom", self.token_to_center_atom.clone().into_dyn());
-        b.insert_f32("token_to_rep_atom", self.token_to_rep_atom.clone().into_dyn());
+        b.insert_f32(
+            "token_to_center_atom",
+            self.token_to_center_atom.clone().into_dyn(),
+        );
+        b.insert_f32(
+            "token_to_rep_atom",
+            self.token_to_rep_atom.clone().into_dyn(),
+        );
         b
     }
 }
@@ -431,7 +458,8 @@ fn pad_3d_f32_dim1(arr: &Array3<f32>, target_atoms: usize) -> Array3<f32> {
         return arr.clone();
     }
     let mut out = Array3::zeros((d0, target_atoms, d2));
-    out.slice_mut(ndarray::s![.., ..arr.dim().1, ..]).assign(arr);
+    out.slice_mut(ndarray::s![.., ..arr.dim().1, ..])
+        .assign(arr);
     out
 }
 
@@ -456,7 +484,8 @@ fn pad_3d_f32_dim1_tokens(arr: &Array3<f32>, target_tokens: usize) -> Array3<f32
         return arr.clone();
     }
     let mut out = Array3::zeros((d0, target_tokens, d2));
-    out.slice_mut(ndarray::s![.., ..arr.dim().1, ..]).assign(arr);
+    out.slice_mut(ndarray::s![.., ..arr.dim().1, ..])
+        .assign(arr);
     out
 }
 
@@ -737,8 +766,8 @@ pub fn process_atom_features(
     let mut disto_target = Array4::zeros((num_tokens, num_tokens, idx_list.len(), config.num_bins));
     let boundaries: Vec<f32> = (1..config.num_bins)
         .map(|i| {
-            config.min_dist + (config.max_dist - config.min_dist) * (i as f32)
-                / ((config.num_bins - 1) as f32)
+            config.min_dist
+                + (config.max_dist - config.min_dist) * (i as f32) / ((config.num_bins - 1) as f32)
         })
         .collect();
 
@@ -759,7 +788,10 @@ pub fn process_atom_features(
                 let dy = ci[1] - cj[1];
                 let dz = ci[2] - cj[2];
                 let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                let bin_idx = boundaries.iter().position(|&b| dist <= b).unwrap_or(config.num_bins - 1);
+                let bin_idx = boundaries
+                    .iter()
+                    .position(|&b| dist <= b)
+                    .unwrap_or(config.num_bins - 1);
                 // Inverse: count how many boundaries the distance exceeds
                 let bin_count = boundaries.iter().filter(|&&b| dist > b).count();
                 disto_target[[i, j, e_i, bin_count]] = 1.0;
@@ -824,7 +856,10 @@ pub fn process_atom_features(
 
     // One-hot backbone features
     let backbone_indices = Array1::from(backbone_feat_index);
-    let mut atom_backbone_feat = one_hot_1d(backbone_indices.as_slice().unwrap(), NUM_BACKBONE_FEAT_CLASSES);
+    let mut atom_backbone_feat = one_hot_1d(
+        backbone_indices.as_slice().unwrap(),
+        NUM_BACKBONE_FEAT_CLASSES,
+    );
 
     // One-hot atom name chars: [total_atoms * 4] → reshape → [total_atoms, 4, 64]
     let name_chars_flat = Array1::from(ref_atom_name_chars_raw);
@@ -873,7 +908,11 @@ pub fn process_atom_features(
 
     // ─── Padding ───────────────────────────────────────────────────────────
     let pad_len = if let Some(max_a) = config.max_atoms {
-        assert_eq!(max_a % config.atoms_per_window_queries, 0, "max_atoms must be divisible by atoms_per_window_queries");
+        assert_eq!(
+            max_a % config.atoms_per_window_queries,
+            0,
+            "max_atoms must be divisible by atoms_per_window_queries"
+        );
         max_a.saturating_sub(total_atoms)
     } else {
         let window = config.atoms_per_window_queries;
@@ -889,11 +928,15 @@ pub fn process_atom_features(
     // ref_atom_name_chars: [atoms, 4, 64]
     {
         let mut padded = Array3::zeros((max_atoms_padded, 4, ATOM_NAME_VOCAB_SIZE));
-        padded.slice_mut(ndarray::s![..total_atoms, .., ..]).assign(&ref_atom_name_chars);
+        padded
+            .slice_mut(ndarray::s![..total_atoms, .., ..])
+            .assign(&ref_atom_name_chars);
         // ref_atom_name_chars is already owned, reassign
     }
     let mut ref_atom_name_chars_padded = Array3::zeros((max_atoms_padded, 4, ATOM_NAME_VOCAB_SIZE));
-    ref_atom_name_chars_padded.slice_mut(ndarray::s![..total_atoms, .., ..]).assign(&ref_atom_name_chars);
+    ref_atom_name_chars_padded
+        .slice_mut(ndarray::s![..total_atoms, .., ..])
+        .assign(&ref_atom_name_chars);
 
     let ref_element = pad_2d_f32(&ref_element, max_atoms_padded);
     let ref_charge = pad_1d_f32(&ref_charge, max_atoms_padded);
@@ -903,23 +946,31 @@ pub fn process_atom_features(
 
     // coords: [n_ens, atoms, 3] → pad dim 1
     let mut coords_padded = Array3::zeros((n_ens_total, max_atoms_padded, 3));
-    coords_padded.slice_mut(ndarray::s![.., ..total_atoms, ..]).assign(&coords_arr);
+    coords_padded
+        .slice_mut(ndarray::s![.., ..total_atoms, ..])
+        .assign(&coords_arr);
 
     // atom_to_token: [atoms, tokens] → pad dim 0
     let atom_to_token = pad_2d_f32(&atom_to_token, max_atoms_padded);
 
     // token_to_rep_atom: [tokens, atoms] → pad dim 1
     let mut ttra_padded = Array2::zeros((num_tokens, max_atoms_padded));
-    ttra_padded.slice_mut(ndarray::s![.., ..total_atoms]).assign(&token_to_rep_atom);
+    ttra_padded
+        .slice_mut(ndarray::s![.., ..total_atoms])
+        .assign(&token_to_rep_atom);
 
     let mut ttca_padded = Array2::zeros((num_tokens, max_atoms_padded));
-    ttca_padded.slice_mut(ndarray::s![.., ..total_atoms]).assign(&token_to_center_atom);
+    ttca_padded
+        .slice_mut(ndarray::s![.., ..total_atoms])
+        .assign(&token_to_center_atom);
 
     // r_set_to_rep_atom: [n_rset, atoms] → pad dim 1
     let n_rset = r_set_to_rep_atom.nrows();
     let mut rstra_padded = Array2::zeros((n_rset.max(1), max_atoms_padded));
     if n_rset > 0 {
-        rstra_padded.slice_mut(ndarray::s![.., ..total_atoms]).assign(&r_set_to_rep_atom);
+        rstra_padded
+            .slice_mut(ndarray::s![.., ..total_atoms])
+            .assign(&r_set_to_rep_atom);
     }
 
     let bfactor = pad_1d_f32(&bfactor, max_atoms_padded);
@@ -933,27 +984,39 @@ pub fn process_atom_features(
 
             // atom_to_token: extend columns to max_tokens
             let mut att_final = Array2::zeros((max_atoms_padded, max_t));
-            att_final.slice_mut(ndarray::s![.., ..num_tokens]).assign(&atom_to_token);
+            att_final
+                .slice_mut(ndarray::s![.., ..num_tokens])
+                .assign(&atom_to_token);
 
             // token_to_rep_atom: extend rows to max_tokens
             let mut ttra_final = Array2::zeros((max_t, max_atoms_padded));
-            ttra_final.slice_mut(ndarray::s![..num_tokens, ..]).assign(&ttra_padded);
+            ttra_final
+                .slice_mut(ndarray::s![..num_tokens, ..])
+                .assign(&ttra_padded);
 
             // r_set_to_rep_atom: extend rows to max_tokens
             let mut rstra_final = Array2::zeros((max_t, max_atoms_padded));
-            rstra_final.slice_mut(ndarray::s![..n_rset, ..]).assign(&rstra_padded);
+            rstra_final
+                .slice_mut(ndarray::s![..n_rset, ..])
+                .assign(&rstra_padded);
 
             // token_to_center_atom: extend rows to max_tokens
             let mut ttca_final = Array2::zeros((max_t, max_atoms_padded));
-            ttca_final.slice_mut(ndarray::s![..num_tokens, ..]).assign(&ttca_padded);
+            ttca_final
+                .slice_mut(ndarray::s![..num_tokens, ..])
+                .assign(&ttca_padded);
 
             // disto_target: pad dims 0 and 1
             let mut disto_final = Array4::zeros((max_t, max_t, idx_list.len(), config.num_bins));
-            disto_final.slice_mut(ndarray::s![..num_tokens, ..num_tokens, .., ..]).assign(&disto_target);
+            disto_final
+                .slice_mut(ndarray::s![..num_tokens, ..num_tokens, .., ..])
+                .assign(&disto_target);
 
             // disto_coords_arr: pad dim 1
             let mut disto_coords_final = Array3::zeros((n_ens, max_t, 3));
-            disto_coords_final.slice_mut(ndarray::s![.., ..num_tokens, ..]).assign(&disto_coords_arr);
+            disto_coords_final
+                .slice_mut(ndarray::s![.., ..num_tokens, ..])
+                .assign(&disto_coords_arr);
 
             return AtomFeatureTensors {
                 atom_backbone_feat,

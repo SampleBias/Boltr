@@ -291,8 +291,8 @@ impl PairformerLayer {
         // Create columnwise mask: broadcast over first two dimensions
         let mask = Tensor::empty(&[1i64, 1, 1, dim], (Kind::Float, self.device));
         let thr = Tensor::from(self.dropout).to_device(self.device);
-        let mask = (mask.rand_like().gt_tensor(&thr)).to_kind(Kind::Float)
-            * (1.0 / (1.0 - self.dropout));
+        let mask =
+            (mask.rand_like().gt_tensor(&thr)).to_kind(Kind::Float) * (1.0 / (1.0 - self.dropout));
 
         mask.expand(shape.as_slice(), false)
     }

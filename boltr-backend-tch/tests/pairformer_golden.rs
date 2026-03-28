@@ -69,10 +69,7 @@ fn pairformer_layer_allclose_python_golden() {
 
     let rtol = 1e-4_f64;
     let atol = 1e-5_f64;
-    for (name, a, b) in [
-        ("s_out", &s_rust, &s_ref),
-        ("z_out", &z_rust, &z_ref),
-    ] {
+    for (name, a, b) in [("s_out", &s_rust, &s_ref), ("z_out", &z_rust, &z_ref)] {
         let scale = b.abs().max().double_value(&[]).max(1.0);
         let diff = (a - b).abs().max();
         assert!(

@@ -25,11 +25,7 @@ pub enum InferenceCollateError {
         b: &'static str,
     },
     #[error("ndim mismatch for key {key:?}: {a} vs {b}")]
-    NdimMismatch {
-        key: String,
-        a: usize,
-        b: usize,
-    },
+    NdimMismatch { key: String, a: usize, b: usize },
     #[error("ndarray stack: {0}")]
     Stack(#[from] ndarray::ShapeError),
 }
@@ -43,7 +39,9 @@ fn collate_err_to_inference(e: CollateError) -> InferenceCollateError {
             b: b.len(),
         },
         CollateError::MissingKey(k) => InferenceCollateError::MissingKey(k),
-        CollateError::DtypeMismatch { key, a, b } => InferenceCollateError::DtypeMismatch { key, a, b },
+        CollateError::DtypeMismatch { key, a, b } => {
+            InferenceCollateError::DtypeMismatch { key, a, b }
+        }
         CollateError::Stack(s) => InferenceCollateError::Stack(s),
     }
 }
@@ -187,7 +185,10 @@ pub fn pad_to_max_f32(data: &[ArrayD<f32>], value: f32) -> Result<PadToMaxResult
         masks.push(m);
     }
     Ok(PadToMaxResult {
-        data: stack(Axis(0), &padded.iter().map(|a| a.view()).collect::<Vec<_>>())?,
+        data: stack(
+            Axis(0),
+            &padded.iter().map(|a| a.view()).collect::<Vec<_>>(),
+        )?,
         padding_mask: stack(Axis(0), &masks.iter().map(|a| a.view()).collect::<Vec<_>>())?,
     })
 }
@@ -314,7 +315,10 @@ pub fn collate_inference_batches(
                     }
                     batch.insert_i64(
                         key.clone(),
-                        stack(Axis(0), &padded.iter().map(|a| a.view()).collect::<Vec<_>>())?,
+                        stack(
+                            Axis(0),
+                            &padded.iter().map(|a| a.view()).collect::<Vec<_>>(),
+                        )?,
                     );
                 }
             }
@@ -364,7 +368,10 @@ pub fn collate_inference_batches(
                     }
                     batch.insert_i32(
                         key.clone(),
-                        stack(Axis(0), &padded.iter().map(|a| a.view()).collect::<Vec<_>>())?,
+                        stack(
+                            Axis(0),
+                            &padded.iter().map(|a| a.view()).collect::<Vec<_>>(),
+                        )?,
                     );
                 }
             }

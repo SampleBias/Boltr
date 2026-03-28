@@ -14,7 +14,8 @@ use tch::nn::VarStore;
 use tch::Device;
 
 fn fixture_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/msa_module_golden/msa_module_golden.safetensors")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/msa_module_golden/msa_module_golden.safetensors")
 }
 
 fn msa_golden_requested() -> bool {
@@ -65,9 +66,11 @@ fn msa_module_allclose_python_golden() {
     let msa_t = load_tensor_from_safetensors(&path, "golden.msa", device).unwrap();
     let msa_mask = load_tensor_from_safetensors(&path, "golden.msa_mask", device).unwrap();
     let has_deletion = load_tensor_from_safetensors(&path, "golden.has_deletion", device).unwrap();
-    let deletion_value = load_tensor_from_safetensors(&path, "golden.deletion_value", device).unwrap();
+    let deletion_value =
+        load_tensor_from_safetensors(&path, "golden.deletion_value", device).unwrap();
     let msa_paired = load_tensor_from_safetensors(&path, "golden.msa_paired", device).unwrap();
-    let token_pad_mask = load_tensor_from_safetensors(&path, "golden.token_pad_mask", device).unwrap();
+    let token_pad_mask =
+        load_tensor_from_safetensors(&path, "golden.token_pad_mask", device).unwrap();
     let z_ref = load_tensor_from_safetensors(&path, "golden.z_out", device).unwrap();
 
     let feats = MsaFeatures {

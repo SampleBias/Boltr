@@ -15,8 +15,6 @@ pub mod boltz2;
 #[cfg(feature = "tch-backend")]
 pub mod checkpoint;
 #[cfg(feature = "tch-backend")]
-mod tch_compat;
-#[cfg(feature = "tch-backend")]
 pub mod device;
 #[cfg(feature = "tch-backend")]
 pub mod equivariance;
@@ -24,6 +22,8 @@ pub mod equivariance;
 pub mod layers;
 #[cfg(feature = "tch-backend")]
 pub mod model;
+#[cfg(feature = "tch-backend")]
+mod tch_compat;
 
 #[cfg(not(feature = "tch-backend"))]
 pub mod attention;

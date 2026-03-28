@@ -40,17 +40,26 @@ fn main() {
         match args[i].as_str() {
             "--token-s" => {
                 i += 1;
-                token_s = args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| usage());
+                token_s = args
+                    .get(i)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| usage());
                 i += 1;
             }
             "--token-z" => {
                 i += 1;
-                token_z = args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| usage());
+                token_z = args
+                    .get(i)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| usage());
                 i += 1;
             }
             "--blocks" => {
                 i += 1;
-                let b: i64 = args.get(i).and_then(|s| s.parse().ok()).unwrap_or_else(|| usage());
+                let b: i64 = args
+                    .get(i)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or_else(|| usage());
                 blocks = Some(b);
                 i += 1;
             }

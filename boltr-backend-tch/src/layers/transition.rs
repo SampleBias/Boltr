@@ -112,8 +112,8 @@ impl Transition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tch::Kind;
     use tch::nn::VarStore;
+    use tch::Kind;
 
     #[test]
     fn test_transition_forward() {

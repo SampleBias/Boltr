@@ -10,7 +10,8 @@ fn main() {
     tch::maybe_init_cuda();
     let device = Device::Cpu;
     let m = Boltz2Model::with_options(device, 64, 32, Some(1));
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors");
+    let out = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors");
     std::fs::create_dir_all(out.parent().unwrap()).expect("create fixture dir");
     m.var_store().save(&out).expect("VarStore::save");
     eprintln!(

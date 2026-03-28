@@ -173,12 +173,7 @@ impl TriangleAttention {
     }
 
     /// `_attention` in primitives.py: softmax over keys, biases broadcast onto `[*, H, J, J]`.
-    fn mha_with_bias(
-        &self,
-        x: &Tensor,
-        mask_bias: &Tensor,
-        triangle_bias: &Tensor,
-    ) -> Tensor {
+    fn mha_with_bias(&self, x: &Tensor, mask_bias: &Tensor, triangle_bias: &Tensor) -> Tensor {
         let b = x.size()[0];
         let i = x.size()[1];
         let j = x.size()[2];
@@ -194,8 +189,14 @@ impl TriangleAttention {
             .transpose(2, 3)
             .to_kind(Kind::Float)
             / (d as f64).sqrt();
-        let k = k.reshape(&[b, i, j, h, d]).transpose(2, 3).to_kind(Kind::Float);
-        let v = v.reshape(&[b, i, j, h, d]).transpose(2, 3).to_kind(Kind::Float);
+        let k = k
+            .reshape(&[b, i, j, h, d])
+            .transpose(2, 3)
+            .to_kind(Kind::Float);
+        let v = v
+            .reshape(&[b, i, j, h, d])
+            .transpose(2, 3)
+            .to_kind(Kind::Float);
 
         let kt = k.transpose(-1, -2);
         let mut a = q.matmul(&kt);

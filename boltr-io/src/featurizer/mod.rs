@@ -22,12 +22,11 @@ pub use dummy_templates::{
     dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
 };
 pub use process_atom_features::{
-    process_atom_features, AtomFeatureTensors, AtomFeatureConfig, EnsembleFeatures,
-    inference_ensemble_features, AtomRefDataProvider, StandardAminoAcidRefData,
-    ZeroAtomRefData, AtomRefData,
-    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA, ATOMS_PER_WINDOW_QUERIES,
-    DEFAULT_MIN_DIST, DEFAULT_MAX_DIST, DEFAULT_NUM_BINS,
-    NUM_BACKBONE_FEAT_CLASSES, ATOM_NAME_VOCAB_SIZE,
+    inference_ensemble_features, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
+    AtomRefData, AtomRefDataProvider, EnsembleFeatures, StandardAminoAcidRefData, ZeroAtomRefData,
+    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOMS_PER_WINDOW_QUERIES, ATOM_FEATURE_KEYS_ALA,
+    ATOM_NAME_VOCAB_SIZE, DEFAULT_MAX_DIST, DEFAULT_MIN_DIST, DEFAULT_NUM_BINS,
+    NUM_BACKBONE_FEAT_CLASSES,
 };
 pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
 pub use process_token_features::{

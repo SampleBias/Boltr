@@ -37,7 +37,11 @@ mod tests {
 
     fn expect_shape_collated(collated: bool, shape: &[usize], ranks: &[usize]) {
         if collated {
-            assert_eq!(shape.first().copied(), Some(1), "collated must lead with B=1");
+            assert_eq!(
+                shape.first().copied(),
+                Some(1),
+                "collated must lead with B=1"
+            );
             assert_eq!(&shape[1..], ranks);
         } else {
             assert_eq!(shape, ranks);

@@ -62,7 +62,10 @@ fn chain_ids_unique_sorted(tokens: &[TokenData]) -> Vec<i32> {
         .collect()
 }
 
-fn dummy_msa_for_chain(structure: &StructureV2Tables, chain: &crate::structure_v2::ChainRow) -> A3mMsa {
+fn dummy_msa_for_chain(
+    structure: &StructureV2Tables,
+    chain: &crate::structure_v2::ChainRow,
+) -> A3mMsa {
     let res_start = chain.res_idx as usize;
     let res_end = res_start + chain.res_num as usize;
     let residues: Vec<i32> = structure.residues[res_start..res_end]
@@ -93,11 +96,8 @@ fn prepare_msa_arrays(
     chain_ids: &[i32],
 ) -> (Array2<i64>, Array2<i64>, Array2<i64>) {
     let n_pairs = pairing.len();
-    let chain_id_to_idx: HashMap<i32, usize> = chain_ids
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| (c, i))
-        .collect();
+    let chain_id_to_idx: HashMap<i32, usize> =
+        chain_ids.iter().enumerate().map(|(i, &c)| (c, i)).collect();
 
     let token_asym_ids: Vec<i64> = tokens.iter().map(|t| i64::from(t.asym_id)).collect();
     let token_res_idxs: Vec<i64> = tokens.iter().map(|t| i64::from(t.res_idx)).collect();
@@ -191,8 +191,8 @@ pub fn construct_paired_msa(
 
         if let Some(user_msa) = msas.get(&chain_id) {
             let first = &user_msa.sequences[0];
-            let msa_residues = &user_msa.residues
-                [first.res_start..first.res_end.min(user_msa.residues.len())];
+            let msa_residues =
+                &user_msa.residues[first.res_start..first.res_end.min(user_msa.residues.len())];
             let mut ok = residues_slice.len() == msa_residues.len();
             if ok {
                 for (r, mr) in residues_slice.iter().zip(msa_residues.iter()) {
@@ -360,7 +360,8 @@ pub fn construct_paired_msa(
         let cid = i64::from(chain_id);
         for seq in &chain_msa.sequences {
             let sidx = i64::from(seq.seq_idx);
-            let del_slice = &chain_msa.deletions[seq.del_start..seq.del_end.min(chain_msa.deletions.len())];
+            let del_slice =
+                &chain_msa.deletions[seq.del_start..seq.del_end.min(chain_msa.deletions.len())];
             for d in del_slice {
                 let res_idx = i64::from(d.0);
                 let delv = i64::from(d.1);
@@ -370,12 +371,7 @@ pub fn construct_paired_msa(
     }
 
     prepare_msa_arrays(
-        tokens,
-        &pairing,
-        &is_paired,
-        &deletions,
-        &msa_map,
-        &chain_ids,
+        tokens, &pairing, &is_paired, &deletions, &msa_map, &chain_ids,
     )
 }
 

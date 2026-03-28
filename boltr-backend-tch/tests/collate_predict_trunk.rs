@@ -13,7 +13,8 @@ use boltr_backend_tch::{Boltz2Model, MsaFeatures, RelPosFeatures};
 use tch::Device;
 
 fn collate_fixture_path() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors")
 }
 
 #[test]
@@ -72,15 +73,7 @@ fn collate_smoke_predict_step_trunk_runs_with_msa() {
     };
 
     let (s_out, z_out) = model
-        .predict_step_trunk(
-            &s_inputs,
-            &rel,
-            None,
-            None,
-            None,
-            Some(0),
-            Some(&feats),
-        )
+        .predict_step_trunk(&s_inputs, &rel, None, None, None, Some(0), Some(&feats))
         .expect("predict_step_trunk");
 
     assert_eq!(s_out.size(), vec![b, n, token_s]);

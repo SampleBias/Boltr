@@ -390,15 +390,7 @@ async fn try_model_spike(
             cyclic_period: &cyclic_period,
         };
         let (s_ps, z_ps) = model
-            .predict_step_trunk(
-                &s_in,
-                &rel,
-                None,
-                None,
-                None,
-                Some(recycling_steps),
-                None,
-            )
+            .predict_step_trunk(&s_in, &rel, None, None, None, Some(recycling_steps), None)
             .map_err(|e| anyhow::anyhow!("predict_step_trunk spike: {e}"))?;
         tracing::info!(
             s_predict = ?s_ps.size(),

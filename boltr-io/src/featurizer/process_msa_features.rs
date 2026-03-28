@@ -4,12 +4,12 @@ use std::collections::HashMap;
 
 use ndarray::{s, Array1, Array2, Axis};
 
+use crate::a3m::A3mMsa;
 use crate::boltz_const::NUM_TOKENS;
 use crate::feature_batch::FeatureBatch;
 use crate::featurizer::msa_pairing::construct_paired_msa;
 use crate::structure_v2::StructureV2Tables;
 use crate::tokenize::boltz2::TokenData;
-use crate::a3m::A3mMsa;
 
 use rand::Rng;
 

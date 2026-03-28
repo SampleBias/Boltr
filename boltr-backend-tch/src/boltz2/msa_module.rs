@@ -60,13 +60,8 @@ impl MsaLayerBlock {
             None,
             device,
         );
-        let outer_product_mean = OuterProductMeanMsa::new(
-            path.sub("outer_product_mean"),
-            msa_s,
-            32,
-            token_z,
-            device,
-        );
+        let outer_product_mean =
+            OuterProductMeanMsa::new(path.sub("outer_product_mean"), msa_s, 32, token_z, device);
         let pairformer_layer = PairformerNoSeqLayer::new(
             path.sub("pairformer_layer"),
             token_z,
@@ -96,9 +91,7 @@ impl MsaLayerBlock {
         use_kernels: bool,
     ) -> (Tensor, Tensor) {
         let msa_drop = msa_dropout_mask(self.msa_dropout, m, training);
-        let pwa = self
-            .pair_weighted_averaging
-            .forward(m, z, pair_mask);
+        let pwa = self.pair_weighted_averaging.forward(m, z, pair_mask);
         let m = {
             let m1 = m + msa_drop * pwa;
             let m2 = self.msa_transition.forward(&m1, None);

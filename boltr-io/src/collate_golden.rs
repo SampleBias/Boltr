@@ -7,7 +7,8 @@ use safetensors::SafeTensors;
 
 /// Absolute path to [`trunk_smoke_collate.safetensors`](tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) inside this crate.
 pub fn trunk_smoke_collate_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/collate_golden/trunk_smoke_collate.safetensors")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/collate_golden/trunk_smoke_collate.safetensors")
 }
 
 /// Names and shapes of tensors in `trunk_smoke_collate.safetensors`.

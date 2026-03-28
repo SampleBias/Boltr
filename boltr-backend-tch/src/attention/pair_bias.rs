@@ -213,7 +213,8 @@ impl AttentionPairBiasV2 {
             z.permute([0, 3, 1, 2])
         } else if z.dim() == 3 {
             // Shared scalar bias per pair, broadcast over heads (test / simple callers).
-            z.unsqueeze(1).expand(&[b, self.num_heads, z.size()[1], z.size()[2]], false)
+            z.unsqueeze(1)
+                .expand(&[b, self.num_heads, z.size()[1], z.size()[2]], false)
         } else {
             z.shallow_clone()
         };

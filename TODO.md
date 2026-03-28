@@ -117,7 +117,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | `Boltz2Tokenizer` / core tokenize | `tokenize/boltz2.py` | [tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs), [structure_v2_npz.rs](boltr-io/src/structure_v2_npz.rs). **TBD:** trait + template loop + golden on preprocess file. |
+| [x] | `Boltz2Tokenizer` / core tokenize | `tokenize/boltz2.py` | [tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs), [`tokenize_boltz2_inference`](boltr-io/src/inference_dataset.rs) + [`TokenizeBoltz2Input`](boltr-io/src/inference_dataset.rs). Tests: preprocess [`load_input_smoke`](boltr-io/tests/fixtures/load_input_smoke) + template loop parity. |
 | [~] | Token/atom bookkeeping | `types.py` | [token_npz.rs](boltr-io/src/token_npz.rs); `boltr tokens-to-npz`. **TBD:** exact `TokenV2` numpy padding if required. |
 
 ### 4.4 Featurizer (Boltz2)

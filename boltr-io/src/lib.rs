@@ -51,10 +51,11 @@ pub use collate_golden::{
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, dummy_templates_as_feature_batch, inference_ensemble_features,
-    load_dummy_templates_features, process_atom_features, process_msa_features, process_token_features,
-    token_feature_key_names, AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider,
-    StandardAminoAcidRefData, DummyTemplateTensors, MsaFeatureTensors, TokenFeatureTensors,
-    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA, CONTACT_CONDITIONING_NUM_CLASSES,
+    load_dummy_templates_features, process_atom_features, process_msa_features,
+    process_token_features, token_feature_key_names, AtomFeatureConfig, AtomFeatureTensors,
+    AtomRefDataProvider, DummyTemplateTensors, MsaFeatureTensors, StandardAminoAcidRefData,
+    TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
+    CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};
@@ -78,11 +79,11 @@ pub use token_npz::{
 pub use tokenize::boltz2::{compute_frame, tokenize_structure, TokenBondV2, TokenData};
 /// Backward-compatible name for parsed YAML root.
 pub type BoltzConfig = BoltzInput;
-pub use download::download_model_assets;
 pub use collate_pad::{
     collate_inference_batches, pad_to_max_f32, InferenceCollateError, InferenceCollateResult,
     PadToMaxResult,
 };
+pub use download::download_model_assets;
 pub use feature_batch::{
     collate_feature_batches, stack_f32_views, CollateError, FeatureBatch, FeatureTensor,
     INFERENCE_COLLATE_EXCLUDED_KEYS,
@@ -90,10 +91,12 @@ pub use feature_batch::{
 pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;
 pub use inference_dataset::{
-    atom_features_from_inference_input, load_input, msa_features_from_inference_input,
-    parse_manifest_json, parse_manifest_path, token_features_from_inference_input,
+    affinity_asym_id_from_record, atom_features_from_inference_input, load_input,
+    msa_features_from_inference_input, parse_manifest_json, parse_manifest_path,
+    token_features_from_inference_input, tokenize_boltz2_inference,
     trunk_smoke_feature_batch_from_inference_input, Boltz2ChainInfo, Boltz2InferenceInput,
-    Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, StructureInfo, TemplateInfo,
+    Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, Boltz2Tokenized, Boltz2Tokenizer,
+    StructureInfo, TemplateInfo, TokenizeBoltz2Input,
 };
 pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EXCLUSION_COUNT};
 pub use msa::{write_a3m, MsaProcessor};

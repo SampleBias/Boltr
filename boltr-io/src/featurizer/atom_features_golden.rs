@@ -112,7 +112,9 @@ mod tests {
     }
 
     fn read_bool_le(buf: &[u8]) -> Vec<f32> {
-        buf.iter().map(|&b| if b != 0 { 1.0 } else { 0.0 }).collect()
+        buf.iter()
+            .map(|&b| if b != 0 { 1.0 } else { 0.0 })
+            .collect()
     }
 
     fn ala_atom_features_rust() -> AtomFeatureTensors {

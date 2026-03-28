@@ -65,13 +65,19 @@ impl TokenFeatureTensors {
         b.insert_f32("token_bonds", self.token_bonds.clone().into_dyn());
         b.insert_i64("type_bonds", self.type_bonds.clone().into_dyn());
         b.insert_f32("token_pad_mask", self.token_pad_mask.clone().into_dyn());
-        b.insert_f32("token_resolved_mask", self.token_resolved_mask.clone().into_dyn());
+        b.insert_f32(
+            "token_resolved_mask",
+            self.token_resolved_mask.clone().into_dyn(),
+        );
         b.insert_f32("token_disto_mask", self.token_disto_mask.clone().into_dyn());
         b.insert_f32(
             "contact_conditioning",
             self.contact_conditioning.clone().into_dyn(),
         );
-        b.insert_f32("contact_threshold", self.contact_threshold.clone().into_dyn());
+        b.insert_f32(
+            "contact_threshold",
+            self.contact_threshold.clone().into_dyn(),
+        );
         b.insert_i64("method_feature", self.method_feature.clone().into_dyn());
         b.insert_i64("modified", self.modified.clone().into_dyn());
         b.insert_f32("cyclic_period", self.cyclic_period.clone().into_dyn());

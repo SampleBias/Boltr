@@ -69,7 +69,12 @@ impl OuterProductMeanMsa {
         let a_f = a.to_kind(Kind::Float);
         let b_f = b.to_kind(Kind::Float);
         let z = Tensor::einsum("bsic,bsjd->bijcd", &[&a_f, &b_f], None::<i64>);
-        let z = z.reshape(&[z.size()[0], z.size()[1], z.size()[2], self.c_hidden * self.c_hidden]);
+        let z = z.reshape(&[
+            z.size()[0],
+            z.size()[1],
+            z.size()[2],
+            self.c_hidden * self.c_hidden,
+        ]);
         let z = z / &num_mask;
         self.proj_o.forward(&z.to_kind(m.kind()))
     }
