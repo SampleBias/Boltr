@@ -199,6 +199,185 @@ pub const MAX_PAIRED_SEQS: usize = 8192;
 
 pub const CHUNK_SIZE_THRESHOLD: usize = 384;
 
+// --- Output / clash / single-type labels (`const.py`: `out_types`, `clash_types`, etc.) ---
+
+/// Boltz `canonical_tokens` (20 standard amino acids + UNK).
+pub const CANONICAL_TOKENS: [&str; 21] = [
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE", "LEU", "LYS", "MET",
+    "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL", "UNK",
+];
+
+/// Training / interface `out_types` (order matches Python).
+pub const OUT_TYPES: [&str; 11] = [
+    "dna_protein",
+    "rna_protein",
+    "ligand_protein",
+    "dna_ligand",
+    "rna_ligand",
+    "intra_ligand",
+    "intra_dna",
+    "intra_rna",
+    "intra_protein",
+    "protein_protein",
+    "modified",
+];
+
+/// `out_single_types` in Python.
+pub const OUT_SINGLE_TYPES: [&str; 4] = ["protein", "ligand", "dna", "rna"];
+
+/// `clash_types` (distinct from [`OUT_TYPES`] — no `intra_*` / `modified`).
+pub const CLASH_TYPES: [&str; 10] = [
+    "dna_protein",
+    "rna_protein",
+    "ligand_protein",
+    "protein_protein",
+    "dna_ligand",
+    "rna_ligand",
+    "ligand_ligand",
+    "rna_dna",
+    "dna_dna",
+    "rna_rna",
+];
+
+/// `out_types_weights` in `const.py` (default Boltz weights).
+#[must_use]
+pub fn out_type_weight(name: &str) -> Option<f64> {
+    Some(match name {
+        "dna_protein" => 5.0,
+        "rna_protein" => 5.0,
+        "ligand_protein" => 20.0,
+        "dna_ligand" => 2.0,
+        "rna_ligand" => 2.0,
+        "intra_ligand" => 20.0,
+        "intra_dna" => 2.0,
+        "intra_rna" => 8.0,
+        "intra_protein" => 20.0,
+        "protein_protein" => 20.0,
+        "modified" => 0.0,
+        _ => return None,
+    })
+}
+
+/// `out_types_weights_af3` in `const.py` (AF3-style interface weights).
+#[must_use]
+pub fn out_type_weight_af3(name: &str) -> Option<f64> {
+    Some(match name {
+        "dna_protein" => 10.0,
+        "rna_protein" => 10.0,
+        "ligand_protein" => 10.0,
+        "dna_ligand" => 5.0,
+        "rna_ligand" => 5.0,
+        "intra_ligand" => 20.0,
+        "intra_dna" => 4.0,
+        "intra_rna" => 16.0,
+        "intra_protein" => 20.0,
+        "protein_protein" => 20.0,
+        "modified" => 0.0,
+        _ => return None,
+    })
+}
+
+/// `chain_type_to_out_single_type`.
+#[must_use]
+pub fn chain_type_to_out_single_type(chain: &str) -> Option<&'static str> {
+    Some(match chain {
+        "PROTEIN" => "protein",
+        "DNA" => "dna",
+        "RNA" => "rna",
+        "NONPOLYMER" => "ligand",
+        _ => return None,
+    })
+}
+
+/// `chain_types_to_clash_type` — two chain types (order-independent), or one repeated for homo-type.
+#[must_use]
+pub fn clash_type_for_chain_pair(a: &str, b: &str) -> Option<&'static str> {
+    if a == b {
+        return match a {
+            "PROTEIN" => Some("protein_protein"),
+            "DNA" => Some("dna_dna"),
+            "RNA" => Some("rna_rna"),
+            "NONPOLYMER" => Some("ligand_ligand"),
+            _ => None,
+        };
+    }
+    let (x, y) = if a < b { (a, b) } else { (b, a) };
+    Some(match (x, y) {
+        ("DNA", "PROTEIN") => "dna_protein",
+        ("PROTEIN", "RNA") => "rna_protein",
+        ("NONPOLYMER", "PROTEIN") => "ligand_protein",
+        ("DNA", "NONPOLYMER") => "dna_ligand",
+        ("NONPOLYMER", "RNA") => "rna_ligand",
+        ("DNA", "RNA") => "rna_dna",
+        _ => return None,
+    })
+}
+
+#[inline]
+#[must_use]
+pub fn is_canonical_token(name: &str) -> bool {
+    CANONICAL_TOKENS.iter().any(|&t| t == name)
+}
+
+/// Inverse of protein one-letter → token (`prot_token_to_letter` in Python, with `UNK` → `X`).
+#[must_use]
+pub fn prot_token_id_to_letter(id: i32) -> Option<char> {
+    let name = token_name(id)?;
+    Some(match name {
+        "UNK" => 'X',
+        "-" => '-',
+        "ALA" => 'A',
+        "ARG" => 'R',
+        "ASN" => 'N',
+        "ASP" => 'D',
+        "CYS" => 'C',
+        "GLU" => 'E',
+        "GLN" => 'Q',
+        "GLY" => 'G',
+        "HIS" => 'H',
+        "ILE" => 'I',
+        "LEU" => 'L',
+        "LYS" => 'K',
+        "MET" => 'M',
+        "PHE" => 'F',
+        "PRO" => 'P',
+        "SER" => 'S',
+        "THR" => 'T',
+        "TRP" => 'W',
+        "TYR" => 'Y',
+        "VAL" => 'V',
+        _ => return None,
+    })
+}
+
+/// `rna_token_to_letter` (token id for RNA letters A/G/C/U/N).
+#[must_use]
+pub fn rna_token_id_to_letter(id: i32) -> Option<char> {
+    let name = token_name(id)?;
+    match name {
+        "A" => Some('A'),
+        "G" => Some('G'),
+        "C" => Some('C'),
+        "U" => Some('U'),
+        "N" => Some('N'),
+        _ => None,
+    }
+}
+
+/// `dna_token_to_letter` (token names DA/DG/DC/DT/DN → one letter).
+#[must_use]
+pub fn dna_token_id_to_letter(id: i32) -> Option<char> {
+    let name = token_name(id)?;
+    match name {
+        "DA" => Some('A'),
+        "DG" => Some('G'),
+        "DC" => Some('C'),
+        "DT" => Some('T'),
+        "DN" => Some('N'),
+        _ => None,
+    }
+}
+
 // --- Method conditioning (`const.py`; keys are lowercased in Python) ---
 
 /// Distinct embedding indices used for method type (`num_method_types` in Python).
