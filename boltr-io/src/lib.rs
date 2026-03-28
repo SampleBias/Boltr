@@ -26,6 +26,7 @@ pub mod msa_npz;
 pub mod pad;
 pub mod parser;
 pub mod ref_atoms;
+pub mod residue_constraints;
 pub mod structure_v2;
 pub mod structure_v2_npz;
 pub mod token_npz;
@@ -74,6 +75,7 @@ pub use ref_atoms::{
     ref_atom_names, ref_atom_names_for_token, ref_atoms_key_from_token, ref_symmetry_groups,
     ref_symmetry_groups_for_token, NUCLEIC_BACKBONE_ATOM_NAMES, PROTEIN_BACKBONE_ATOM_NAMES,
 };
+pub use residue_constraints::ResidueConstraints;
 pub use structure_v2::{
     AtomV2Row, BondV2AtomRow, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables,
 };

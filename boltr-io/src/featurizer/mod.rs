@@ -31,7 +31,7 @@ pub use process_ensemble_features::{
     inference_ensemble_features, process_ensemble_features, EnsembleFeatures,
 };
 pub use process_residue_constraint_features::{
-    inference_residue_constraint_features, ResidueConstraintTensors,
+    inference_residue_constraint_features, process_residue_constraint_features, ResidueConstraintTensors,
 };
 pub use process_symmetry_features::{
     get_amino_acids_symmetries, get_chain_symmetries, get_ligand_symmetries_empty,

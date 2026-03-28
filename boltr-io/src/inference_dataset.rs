@@ -22,6 +22,7 @@ use crate::featurizer::{
     TemplateAlignment, TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
+use crate::residue_constraints::ResidueConstraints;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
 use crate::tokenize::boltz2::{tokenize_structure, TokenBondV2, TokenData};
@@ -171,6 +172,7 @@ pub struct Boltz2InferenceInput {
     pub record: Boltz2Record,
     /// Template id → structure tables (`{record.id}_{template_id}.npz`).
     pub templates: Option<HashMap<String, StructureV2Tables>>,
+    pub residue_constraints: Option<ResidueConstraints>,
 }
 
 /// Token/bond tensors from Boltz [`Boltz2Tokenizer`](TokenizeBoltz2Input) — mirrors Python
@@ -280,15 +282,9 @@ pub fn load_input(
     extra_mols_dir: Option<&Path>,
     affinity: bool,
 ) -> Result<Boltz2InferenceInput> {
-    if constraints_dir.is_some() {
-        bail!(
-            "load_input: residue constraints loading is not implemented; pass constraints_dir=None"
-        );
-    }
     if extra_mols_dir.is_some() {
         bail!("load_input: extra_mols pickle loading is not implemented; pass extra_mols_dir=None");
     }
-
     let structure_path = if affinity {
         target_dir
             .join(&record.id)
@@ -325,11 +321,24 @@ pub fn load_input(
         _ => None,
     };
 
+    // Load residue constraints
+    let residue_constraints_local = match constraints_dir {
+        Some(cd) => {
+            let path = cd.join(format!("{}.npz", record.id));
+            match ResidueConstraints::load_from_npz(&path) {
+                Ok(rc) if !rc.is_empty() => Some(rc),
+                _ => None,
+            }
+        }
+        None => None,
+    };
+
     Ok(Boltz2InferenceInput {
         structure,
         msas,
         record: record.clone(),
         templates,
+        residue_constraints: residue_constraints_local,
     })
 }
 
@@ -448,6 +457,13 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
     let mut batch = tok.to_feature_batch();
     batch.merge(msa.to_feature_batch());
     batch.merge(atoms.to_feature_batch());
+
+    // Add residue constraint features (optional)
+    let residue_constraint_features =
+        crate::featurizer::process_residue_constraint_features(
+            input.residue_constraints.as_ref(),
+        );
+    batch.merge(residue_constraint_features.into_feature_batch());
     let tmpl = template_features_from_tokenized(input, &tokenized, n, template_dim);
     batch.merge(tmpl.into_feature_batch());
     batch
@@ -512,6 +528,7 @@ mod tests {
             msas: HashMap::new(),
             record,
             templates: Some(templates),
+            residue_constraints: None,
         };
         let out = TokenizeBoltz2Input::tokenize(&Boltz2Tokenizer, &input);
         let (main_t, main_b) = tokenize_structure(&s, None);

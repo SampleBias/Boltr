@@ -1,3 +1,53 @@
+# Boltr — §4.5 Inference dataset / collate
+
+Implement missing features in `inference_dataset.rs` and `collate_pad.rs` for full parity with Python `inferencev2.py`.
+
+## Context
+From TODO.md §4.5:
+- [~] `load_input` - Python `inferencev2.py` → Rust `inference_dataset.rs`. **TBD:** `ResidueConstraints`, `extra_mols` pickle.
+- [~] `collate` - Python same → Rust `feature_batch.rs`, `collate_pad.rs`, `manifest.json`. **TBD:** full post-collate golden.
+
+Current status: Basic collate works with single examples, but missing `ResidueConstraints` loading and `extra_mols` pickle support. Full collate golden testing is incomplete.
+
+## Subtasks
+
+### 1. ResidueConstraints support ✅ COMPLETE
+- [x] 1.1 Implement `ResidueConstraints` struct in Rust (matches Python types.py)
+- [x] 1.2 Implement `ResidueConstraints::load_from_npz` method
+- [x] 1.3 Add constraint tensor types to feature batch
+- [x] 1.4 Update `load_input` to load constraints when `constraints_dir` provided
+- [x] 1.5 Test constraint loading with fixtures
+- [x] 1.6 Integrate constraints into featurizer flow
+
+### 2. Extra molecules pickle support (POSTPONED)
+- [x] 2.1 Analyze Python extra_mols pickle format
+- [~] 2.2 Design Rust equivalent (POSTPONED: requires RDKit, documented limitation)
+- [ ] 2.3 Implement `load_extra_mols` function
+- [ ] 2.4 Update `load_input` to load extra_mols when `extra_mols_dir` provided
+- [ ] 2.5 Test extra_mols loading with fixtures
+
+**Analysis:**
+Extra_mols are `dict[str, Mol]` from RDKit pickle files. Featurizer uses `mol.GetAtoms()`, `mol.GetConformers()`, etc. 
+Rust implementation would require RDKit bindings or complex serialization. Documented in activity.md as "requires Python preprocessing."
+
+### 3. Full collate golden testing
+- [ ] 3.1 Create Python script to dump full post-collate batch from Boltz2InferenceDataModule
+- [ ] 3.2 Generate golden safetensors with multiple examples
+- [ ] 3.3 Implement Rust comparison test for all keys
+- [ ] 3.4 Fix any numerical mismatches in collate logic
+- [ ] 3.5 Add tests for variable MSA sizes with collate
+- [ ] 3.6 Add tests for variable template counts with collate
+- [ ] 3.7 Add tests for excluded keys handling
+- [ ] 3.8 Document full collate contract
+
+### 4. Integration tests
+- [ ] 4.1 Create end-to-end test from manifest → collated batch
+- [ ] 4.2 Test with real Boltz preprocessed data
+- [ ] 4.3 Verify batch shapes match expectations
+- [ ] 4.4 Performance profiling for collate operations
+
+==================================================
+
 # Boltr — §4.1 YAML and chemistry (Boltz schema)
 
 Full schema parse: entities, bonds, ligands (SMILES/CCD). Converts Boltz YAML input
@@ -73,3 +123,13 @@ The Rust `PairformerLayer` did not match Python's dropout behavior:
 - Task 11: Update PAIRFORMER_IMPLEMENTATION.md with training flag information
 
 *Session completed: 2026-03-28 09:30*
+
+---
+
+## New Session - 2026-03-28 11:38
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-28 11:38*

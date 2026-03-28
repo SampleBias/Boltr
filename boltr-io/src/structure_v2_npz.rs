@@ -83,7 +83,7 @@ fn wrap_npy_header_v1(header_dict: &str) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn write_npy_1d(descr: &str, n: usize, payload: &[u8]) -> Result<Vec<u8>> {
+pub fn write_npy_1d(descr: &str, n: usize, payload: &[u8]) -> Result<Vec<u8>> {
     let shape = shape_repr_1d(n);
     let dict = numpy_header_dict_v1(descr, &shape, false);
     let mut b = wrap_npy_header_v1(&dict)?;
@@ -124,7 +124,7 @@ fn parse_shape_tuple(header: &str) -> Result<Vec<usize>> {
         .map_err(|e| anyhow!("shape parse: {e}"))
 }
 
-fn parse_npy_shape_and_payload(data: &[u8]) -> Result<(Vec<usize>, &[u8])> {
+pub fn parse_npy_shape_and_payload(data: &[u8]) -> Result<(Vec<usize>, &[u8])> {
     if data.len() < 10 || &data[..6] != MAGIC_PREFIX {
         bail!("invalid .npy");
     }
@@ -159,7 +159,7 @@ fn read_zip_npy<R: Read + Seek>(z: &mut ZipArchive<R>, stem: &str) -> Result<Vec
 }
 
 #[inline]
-fn read_i32_le(s: &[u8], o: usize) -> Result<i32> {
+pub fn read_i32_le(s: &[u8], o: usize) -> Result<i32> {
     Ok(i32::from_le_bytes(
         s.get(o..o + 4)
             .ok_or_else(|| anyhow!("oob i32"))?
@@ -168,7 +168,7 @@ fn read_i32_le(s: &[u8], o: usize) -> Result<i32> {
 }
 
 #[inline]
-fn read_f32_le(s: &[u8], o: usize) -> Result<f32> {
+pub fn read_f32_le(s: &[u8], o: usize) -> Result<f32> {
     Ok(f32::from_le_bytes(
         s.get(o..o + 4)
             .ok_or_else(|| anyhow!("oob f32"))?
