@@ -99,11 +99,11 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [x] | Minimal YAML types | `parse/yaml.py`, `parse/schema.py` | [boltr-io/src/config.rs](boltr-io/src/config.rs) — constraints, templates, properties.affinity, modifications, cyclic. |
-| [ ] | Full schema parse | `schema.py` | Entities, bonds, ligands (SMILES/CCD). **Depends on:** CCD/molecules. |
-| [ ] | CCD / molecules | `mol.py`, `main.py` | `ccd.pkl`, `mols.tar`; ligand graphs for featurizer. |
-| [ ] | Structure parsers | `parse/mmcif.py`, `parse/pdb.py` | Parse inputs for templates / processed structures. |
-| [~] | Constraints serialization | preprocess `main.py` | [verify_constraints_npz_layout.py](scripts/verify_constraints_npz_layout.py). **TBD:** Rust `npz` → typed structs in `load_input`. |
+| [x] | Boltz YAML → typed config | `parse/yaml.py`, `parse/schema.py` | [config.rs](boltr-io/src/config.rs) — `BoltzInput`: protein/dna/rna polymers, ligands (`smiles` / `ccd`), `ChainIdSpec`, modifications, cyclic, `constraints` (`bond` / `pocket` / `contact`), `templates` (cif/pdb), `properties` (`affinity`). [parser.rs](boltr-io/src/parser.rs) `parse_input_path` / `parse_input_str`. Tests: [yaml_parse.rs](boltr-io/tests/yaml_parse.rs), doc example in `config.rs`. |
+| [x] | CCD / molecules (Rust graph) | `mol.py` | [ccd.rs](boltr-io/src/ccd.rs) — `CcdMolData`, `CcdAtom`, `CcdBond`, `CcdMolProvider`; load from pre-extracted `mols/{code}.json` (RDKit `.pkl` not deserialized in Rust). Re-exported from [lib.rs](boltr-io/src/lib.rs). |
+| [x] | Structure I/O (inference path) | `types.py` StructureV2, preprocess | **Read:** [structure_v2.rs](boltr-io/src/structure_v2.rs) tables + [structure_v2_npz.rs](boltr-io/src/structure_v2_npz.rs) `read_structure_v2_npz_*` (preprocess `.npz`). **Write:** [write/mmcif.rs](boltr-io/src/write/mmcif.rs), [write/pdb.rs](boltr-io/src/write/pdb.rs) from `StructureV2Tables`. Raw mmCIF/PDB **ingest** for new targets remains in Python preprocess (not duplicated here). |
+| [x] | Residue constraints NPZ → Rust | preprocess `main.py` | [residue_constraints.rs](boltr-io/src/residue_constraints.rs) — `ResidueConstraints::load_from_npz` / `load_from_npz_bytes` (ZIP+`.npy` layout). [load_input](boltr-io/src/inference_dataset.rs) accepts `constraints_dir` and attaches `residue_constraints` to `Boltz2InferenceInput`. Layout checker: [verify_constraints_npz_layout.py](scripts/verify_constraints_npz_layout.py). E2E: [integration_smoke.rs](boltr-io/tests/integration_smoke.rs). |
+| [~] | Optional gaps | — | **Not in Rust:** Python-only `schema.py` cross-entity validation; RDKit SMILES→mol at parse time; `extra_mols` pickle dir in `load_input` (explicit error if set). **TBD:** golden YAML round-trip vs Python on a larger fixture. |
 
 ### 4.2 MSA
 

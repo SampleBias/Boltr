@@ -10,6 +10,7 @@
 pub mod a3m;
 pub mod ambiguous_atoms;
 pub mod boltz_const;
+pub mod ccd;
 pub mod collate_golden;
 pub mod collate_pad;
 pub mod config;
@@ -54,6 +55,7 @@ pub use boltz_const::{
 pub use collate_golden::{
     trunk_smoke_collate_path, trunk_smoke_collate_shapes, trunk_smoke_collate_shapes_from_path,
 };
+pub use ccd::{serialize_ccd_mol_json, CcdAtom, CcdBond, CcdMolData, CcdMolProvider};
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, dummy_templates_as_feature_batch, inference_ensemble_features,

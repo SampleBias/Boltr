@@ -40,7 +40,7 @@ use std::fmt;
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Root document
-// ───────��───────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
 
 /// Root document for a Boltz job input file.
 ///
@@ -290,13 +290,15 @@ pub struct ModificationEntry {
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Constraints
-// ───────��───────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
 
 /// A constraint entry under `constraints:`.
 ///
 /// Python reference: `schema.py` BondConstraint, PocketConstraint, ContactConstraint
+///
+/// Each YAML list item is a single-key map (`bond:` / `pocket:` / `contact:`), so we use
+/// `untagged` (not `type`-tagged) deserialization.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum ConstraintEntry {
     /// Covalent bond between two atoms.
@@ -459,7 +461,7 @@ impl TemplateEntry {
 
     /// Whether this is a CIF template.
     pub fn is_cif(&self) -> bool {
-        self.cdf.is_some()
+        self.cif.is_some()
     }
 
     /// Whether this is a PDB template.
@@ -601,7 +603,7 @@ impl BoltzInput {
     pub fn ligands(&self) -> Vec<&LigandEntity> {
         self.sequences
             .iter()
-            .filter_map(|e => match e {
+            .filter_map(|e| match e {
                 SequenceEntry::Ligand { ligand } => Some(ligand),
                 _ => None,
             })

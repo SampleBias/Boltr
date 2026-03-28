@@ -50,7 +50,7 @@ fn e2e_manifest_to_single_feature_batch() {
 
     let msa = msa_features_from_inference_input(&input);
     assert!(msa.msa.nrows() > 0);
-    assert_eq!(msa.profile.ncols(), boltr_io::NUM_TOKENS]);
+    assert_eq!(msa.profile.ncols(), boltr_io::NUM_TOKENS);
 
     let atoms = atom_features_from_inference_input(&input);
     assert!(atoms.atom_pad_mask.len() >= 5);
@@ -134,7 +134,7 @@ fn e2e_manifest_to_single_feature_batch() {
         "chiral_atom_orientations",
         "stereo_bond_index",
         "stereo_reference_mask",
-        "stereo_bond_orientations"
+        "stereo_bond_orientations",
         "planar_bond_index",
         "planar_ring_5_index",
         "planar_ring_6_index",
@@ -152,61 +152,41 @@ fn e2e_single_example_collate_produces_stacked_batch() {
     let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
     let record = &manifest.records[0];
     let input = load_input(record, &dir, &dir, None, None, None, false).expect("load_input");
-    // Create two identical feature batches ( simulating batch of 2)
     let batch1 = trunk_smoke_feature_batch_from_inference_input(&input, 1);
     let batch2 = trunk_smoke_feature_batch_from_inference_input(&input, 1);
 
-    // Collate them
-    let result =
-        collate_inference_batches(&[batch1, batch2], 0.0, 5);
+    let result = collate_inference_batches(&[batch1, batch2], 0.0, 0, 0).expect("collate");
 
-    // Batch dimension should be 2 for most keys
     let token_pad_mask = result
         .batch
         .get_f32("token_pad_mask")
         .expect("token_pad_mask");
-    assert_eq!(token_pad_mask.shape(), &[2]); // 1 token, no padding
+    assert_eq!(token_pad_mask.shape(), &[2, 1]);
 
-    let res_type = batch
+    let res_type = result
+        .batch
         .get_f32("res_type")
         .expect("res_type");
-    assert_eq!(res_type.shape(), [1, boltr_io::NUM_TOKENS]);
+    assert_eq!(res_type.shape(), &[2, 1, boltr_io::NUM_TOKENS]);
 
-    let atom_pad_mask = batch
-        .get_f32("atom_pad_mask").expect("atom_pad_mask");
-    // Padded to nearest window (32)
-    assert_eq!(atom_pad_mask.shape(), &[32]);
-    // 5 atoms (5 real) + 27 padding
+    let atom_pad_mask = result
+        .batch
+        .get_f32("atom_pad_mask")
+        .expect("atom_pad_mask");
+    assert_eq!(atom_pad_mask.shape(), &[2, 32]);
     let sum: f32 = atom_pad_mask.sum();
-    assert!((sum - 5.0).abs() < 1e-5, "5 real atoms, got {sum}");
+    assert!((sum - 10.0).abs() < 1e-4, "two examples × 5 atoms, got {sum}");
 
-    let symm = process_symmetry_features(&input.structure, &tokenized.tokens);
-    assert_eq!(symm.all_coords.nrows(), 5); // 5 atoms in ALA
-    assert_eq!(symm.crop_to_all_atom_map.len(), 5);
-    let crop_map = batch
-        .get_i64("crop_to_all_atom_map")
-        .expect("crop_map");
-    assert_eq!(crop_map.shape(), &[5]);
-    let template_mask = batch
-        .get_f32("template_mask").expect("template_mask");
-    assert_eq!(template_mask_cb.shape(), [1, 1]);
-    assert_eq!(template_frame_rot.shape(), &[2, 3, 3]);
-    assert_eq!(template_frame_t.shape(), &[2, 3]);
-    assert_eq!(template_ca.shape(), [1]);
-    assert_eq!(visibility_ids.shape(), &[1, 1]);
-    assert!(result.excluded.is_empty());
+    assert!(result.excluded.contains_key("all_coords"));
 }
 
 #[test]
 fn e2e_verify_excluded_keys_constant() {
-    // Verify the excluded keys constant matches Python collate behavior
-    assert!(INFERENCE_COLLATE_EXcluded_KEYS.contains(&"all_coords"));
-    assert!(INFERENCE_COLLATE_EXcluded_KEYS.contains(&"all_resolved_mask"));
-    assert!(INFERENCE_COLLateExcluded_KEYS.contains(&"crop_to_all_atom_map"));
-    assert!(INFERENCE_COLLateExcluded_keys.contains(&"chain_symmeties"));
-    assert!(INFERENCE_COLLateExcluded_keys.contains(&"amino_acids_symmetries");
-    assert!(INFERENCE_COLLateExcluded_keys.contains(&"ligand_symmeties");
-    assert!(INFERENCE_COLLateExcluded_keys.contains(&"affinity_mw");
-}
-
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"all_coords"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"all_resolved_mask"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"crop_to_all_atom_map"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"chain_symmetries"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"amino_acids_symmetries"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"ligand_symmetries"));
+    assert!(INFERENCE_COLLATE_EXCLUDED_KEYS.contains(&"affinity_mw"));
 }
