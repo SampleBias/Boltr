@@ -288,12 +288,12 @@ pub fn process_template_features(
     let grouped = group_templates_by_name(record_templates);
     let mut rows: Vec<DummyTemplateTensors> = Vec::new();
 
-    for (template_id, (_name, group)) in grouped.iter().enumerate() {
+    for (template_id, (name, group)) in grouped.iter().enumerate() {
         let tmpl_struct = template_structures
-            .get(&name)
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("missing template structure for name {name:?}"))?;
         let tmpl_toks = template_tokens_map
-            .get(&name)
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("missing template tokens for name {name:?}"))?;
 
         let mut all_row: Vec<RowToken> = Vec::new();

@@ -1,8 +1,8 @@
 //! Featurizer ports (`data/feature/featurizerv2.py`). Incremental §4.4 implementation.
-
 //!
-//! `process_atom_features` is now implemented with full parity against Python's `process_atom_features`
-//! for standard amino acids and nucleic acids. See [`process_atom_features`] module.
+//! [`process_atom_features`] covers standard amino acids and nucleic acids. [`process_template_features`]
+//! matches Boltz template stacking when manifest [`crate::inference_dataset::TemplateInfo`] alignment
+//! fields and template structures + tokenized templates are present.
 
 pub mod dummy_templates;
 pub mod msa_pairing;

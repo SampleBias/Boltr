@@ -1,7 +1,7 @@
 //! `load_dummy_templates_features` port (`featurizerv2.py`) — zero dummy template tensors for inference.
 //!
-//! Full `process_template_features` uses real template structures; this matches the Python
-//! helper used when allocating placeholder template slots.
+//! Real template features: [`crate::featurizer::process_template_features`]. This module matches the
+//! Python helper for placeholder slots and padding extra template rows.
 
 use ndarray::{Array2, Array3, Array4};
 
