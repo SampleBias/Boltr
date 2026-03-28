@@ -1,6 +1,7 @@
-//! Boltz `data/const.py` — tokens, chain types, chemistry ids, limits; see [`crate::ref_atoms`] for `ref_atoms`.
+//! Boltz `data/const.py` — tokens, chain types, chemistry ids, limits, output/clash labels, weights;
+//! see [`crate::ref_atoms`] for `ref_atoms`.
 //!
-//! Reference: `boltz-reference/src/boltz/data/const.py`.
+//! Reference: upstream `boltz/data/const.py` (see also `ref_atoms`, `vdw_radii`, `ligand_exclusion`, `ambiguous_atoms` modules).
 
 /// Same order as Python `boltz.data.const.tokens` (ids = index).
 pub const TOKENS: [&str; 33] = [
