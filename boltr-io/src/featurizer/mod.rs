@@ -1,13 +1,18 @@
-//! Featurizer ports (`data/feature/featurizerv2.py`). Incremental §4.4 implementation
+//! Featurizer ports (`data/feature/featurizerv2.py`). Incremental §4.4 implementation.
+
+//!
+//! `process_atom_features` is now implemented with full parity against Python's `process_atom_features`
+//! for standard amino acids and nucleic acids. See [`process_atom_features`] module.
 
 pub mod dummy_templates;
 pub mod msa_pairing;
 pub mod process_atom_features;
-#[cfg(test)]
-pub mod atom_features_golden;
 pub mod process_msa_features;
 pub mod process_token_features;
 pub mod token;
+
+#[cfg(test)]
+mod atom_features_golden;
 #[cfg(test)]
 mod msa_features_golden;
 #[cfg(test)]
@@ -17,8 +22,12 @@ pub use dummy_templates::{
     dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
 };
 pub use process_atom_features::{
-    inference_ensemble_features, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
-    AtomRefDataProvider, StandardAminoAcidRefData, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
+    process_atom_features, AtomFeatureTensors, AtomFeatureConfig, EnsembleFeatures,
+    inference_ensemble_features, AtomRefDataProvider, StandardAminoAcidRefData,
+    ZeroAtomRefData, AtomRefData,
+    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA, ATOMS_PER_WINDOW_QUERIES,
+    DEFAULT_MIN_DIST, DEFAULT_MAX_DIST, DEFAULT_NUM_BINS,
+    NUM_BACKBONE_FEAT_CLASSES, ATOM_NAME_VOCAB_SIZE,
 };
 pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
 pub use process_token_features::{
