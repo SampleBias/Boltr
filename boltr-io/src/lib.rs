@@ -55,11 +55,12 @@ pub use collate_golden::{
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, dummy_templates_as_feature_batch, inference_ensemble_features,
-    load_dummy_templates_features, pad_template_tdim, process_atom_features, process_msa_features,
-    process_template_features, process_token_features, stack_template_feature_rows,
-    token_feature_key_names, AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider,
-    DummyTemplateTensors, MsaFeatureTensors, StandardAminoAcidRefData, TemplateAlignment,
-    TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
+    inference_residue_constraint_features, load_dummy_templates_features, pad_template_tdim,
+    process_atom_features, process_ensemble_features, process_msa_features, process_symmetry_features,
+    process_template_features, process_token_features, stack_template_feature_rows, token_feature_key_names,
+    AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
+    MsaFeatureTensors, ResidueConstraintTensors, StandardAminoAcidRefData, SymmetryFeatures,
+    TemplateAlignment, TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
     CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
@@ -72,7 +73,9 @@ pub use ref_atoms::{
     ref_atom_names, ref_atom_names_for_token, ref_atoms_key_from_token, ref_symmetry_groups,
     ref_symmetry_groups_for_token, NUCLEIC_BACKBONE_ATOM_NAMES, PROTEIN_BACKBONE_ATOM_NAMES,
 };
-pub use structure_v2::{AtomV2Row, BondV2AtomRow, ChainRow, ResidueRow, StructureV2Tables};
+pub use structure_v2::{
+    AtomV2Row, BondV2AtomRow, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables,
+};
 pub use structure_v2_npz::{
     read_structure_v2_npz_bytes, read_structure_v2_npz_path, write_structure_v2_npz_compressed,
     write_structure_v2_npz_to_vec,

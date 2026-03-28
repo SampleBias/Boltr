@@ -4,7 +4,7 @@
 //! [`tokenize_boltz2_inference`] with [`Boltz2Tokenizer`].
 
 use crate::boltz_const::{chain_type_id, unk_token_id};
-use crate::structure_v2::{ChainRow, EnsembleRow, ResidueRow, StructureV2Tables};
+use crate::structure_v2::{ChainRow, ResidueRow, StructureV2Tables};
 
 /// One token row (logical `TokenData` / `TokenV2` before numpy packing).
 #[derive(Clone, Debug, PartialEq)]
@@ -309,7 +309,9 @@ mod tests {
     use super::*;
     use crate::boltz_const::token_id;
     use crate::fixtures::structure_v2_single_ala;
-    use crate::structure_v2::{AtomV2Row, BondV2AtomRow, ChainRow, ResidueRow, StructureV2Tables};
+    use crate::structure_v2::{
+        AtomV2Row, BondV2AtomRow, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables,
+    };
 
     #[test]
     fn compute_frame_matches_analytic_example() {

@@ -5,7 +5,9 @@ use crate::structure_v2::{AtomV2Row, ChainRow, EnsembleRow, ResidueRow, Structur
 
 /// One protein chain with a single standard ALA residue (N, CA, C, O, CB) and trivial coords.
 ///
-/// Matches the layout used in tokenizer / token-npz unit tests.
+/// Matches the layout used in tokenizer / token-npz unit tests and
+/// `tests/fixtures/structure_v2_numpy_packed_ala.npz` (including **three** duplicate ensemble rows,
+/// same as `scripts/gen_structure_v2_numpy_golden.py`).
 /// Atom names follow canonical ALA order from `ref_atoms["ALA"]` = `["N", "CA", "C", "O", "CB"]`.
 #[must_use]
 pub fn structure_v2_single_ala() -> StructureV2Tables {
@@ -57,10 +59,20 @@ pub fn structure_v2_single_ala() -> StructureV2Tables {
         }],
         chain_mask: vec![true],
         coords: coords.clone(),
-        ensemble: vec![EnsembleRow {
-            atom_coord_idx: 0,
-            atom_num: 5,
-        }],
+        ensemble: vec![
+            EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 5,
+            },
+            EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 5,
+            },
+            EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 5,
+            },
+        ],
         ensemble_atom_coord_idx: 0,
         bonds: vec![],
     }

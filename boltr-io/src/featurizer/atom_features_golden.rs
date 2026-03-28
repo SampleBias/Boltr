@@ -14,9 +14,10 @@ mod tests {
     use safetensors::SafeTensors;
 
     use super::super::process_atom_features::{
-        inference_ensemble_features, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
-        StandardAminoAcidRefData, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
+        process_atom_features, AtomFeatureConfig, AtomFeatureTensors, StandardAminoAcidRefData,
+        ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
     };
+    use super::super::process_ensemble_features::inference_ensemble_features;
     use crate::fixtures::structure_v2_single_ala;
     use crate::tokenize::boltz2::tokenize_structure;
 

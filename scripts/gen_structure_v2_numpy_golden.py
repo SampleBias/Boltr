@@ -140,7 +140,7 @@ def main() -> None:
     for i, c in enumerate(coords_data):
         coords[i]["coords"] = np.array(c, dtype=np.float32)
 
-    # Multiple ensemble rows: tokenizer / Rust keep `ensemble[0]` only.
+    # Multiple ensemble rows (duplicate refs): matches `fixtures::structure_v2_single_ala`.
     ensemble = np.array([(0, 5), (0, 5), (0, 5)], dtype=Ensemble)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
