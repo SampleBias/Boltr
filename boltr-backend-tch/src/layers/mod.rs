@@ -28,7 +28,7 @@ pub use pair_weighted_averaging::PairWeightedAveraging;
 #[cfg(feature = "tch-backend")]
 pub use pairformer::{PairformerLayer, PairformerModule};
 #[cfg(feature = "tch-backend")]
-pub use pairformer_no_seq::PairformerNoSeqLayer;
+pub use pairformer_no_seq::{PairformerNoSeqLayer, PairformerNoSeqModule};
 #[cfg(feature = "tch-backend")]
 pub use transition::Transition;
 #[cfg(feature = "tch-backend")]

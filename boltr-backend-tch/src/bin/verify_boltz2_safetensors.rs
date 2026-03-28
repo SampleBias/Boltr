@@ -125,7 +125,7 @@ fn main() {
         };
         let (infer, other) = partition_safetensors_keys_for_inference(&names);
         eprintln!(
-            "Partition: {} inference-related keys, {} other keys (diffusion/confidence/affinity/template/…)",
+            "Partition: {} inference-related keys, {} other keys (confidence/affinity/…)",
             infer.len(),
             other.len()
         );

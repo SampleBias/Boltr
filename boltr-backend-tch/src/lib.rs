@@ -43,8 +43,9 @@ pub use boltz2::{
     AtomDiffusion, AtomDiffusionConfig, AtomEncoderPlaceholder, BFactorModule, Boltz2Model,
     ContactConditioning, ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput,
     DiffusionModule, DiffusionSampleOutput, DistogramModule, InputEmbedder, MsaFeatures, MsaModule,
-    RelPosFeatures, RelativePositionEncoder, TemplateModule, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
-    BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
+    RelPosFeatures, RelativePositionEncoder, TemplateFeatures, TemplateModule, TemplateV2Module,
+    BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM,
+    CONTACT_CONDITIONING_CHANNELS,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{
@@ -60,4 +61,4 @@ pub use model::BoltzModel;
 #[cfg(feature = "tch-backend")]
 pub use attention::AttentionPairBiasV2;
 #[cfg(feature = "tch-backend")]
-pub use layers::{PairformerLayer, PairformerModule, Transition};
+pub use layers::{PairformerLayer, PairformerModule, PairformerNoSeqModule, Transition};

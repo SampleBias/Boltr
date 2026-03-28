@@ -17,6 +17,7 @@ use super::distogram::{BFactorModule, DistogramModule};
 use super::input_embedder::InputEmbedder;
 use super::msa_module::{MsaFeatures, MsaModule};
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
+use super::template_module::TemplateFeatures;
 use super::trunk::TrunkV2;
 use crate::boltz_hparams::Boltz2Hparams;
 use crate::checkpoint::load_tensor_from_safetensors;
@@ -72,6 +73,8 @@ pub struct Boltz2DiffusionArgs {
     pub dim_fourier: i64,
     pub num_bins: i64,
     pub predict_bfactor: bool,
+    /// `Some((template_dim, template_blocks))` to enable templates.
+    pub use_templates: Option<(i64, i64)>,
 }
 
 impl Default for Boltz2DiffusionArgs {
@@ -92,6 +95,7 @@ impl Default for Boltz2DiffusionArgs {
             dim_fourier: 256,
             num_bins: 64,
             predict_bfactor: false,
+            use_templates: None,
         }
     }
 }
@@ -164,6 +168,7 @@ impl Boltz2Model {
             Some(token_s),
             Some(token_z),
             num_pairformer_blocks,
+            diff_args.use_templates,
             device,
         );
         let rel_pos = RelativePositionEncoder::new(
@@ -449,8 +454,10 @@ impl Boltz2Model {
         s_inputs: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
-        self.trunk.forward(s_inputs, recycling_steps, msa_feats)
+        self.trunk
+            .forward(s_inputs, recycling_steps, msa_feats, template_feats)
     }
 
     /// Relative position bias `[B, N, N, token_z]` from tokenizer/featurizer index tensors.
@@ -465,6 +472,7 @@ impl Boltz2Model {
         rel: &RelPosFeatures<'_>,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         self.forward_trunk_with_z_init_terms(
             s_inputs,
@@ -474,10 +482,12 @@ impl Boltz2Model {
             None,
             recycling_steps,
             msa_feats,
+            template_feats,
         )
     }
 
     /// Full z-init slice matching Python: pair + `rel_pos` + `token_bonds` + `contact_conditioning`.
+    #[allow(clippy::too_many_arguments)]
     pub fn forward_trunk_with_z_init_terms(
         &self,
         s_inputs: &Tensor,
@@ -487,6 +497,7 @@ impl Boltz2Model {
         contact: Option<&ContactFeatures<'_>>,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         let b = s_inputs.size()[0];
         let n = s_inputs.size()[1];
@@ -499,7 +510,7 @@ impl Boltz2Model {
         };
         let z_init = z_pair + z_rel + z_bonds + z_contact;
         self.trunk
-            .forward_from_init(&s_init, &z_init, recycling_steps, msa_feats)
+            .forward_from_init(&s_init, &z_init, recycling_steps, msa_feats, template_feats)
     }
 
     pub fn diffusion_conditioning(&self) -> &DiffusionConditioning {
@@ -592,7 +603,8 @@ impl Boltz2Model {
         )
     }
 
-    /// `predict_step`-shaped entry: **trunk only** (recycling + MSA/template stubs + pairformer).
+    /// `predict_step`-shaped entry: trunk with recycling + MSA + template + pairformer.
+    #[allow(clippy::too_many_arguments)]
     pub fn predict_step_trunk(
         &self,
         s_inputs: &Tensor,
@@ -602,6 +614,7 @@ impl Boltz2Model {
         contact: Option<&ContactFeatures<'_>>,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         self.forward_trunk_with_z_init_terms(
             s_inputs,
@@ -611,7 +624,13 @@ impl Boltz2Model {
             contact,
             recycling_steps,
             msa_feats,
+            template_feats,
         )
+    }
+
+    /// Whether templates are enabled (weights created in the trunk).
+    pub fn use_templates(&self) -> bool {
+        self.trunk.has_template()
     }
 }
 
@@ -668,7 +687,7 @@ mod tests {
         let n = 8_i64;
         let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
         let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
-        let (s, z) = m.forward_trunk(&s_in, Some(0), None).unwrap();
+        let (s, z) = m.forward_trunk(&s_in, Some(0), None, None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -700,7 +719,7 @@ mod tests {
             cyclic_period: &cyclic_period,
         };
         let (s, z) = m
-            .forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None)
+            .forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None, None)
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
@@ -744,6 +763,7 @@ mod tests {
                 None,
                 Some(0),
                 None,
+                None,
             )
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
@@ -770,7 +790,7 @@ mod tests {
         );
         let del = Tensor::randn(&[b, n], (tch::Kind::Float, device));
         let s_inputs = m.forward_input_embedder(&a, &res, &prof, &del);
-        let (s, z) = m.forward_trunk(&s_inputs, Some(0), None).unwrap();
+        let (s, z) = m.forward_trunk(&s_inputs, Some(0), None, None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -811,7 +831,7 @@ mod tests {
             contact_threshold: &ct,
         };
         let (s, z) = m
-            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0), None)
+            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0), None, None)
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);

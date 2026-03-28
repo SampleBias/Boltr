@@ -1,4 +1,4 @@
-//! Pairformer layer without sequence track (`PairformerNoSeqLayer` in Boltz).
+//! Pairformer layer/module without sequence track (`PairformerNoSeqLayer`, `PairformerNoSeqModule`).
 //!
 //! Reference: `boltz-reference/src/boltz/model/layers/pairformer.py`
 
@@ -124,5 +124,57 @@ impl PairformerNoSeqLayer {
             let z_t = self.transition_z.forward(&z, None);
             z + z_t
         }
+    }
+}
+
+/// Stack of `PairformerNoSeqLayer` — pairwise-only pairformer used by the template module.
+///
+/// Reference: `PairformerNoSeqModule` in `boltz-reference/src/boltz/model/layers/pairformer.py`.
+pub struct PairformerNoSeqModule {
+    layers: Vec<PairformerNoSeqLayer>,
+}
+
+impl PairformerNoSeqModule {
+    pub fn new<'a>(
+        path: Path<'a>,
+        token_z: i64,
+        num_blocks: i64,
+        dropout: Option<f64>,
+        pairwise_head_width: Option<i64>,
+        pairwise_num_heads: Option<i64>,
+        post_layer_norm: Option<bool>,
+        _activation_checkpointing: Option<bool>,
+        device: Device,
+    ) -> Self {
+        let layers_root = path.sub("layers");
+        let layers = (0..num_blocks)
+            .map(|i| {
+                PairformerNoSeqLayer::new(
+                    layers_root.sub(&i.to_string()),
+                    token_z,
+                    dropout,
+                    pairwise_head_width,
+                    pairwise_num_heads,
+                    post_layer_norm,
+                    device,
+                )
+            })
+            .collect();
+        Self { layers }
+    }
+
+    /// Forward pass through all layers (inference mode, training=false).
+    pub fn forward(&self, z: &Tensor, pair_mask: &Tensor, use_kernels: bool) -> Tensor {
+        let n = z.size()[1];
+        let chunk_size = if n > 256 { Some(128) } else { Some(512) };
+        let mut z = z.shallow_clone();
+        for layer in &self.layers {
+            z = layer.forward(&z, pair_mask, chunk_size, false, use_kernels);
+        }
+        z
+    }
+
+    pub fn num_blocks(&self) -> i64 {
+        self.layers.len() as i64
     }
 }

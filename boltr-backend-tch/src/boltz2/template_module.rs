@@ -1,61 +1,63 @@
-//! Boltz2 \`TemplateV2Module\` (\`modules/trunkv2.py\`).
+//! Boltz2 `TemplateV2Module` — full port from `modules/trunkv2.py`.
 //!
-//! Processes template information to add a template-derived bias to z.
+//! Processes template structural information (coordinates, frames, residue types)
+//! through a distogram + unit-vector featurizer and a pairformer stack to produce
+//! a template-derived pairwise bias that is added to `z`.
 //!
-//! Reference: \`boltz-reference/src/boltz/model/modules/trunkv2.py\`
+//! Reference: `boltz-reference/src/boltz/model/modules/trunkv2.py`
 
-use super::layers::PairformerNoSeqModule;
-use crate::tch_compat::layer_norm_1d;
-use tch::nn::Module;
-use tch::{Device, Tensor};
+use crate::layers::PairformerNoSeqModule;
+use crate::tch_compat::{layer_norm_1d, linear_no_bias};
+use tch::nn::{Module, Path};
+use tch::{Device, Kind, Tensor};
 
-use crate::tch_compat::linear_no_bias;
+use super::input_embedder::BOLTZ_NUM_TOKENS;
 
-/// Template features for forward pass
+/// Template features for forward pass.
 ///
-/// Contains all necessary template information from featurizer.
+/// Contains all necessary template information from the featurizer.
 pub struct TemplateFeatures<'a> {
-    /// Template residue types: [B, T, N]
+    /// Template residue types (one-hot float): `[B, T, N, num_tokens]`
     pub template_restype: &'a Tensor,
-    /// Template frame rotation matrices: [B, T, N, 3, 3]
+    /// Template frame rotation matrices: `[B, T, N, 3, 3]`
     pub template_frame_rot: &'a Tensor,
-    /// Template frame translation vectors: [B, T, N, 3]
+    /// Template frame translation vectors: `[B, T, N, 3]`
     pub template_frame_t: &'a Tensor,
-    /// Template frame mask: [B, T, N]
+    /// Template frame mask: `[B, T, N]`
     pub template_mask_frame: &'a Tensor,
-    /// Template CB coordinates: [B, T, N, 3]
+    /// Template CB coordinates: `[B, T, N, 3]`
     pub template_cb: &'a Tensor,
-    /// Template CA coordinates: [B, T, N, 3]
+    /// Template CA coordinates: `[B, T, N, 3]`
     pub template_ca: &'a Tensor,
-    /// Template CB mask: [B, T, N]
+    /// Template CB mask: `[B, T, N]`
     pub template_mask_cb: &'a Tensor,
-    /// Template visibility IDs for pairing: [B, T, N]
+    /// Visibility IDs for per-template chain pairing: `[B, T, N]`
     pub visibility_ids: &'a Tensor,
-    /// Overall template mask: [B, T, N]
+    /// Overall template mask: `[B, T, N]` (`.any(dim=2)` is applied internally)
     pub template_mask: &'a Tensor,
 }
 
-/// Old stub module (deprecated - use TemplateV2Module)
-///
-/// This exists for backward compatibility but returns z unchanged.
+/// Backward-compatible no-op stub (returns `z` unchanged).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TemplateModule;
 
 impl TemplateModule {
-    /// Placeholder: return z unchanged.
     #[must_use]
     pub fn forward_trunk_step(&self, z: &Tensor) -> Tensor {
         z.shallow_clone()
     }
 }
 
-/// TemplateV2Module - Processes template information to bias z embeddings
+/// Full `TemplateV2Module` — processes template structural info into a pairwise bias.
 ///
-/// This module takes template structural information (coordinates, frames, residue types)
-/// and processes them through a pairformer stack to produce a template-derived bias
-/// that is added to the pairwise embeddings (z).
-///
-/// Reference: \`boltz-reference/src/boltz/model/modules/trunkv2.py\`
+/// Architecture:
+/// 1. Compute distogram from CB–CB pairwise distances → one-hot
+/// 2. Compute unit vectors from frame rotations + CA coordinates
+/// 3. Concatenate `[distogram, cb_mask, unit_vector, frame_mask, res_type_i, res_type_j]`
+/// 4. Project through `a_proj`; add projected z (`z_proj(z_norm(z))`)
+/// 5. Process through a `PairformerNoSeqModule` stack
+/// 6. Aggregate over templates (weighted mean)
+/// 7. ReLU + final `u_proj` → pairwise bias `[B, N, N, token_z]`
 pub struct TemplateV2Module {
     min_dist: f64,
     max_dist: f64,
@@ -63,41 +65,21 @@ pub struct TemplateV2Module {
     token_z: i64,
     template_dim: i64,
 
-    // Projections
+    z_norm: tch::nn::LayerNorm,
+    v_norm: tch::nn::LayerNorm,
     z_proj: tch::nn::Linear,
     a_proj: tch::nn::Linear,
     u_proj: tch::nn::Linear,
-
-    // Normalization
-    z_norm: tch::nn::LayerNorm,
-    v_norm: tch::nn::LayerNorm,
-
-    // Template processing pairformer
     pairformer: PairformerNoSeqModule,
 
     device: Device,
 }
 
 impl TemplateV2Module {
-    /// Create a new TemplateV2Module
-    ///
-    /// # Arguments
-    ///
-    /// * \`vs\` - Variable store for parameter storage
-    /// * \`token_z\` - Pairwise embedding dimension
-    /// * \`template_dim\` - Internal template dimension
-    /// * \`template_blocks\` - Number of pairformer blocks for template processing
-    /// * \`dropout\` - Dropout rate
-    /// * \`pairwise_head_width\` - Hidden dimension for triangular attention
-    /// * \`pairwise_num_heads\` - Number of heads for triangular attention
-    /// * \`post_layer_norm\` - Whether to apply post layer norm
-    /// * \`activation_checkpointing\` - Whether to use activation checkpointing
-    /// * \`min_dist\` - Minimum distance for distogram binning (default 3.25)
-    /// * \`max_dist\` - Maximum distance for distogram binning (default 50.75)
-    /// * \`num_bins\` - Number of distance bins (default 38)
-    /// * \`device\` - Computation device
-    pub fn new(
-        vs: &tch::nn::VarStore,
+    /// Construct under the given `VarStore` `path` (e.g. `root.sub("template_module")`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new<'a>(
+        path: Path<'a>,
         token_z: i64,
         template_dim: i64,
         template_blocks: i64,
@@ -111,49 +93,27 @@ impl TemplateV2Module {
         num_bins: Option<i64>,
         device: Device,
     ) -> Self {
-        let root = vs.root();
-        let dropout = dropout.unwrap_or(0.25);
-        let pairwise_head_width = pairwise_head_width.unwrap_or(32);
-        let pairwise_num_heads = pairwise_num_heads.unwrap_or(4);
-        let post_layer_norm = post_layer_norm.unwrap_or(false);
-        let activation_checkpointing = activation_checkpointing.unwrap_or(false);
         let min_dist = min_dist.unwrap_or(3.25);
         let max_dist = max_dist.unwrap_or(50.75);
         let num_bins = num_bins.unwrap_or(38);
 
-        let z_norm = layer_norm_1d(root.sub("z_norm"), token_z);
-        let v_norm = layer_norm_1d(root.sub("v_norm"), template_dim);
+        let z_norm = layer_norm_1d(path.sub("z_norm"), token_z);
+        let v_norm = layer_norm_1d(path.sub("v_norm"), template_dim);
+        let z_proj = linear_no_bias(path.sub("z_proj"), token_z, template_dim);
 
-        let z_proj = linear_no_bias(
-            root.sub("z_proj"),
-            token_z,
-            template_dim,
-        );
-
-        // a_proj: (num_tokens * 2 + num_bins + 5) -> template_dim
-        // Features: distogram (num_bins) + cb_mask (1) + unit_vector (3) + frame_mask (1) = num_bins + 5
-        // Plus res_type_i and res_type_j (num_tokens each) = num_tokens * 2
-        let a_in_dim = num_bins + 5 + 2 * crate::boltz2::input_embedder::BOLTZ_NUM_TOKENS;
-        let a_proj = linear_no_bias(root.sub("a_proj"), a_in_dim, template_dim);
-
-        let u_proj = tch::nn::linear(
-            root.sub("u_proj"),
-            template_dim,
-            token_z,
-            tch::nn::LinearConfig {
-                bias: true,
-                ..Default::default()
-            },
-        );
+        let a_in_dim = BOLTZ_NUM_TOKENS * 2 + num_bins + 5;
+        let a_proj = linear_no_bias(path.sub("a_proj"), a_in_dim, template_dim);
+        let u_proj = linear_no_bias(path.sub("u_proj"), template_dim, token_z);
 
         let pairformer = PairformerNoSeqModule::new(
-            root.sub("pairformer"),
+            path.sub("pairformer"),
             template_dim,
-            Some(dropout),
-            Some(pairwise_head_width),
-            Some(pairwise_num_heads),
-            Some(post_layer_norm),
-            Some(activation_checkpointing),
+            template_blocks,
+            dropout,
+            pairwise_head_width,
+            pairwise_num_heads,
+            post_layer_norm,
+            activation_checkpointing,
             device,
         );
 
@@ -163,28 +123,19 @@ impl TemplateV2Module {
             num_bins,
             token_z,
             template_dim,
+            z_norm,
+            v_norm,
             z_proj,
             a_proj,
             u_proj,
-            z_norm,
-            v_norm,
             pairformer,
             device,
         }
     }
 
-    /// Forward pass through template module
+    /// Forward pass — returns template bias `u` of shape `[B, N, N, token_z]`.
     ///
-    /// # Arguments
-    ///
-    /// * \`z\` - Pairwise embeddings [B, N, N, token_z]
-    /// * \`feats\` - Template features from featurizer
-    /// * \`pair_mask\` - Pairwise mask [B, N, N]
-    /// * \`use_kernels\` - Whether to use kernels (currently unused)
-    ///
-    /// # Returns
-    ///
-    /// Updated pairwise embeddings [B, N, N, token_z] with template bias added
+    /// Caller adds to `z`: `z = z + template_module.forward(z, feats, pair_mask, false)`.
     pub fn forward(
         &self,
         z: &Tensor,
@@ -192,205 +143,175 @@ impl TemplateV2Module {
         pair_mask: &Tensor,
         use_kernels: bool,
     ) -> Tensor {
-        let TemplateFeatures {
-            template_restype,
-            template_frame_rot,
-            template_frame_t,
-            template_mask_frame,
-            template_cb,
-            template_ca,
-            template_mask_cb,
-            visibility_ids: _,
-            template_mask,
-        } = feats;
+        let res_type = feats.template_restype;
+        let frame_rot = feats.template_frame_rot;
+        let frame_t = feats.template_frame_t;
+        let frame_mask = feats.template_mask_frame;
+        let cb_coords = feats.template_cb;
+        let ca_coords = feats.template_ca;
+        let cb_mask = feats.template_mask_cb;
+        let visibility_ids = feats.visibility_ids;
 
-        let (b, n, _, _) = z.size4().unwrap();
-        let t = template_restype.size()[1]; // Number of templates
+        let bt_size = res_type.size();
+        let b = bt_size[0];
+        let t = bt_size[1];
+        let n = bt_size[2];
 
-        // Compute pairwise masks
-        let b_cb_mask = template_mask_cb
-            .unsqueeze(2)
-            .unsqueeze(2)
-            .unsqueeze(2); // [B, T, 1, 1, 1, N]
-        let b_cb_mask = b_cb_mask * template_mask_cb.unsqueeze(4).unsqueeze(5); // [B, T, 1, N, 1, N]
+        // template_mask: [B, T, N] → any over N → [B, T]
+        let template_mask = feats
+            .template_mask
+            .sum_dim_intlist(&[2i64][..], false, Kind::Float)
+            .gt(0.0)
+            .to_kind(Kind::Float);
+        let num_templates = template_mask
+            .sum_dim_intlist(&[1i64][..], false, Kind::Float)
+            .clamp(1.0, f64::MAX); // [B]
 
-        let b_frame_mask = template_mask_frame
-            .unsqueeze(2)
-            .unsqueeze(2)
-            .unsqueeze(2); // [B, T, 1, 1, 1, N]
-        let b_frame_mask = b_frame_mask * template_mask_frame.unsqueeze(4).unsqueeze(5); // [B, T, 1, N, 1, N]
+        // Pairwise masks: outer product along token dimension, then unsqueeze for feature concat
+        // b_cb_mask:    [B, T, N, 1] * [B, T, 1, N] → [B, T, N, N] → [B, T, N, N, 1]
+        // b_frame_mask: same pattern
+        let b_cb_mask =
+            (cb_mask.unsqueeze(-1) * cb_mask.unsqueeze(-2)).unsqueeze(-1);
+        let b_frame_mask =
+            (frame_mask.unsqueeze(-1) * frame_mask.unsqueeze(-2)).unsqueeze(-1);
 
-        let b_cb_mask = b_cb_mask.unsqueeze(5); // [B, T, 1, N, N, 1]
-        let b_frame_mask = b_frame_mask.unsqueeze(5); // [B, T, 1, N, N, 1]
+        // V2 asym mask: same visibility_id ↔ same chain
+        let tmlp_pair_mask = visibility_ids
+            .unsqueeze(-1)
+            .eq_tensor(&visibility_ids.unsqueeze(-2))
+            .to_kind(Kind::Float); // [B, T, N, N]
 
-        // Compute asym mask for template pairing
-        // Note: We don't have asym_id in current template features
-        // This is a simplification - full implementation would need asym_id
-        let asym_mask = Tensor::ones([b, t, 1, n, n], (tch::Kind::Float, self.device));
+        // ── Feature computation (no autocast) ──────────────────────────────
 
-        // Compute template features
-        let a_tij = self.compute_template_features(
-            template_cb,
-            template_ca,
-            template_frame_rot,
-            template_frame_t,
-            &b_cb_mask,
-            &b_frame_mask,
-            &asym_mask,
-        );
+        // Distogram from CB–CB distances
+        let distogram = self.compute_distogram(cb_coords); // [B, T, N, N, num_bins]
 
-        // Reshape pair_mask for template processing
-        let mut pair_mask_expanded = pair_mask.unsqueeze(1); // [B, 1, N, N]
-        pair_mask_expanded = pair_mask_expanded.unsqueeze(1).expand(&[b, t, n, n], false); // [B, T, N, N]
+        // Unit vectors from frames
+        let unit_vector = Self::compute_unit_vectors(ca_coords, frame_rot, frame_t);
+        // [B, T, N, N, 3]
 
-        // Compute input projections
-        let z_normed = self.z_norm.forward(z);
-        let z_t = z_normed.unsqueeze(1); // [B, 1, N, N, token_z]
-        let z_t = z_t.expand(&[b, t, n, n, self.token_z], false); // [B, T, N, N, token_z]
-
-        let v = self.z_proj.forward(&z_t) + &a_tij; // [B, T, N, N, template_dim]
-        let v = v.view([b * t, n, n, self.template_dim]);
-
-        // Process through pairformer
-        let pair_mask_reshaped = pair_mask_expanded.view([b * t, n, n]);
-        let v = self
-            .pairformer
-            .forward(&v, &pair_mask_reshaped, use_kernels);
-
-        // Aggregate templates
-        let template_mask_expanded = template_mask
-            .unsqueeze(2)
-            .unsqueeze(2)
-            .unsqueeze(2); // [B, T, 1, 1, 1]
-        let template_mask_expanded = template_mask_expanded
-            .expand([b, t, n, n, 1], false); // [B, T, N, N, 1]
-
-        let v_normed = self.v_norm.forward(&v);
-        let v_normed = v_normed.view([b, t, n, n, self.template_dim]); // [B, T, N, N, template_dim]
-
-        let v_weighted = v_normed * &template_mask_expanded; // [B, T, N, N, template_dim]
-        
-        // Compute num_templates (at least 1 to avoid division by zero)
-        let num_templates = template_mask.sum(&[1], true, tch::Kind::Float); // [B, N, N]
-        let num_templates = num_templates.clamp(1.0, f64::MAX);
-        let num_templates_expanded = num_templates.unsqueeze(3).unsqueeze(4); // [B, N, N, 1]
-        
-        // Average over templates
-        let u = v_weighted.mean_dim(3, true, tch::Kind::Float) / &num_templates_expanded; // [B, N, N, template_dim]
-
-        // Apply ReLU activation and final projection
-        let u = u.relu();
-        let u_proj = self.u_proj.forward(&u);
-
-        u_proj
-    }
-
-    /// Compute template features from coordinates and frames
-    ///
-    /// # Returns
-    ///
-    /// Template features a_tij: [B, T, N, N, template_feature_dim]
-    fn compute_template_features(
-        &self,
-        template_cb: &Tensor,
-        template_ca: &Tensor,
-        template_frame_rot: &Tensor,
-        template_frame_t: &Tensor,
-        b_cb_mask: &Tensor,
-        b_frame_mask: &Tensor,
-        asym_mask: &Tensor,
-    ) -> Tensor {
-        let (b, t, n, _) = template_cb.size4().unwrap();
-
-        // Compute distogram from CB-CB distances
-        let cb_dists = self.compute_cb_distances(template_cb); // [B, T, N, N]
-        let distogram = self.bin_distances(&cb_dists); // [B, T, N, N, self.num_bins]
-
-        // Compute unit vectors from frames and CA coordinates
-        let unit_vectors = self.compute_unit_vectors(
-            template_ca,
-            template_frame_rot,
-            template_frame_t,
-        ); // [B, T, N, N, 3]
-
-        // Concatenate features: distogram + cb_mask + unit_vectors + frame_mask
+        // Concatenate geometric features
         let a_tij = Tensor::cat(
             &[
-                &distogram,
-                b_cb_mask,
-                &unit_vectors,
-                b_frame_mask,
+                &distogram.to_kind(Kind::Float),
+                &b_cb_mask,
+                &unit_vector,
+                &b_frame_mask,
             ],
             -1,
-        ); // [B, T, N, N, self.num_bins + 5]
+        ); // [B, T, N, N, num_bins + 5]
 
-        // Apply asym mask (template features only attend within same template)
-        let a_tij = a_tij * asym_mask; // [B, T, N, N, self.num_bins + 5]
+        // Apply visibility mask
+        let a_tij = a_tij * tmlp_pair_mask.unsqueeze(-1);
 
-        // TODO: Add residue type encodings (template_restype)
-        // This requires embedding layer which we don't have yet
-        // For now, we'll just expand existing features with zeros
-        let token_dim = crate::boltz2::input_embedder::BOLTZ_NUM_TOKENS;
-        let zeros = Tensor::zeros(
-            &[b, t, n, n, token_dim],
-            (tch::Kind::Float, self.device),
-        );
-        let a_tij = Tensor::cat(&[&a_tij, &zeros, &zeros], -1); // [B, T, N, N, self.num_bins + 5 + 2 * token_dim]
+        // Residue type pairwise features
+        let res_type_i = res_type
+            .unsqueeze(3)
+            .expand(&[b, t, n, n, BOLTZ_NUM_TOKENS], false);
+        let res_type_j = res_type
+            .unsqueeze(2)
+            .expand(&[b, t, n, n, BOLTZ_NUM_TOKENS], false);
+        let a_tij = Tensor::cat(&[&a_tij, &res_type_i, &res_type_j], -1);
+        // [B, T, N, N, num_bins + 5 + 2*num_tokens]
+        let a_tij = self.a_proj.forward(&a_tij); // [B, T, N, N, template_dim]
 
-        a_tij
+        // ── Pairformer processing ──────────────────────────────────────────
+
+        // Expand pair_mask for each template: [B, N, N] → [B*T, N, N]
+        let pair_mask_t = pair_mask
+            .unsqueeze(1)
+            .expand(&[b, t, n, n], false)
+            .reshape(&[b * t, n, n]);
+
+        // v = z_proj(z_norm(z[:, None])) + a_tij
+        let z_proj = self.z_proj.forward(&self.z_norm.forward(&z.unsqueeze(1)));
+        // z_proj: [B, 1, N, N, template_dim], broadcasts over T
+        let v = z_proj + a_tij; // [B, T, N, N, template_dim]
+        let v = v.reshape(&[b * t, n, n, self.template_dim]);
+
+        let v = &v + self.pairformer.forward(&v, &pair_mask_t, use_kernels);
+        let v = self.v_norm.forward(&v);
+        let v = v.reshape(&[b, t, n, n, self.template_dim]);
+
+        // ── Aggregate templates ────────────────────────────────────────────
+
+        // template_mask: [B, T] → [B, T, 1, 1, 1]
+        let tmask = template_mask
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .unsqueeze(-1);
+        // num_templates: [B] → [B, 1, 1, 1]
+        let ntmpl = num_templates
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .unsqueeze(-1);
+
+        let u = (&v * &tmask)
+            .sum_dim_intlist(&[1i64][..], false, Kind::Float)
+            / &ntmpl; // [B, N, N, template_dim]
+
+        // Output projection
+        self.u_proj.forward(&u.relu())
     }
 
-    /// Compute pairwise CB-CB distances
+    /// CB–CB pairwise distances → binned one-hot distogram.
     ///
-    /// # Returns
-    ///
-    /// Pairwise distances: [B, T, N, N]
-    fn compute_cb_distances(&self, template_cb: &Tensor) -> Tensor {
-        // For now, return zeros as placeholder
-        // Full implementation would properly compute CB-CB distances
-        let (b, t, n, _) = template_cb.size4().unwrap();
-        Tensor::zeros(
-            &[b, t, n, n],
-            (tch::Kind::Float, self.device),
-        )
+    /// Returns `[B, T, N, N, num_bins]` float.
+    fn compute_distogram(&self, cb_coords: &Tensor) -> Tensor {
+        // Pairwise L2 distances via ||a-b||² = ||a||² + ||b||² - 2·a·b
+        let sq = cb_coords
+            .pow_tensor_scalar(2)
+            .sum_dim_intlist(&[-1i64][..], true, Kind::Float); // [B, T, N, 1]
+        let inner = cb_coords.matmul(&cb_coords.transpose(-1, -2)); // [B, T, N, N]
+        let dists = (&sq + &sq.transpose(-1, -2) - inner * 2.0)
+            .clamp_min(0.0)
+            .sqrt(); // [B, T, N, N]
+
+        // Bin into histogram
+        let boundaries = Tensor::linspace(
+            self.min_dist,
+            self.max_dist,
+            self.num_bins - 1,
+            (Kind::Float, self.device),
+        ); // [num_bins - 1]
+        let bin_idx = dists
+            .unsqueeze(-1)
+            .gt_tensor(&boundaries)
+            .to_kind(Kind::Float)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            .to_kind(Kind::Int64); // [B, T, N, N]
+        bin_idx.one_hot(self.num_bins).to_kind(Kind::Float)
     }
 
-    /// Bin distances into histogram
+    /// Compute unit vectors from frame rotations and CA coordinates.
     ///
-    /// # Returns
+    /// Applies `R^T @ (ca_j - t_i)` for every (i,j) pair, then normalizes.
+    /// Faithfully ports the Python: `torch.norm(vector, dim=-1, keepdim=True)`.
     ///
-    /// One-hot encoded distogram: [B, T, N, N, self.num_bins]
-    fn bin_distances(&self, _distances: &Tensor) -> Tensor {
-        // For now, return zeros as placeholder
-        // Full implementation would properly bin distances using boundaries
-        let (b, t, n, _) = _distances.size4().unwrap();
-        Tensor::zeros(
-            &[b, t, n, n, self.num_bins],
-            (tch::Kind::Float, self.device),
-        )
-    }
-
-    /// Compute unit vectors from frames and CA coordinates
-    ///
-    /// # Returns
-    ///
-    /// Unit vectors: [B, T, N, N, 3]
+    /// Returns `[B, T, N, N, 3]` float.
     fn compute_unit_vectors(
-        &self,
-        template_ca: &Tensor,
-        _template_frame_rot: &Tensor,
-        _template_frame_t: &Tensor,
+        ca_coords: &Tensor,
+        frame_rot: &Tensor,
+        frame_t: &Tensor,
     ) -> Tensor {
-        // For now, return zeros as placeholder
-        // Full implementation would:
-        // 1. Apply rotation matrices to CA coordinate differences
-        // 2. Compute vectors from frame_t
-        // 3. Normalize to get unit vectors
-        let (b, t, n, _) = template_ca.size4().unwrap();
-        Tensor::zeros(
-            &[b, t, n, n, 3],
-            (tch::Kind::Float, self.device),
-        )
+        // frame_rot: [B, T, N, 3, 3] → [B, T, 1, N, 3, 3] (transposed = R^T)
+        let rot_t = frame_rot.unsqueeze(2).transpose(-1, -2);
+        // frame_t: [B, T, N, 3] → [B, T, 1, N, 3, 1]
+        let t_exp = frame_t.unsqueeze(2).unsqueeze(-1);
+        // ca_coords: [B, T, N, 3] → [B, T, N, 1, 3, 1]
+        let ca_exp = ca_coords.unsqueeze(3).unsqueeze(-1);
+
+        // R^T @ (ca_j - t_i): [B, T, N, N, 3, 1]
+        let vector = rot_t.matmul(&(&ca_exp - &t_exp));
+
+        // norm along last dim (size 1) — matches Python exactly
+        let norm = vector
+            .pow_tensor_scalar(2)
+            .sum_dim_intlist(&[-1i64][..], true, Kind::Float)
+            .sqrt();
+        let zero = Tensor::zeros_like(&vector);
+        let unit = (&vector / &norm).where_self(&norm.gt(0.0), &zero);
+        unit.squeeze_dim(-1) // [B, T, N, N, 3]
     }
 }
 
@@ -400,21 +321,21 @@ mod tests {
     use tch::nn::VarStore;
 
     #[test]
-    fn test_template_module_forward() {
+    fn template_v2_forward_shapes() {
         tch::maybe_init_cuda();
         let device = Device::Cpu;
 
-        let token_z = 128;
-        let template_dim = 64;
-        let template_blocks = 2;
-        let batch_size = 1;
-        let num_templates = 3;
-        let num_tokens = 10;
+        let token_z: i64 = 64;
+        let template_dim: i64 = 32;
+        let template_blocks: i64 = 1;
+        let b: i64 = 2;
+        let t: i64 = 3;
+        let n: i64 = 8;
 
         let vs = VarStore::new(device);
-
-        let template_module = TemplateV2Module::new(
-            &vs,
+        let root = vs.root();
+        let tmpl = TemplateV2Module::new(
+            root.sub("template_module"),
             token_z,
             template_dim,
             template_blocks,
@@ -425,96 +346,48 @@ mod tests {
             None,
             None,
             None,
+            None,
             device,
         );
 
-        // Create dummy z
-        let z = Tensor::randn(
-            &[batch_size, num_tokens, num_tokens, token_z],
-            (tch::Kind::Float, device),
-        );
-
-        // Create dummy pair_mask
-        let pair_mask = Tensor::ones(
-            &[batch_size, num_tokens, num_tokens],
-            (tch::Kind::Float, device),
-        );
-
-        // Create dummy template features
-        let template_restype = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Float, bias: device),
-        );
-        let template_frame_rot = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens, 3, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_frame_t = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_mask_frame = Tensor::ones(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Float, device),
-        );
-        let template_cb = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens, 3],
-            (tch::Kind::Forward, device),
-        );
-        let template_ca = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_mask_cb = Tensor::ones(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Float, device),
-        );
-        let visibility_ids = Tensor::zeros(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Int64, device),
-        );
-        let template_mask = Tensor::ones(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Float, device),
-        );
+        let z = Tensor::randn(&[b, n, n, token_z], (Kind::Float, device));
+        let pair_mask = Tensor::ones(&[b, n, n], (Kind::Float, device));
 
         let feats = TemplateFeatures {
-            template_restype,
-            template_frame_rot,
-            template_frame_t,
-            template_mask_frame,
-            template_cb,
-            template_ca,
-            template_mask_cb,
-            visibility_ids,
-            template_mask,
+            template_restype: &Tensor::zeros(
+                &[b, t, n, BOLTZ_NUM_TOKENS],
+                (Kind::Float, device),
+            ),
+            template_frame_rot: &Tensor::eye(3, (Kind::Float, device))
+                .unsqueeze(0)
+                .unsqueeze(0)
+                .unsqueeze(0)
+                .expand(&[b, t, n, 3, 3], false),
+            template_frame_t: &Tensor::zeros(&[b, t, n, 3], (Kind::Float, device)),
+            template_mask_frame: &Tensor::ones(&[b, t, n], (Kind::Float, device)),
+            template_cb: &Tensor::randn(&[b, t, n, 3], (Kind::Float, device)),
+            template_ca: &Tensor::randn(&[b, t, n, 3], (Kind::Float, device)),
+            template_mask_cb: &Tensor::ones(&[b, t, n], (Kind::Float, device)),
+            visibility_ids: &Tensor::zeros(&[b, t, n], (Kind::Int64, device)),
+            template_mask: &Tensor::ones(&[b, t, n], (Kind::Float, device)),
         };
 
-        // Forward pass
-        let z_out = template_module.forward(&z, &feats, &pair_mask, false);
-
-        // Check shape
-        assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
+        let u = tmpl.forward(&z, &feats, &pair_mask, false);
+        assert_eq!(u.size(), vec![b, n, n, token_z]);
     }
 
     #[test]
-    fn test_template_module_without_templates() {
+    fn distogram_bin_range() {
         tch::maybe_init_cuda();
         let device = Device::Cpu;
-
-        let token_z = 128;
-        let template_dim = 64;
-        let template_blocks = 1;
-        let batch_size = 1;
-        let num_tokens = 10;
-
         let vs = VarStore::new(device);
-
-        let template_module = TemplateV2Module::new(
-            &vs,
-            token_z,
-            template_dim,
-            template_blocks,
+        let root = vs.root();
+        let tmpl = TemplateV2Module::new(
+            root.sub("t"),
+            64,
+            32,
+            1,
+            None,
             None,
             None,
             None,
@@ -524,71 +397,42 @@ mod tests {
             None,
             device,
         );
+        let coords = Tensor::randn(&[1, 1, 4, 3], (Kind::Float, device)) * 10.0;
+        let dg = tmpl.compute_distogram(&coords);
+        assert_eq!(dg.size(), vec![1, 1, 4, 4, 38]);
+        let row_sums = dg.sum_dim_intlist(&[-1i64][..], false, Kind::Float);
+        let ones = Tensor::ones_like(&row_sums);
+        assert!(
+            (&row_sums - &ones).abs().max().double_value(&[]) < 1e-5,
+            "each distogram row must sum to 1 (one-hot)"
+        );
+    }
 
-        let z = Tensor::randn(
-            &[batch_size, num_tokens, num_tokens, token_z],
-            (tch::Kind::Float, device),
-        );
+    #[test]
+    fn unit_vectors_identity_frame() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let b = 1_i64;
+        let t = 1_i64;
+        let n = 3_i64;
 
-        let pair_mask = Tensor::ones(
-            &[batch_size, num_templates, num_tokens],
-            (tch::Kind::Float, device),
-        );
+        let frame_rot = Tensor::eye(3, (Kind::Float, device))
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            .expand(&[b, t, n, 3, 3], false);
+        let frame_t = Tensor::zeros(&[b, t, n, 3], (Kind::Float, device));
+        let mut ca_data = Tensor::zeros(&[b, t, n, 3], (Kind::Float, device));
+        // Set ca[0,0,1] = [3,0,0] so the unit vector from residue 0 to 1 should be [1,0,0]
+        let _ = ca_data.narrow(2, 1, 1).narrow(3, 0, 1).fill_(3.0);
 
-        // Test with empty templates (template_mask all zeros)
-        let template_restype = Tensor::zeros(
-            &[batch_size, 0, num_tokens],
-            (tch::Kind::Float, device),
-        );
-        let template_frame_rot = Tensor::zeros(
-            &[batch_size, 0, num_templates, 3, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_frame_t = Tensor::zeros(
-            &[batch_size, 0, num_templates, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_mask_frame = Tensor::zeros(
-            &[batch_size, 0, num_templates, num_tokens],
-            (tch::Kind::Float, device),
-        );
-        let template_cb = Tensor::zeros(
-            &[batch_size, 0, num_tokens, 3],
-            (tch::new(),
-        );
-        let template_ca = Tensor::zeros(
-            &[batch_size, 0, num_tokens, 3],
-            (tch::Kind::Float, device),
-        );
-        let template_mask_cb = Tensor::zeros(
-            &[batch_size, 0, num_tokens],
-            (tch::Kind::Float, device),
-        );
-        let visibility_ids = Tensor::zeros(
-            &[batch_size, 0, num_tokens],
-            (tch::Kind::Int64, device),
-        );
-        let template_mask = Tensor::zeros(
-            &[batch_size, 0, num_tokens],
-            (tch::Kind::Features, device),
-        );
+        let uv = TemplateV2Module::compute_unit_vectors(&ca_data, &frame_rot, &frame_t);
+        assert_eq!(uv.size(), vec![b, t, n, n, 3]);
 
-        let feats = TemplateFeatures {
-            template_restype,
-            template_frame_rot,
-            template_frame_t,
-            template_mask_frame,
-            template_cb,
-            template_ca,
-            template_mask_cb,
-            visibility_ids,
-            template_mask,
-        };
-
-        // Forward pass - should handle empty templates gracefully
-        let z_out = template_module.forward(&z, &feats, &pair_mask, false);
-
-        // Check shape
-        assert_eq!(z_out.size(), vec![batch_size, num_tokens, num_tokens, token_z]);
+        // uv[0,0,0,1] should be ~ [1,0,0] (identity frame, origin translation, ca_j at [3,0,0])
+        let v01 = uv.i((0, 0, 0, 1));
+        let expected = Tensor::from_slice(&[1.0_f32, 0.0, 0.0]);
+        let diff = (&v01 - &expected).abs().max().double_value(&[]);
+        assert!(diff < 1e-5, "unit vector mismatch: diff = {diff}");
     }
 }

@@ -171,13 +171,15 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | [~] | `RelativePositionEncoder` | [relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — **TBD:** golden parity. |
 | [~] | `s_init`, `z_init_*`, bonds, contact conditioning | [model.rs](boltr-backend-tch/src/boltz2/model.rs) — **TBD:** golden parity. |
 | [x] | LayerNorm / recycling projections | [trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs) |
-| [~] | Trunk wiring | Pairformer + MSA path on `TrunkV2`. **[~] TemplateModule stub** — [template_module.rs](boltr-backend-tch/src/boltz2/template_module.rs). **TBD:** IO → full embedder → trunk. |
+| [~] | Trunk wiring | Pairformer + MSA + Template path on `TrunkV2`. **TBD:** IO → full embedder → trunk. |
 
 ### 5.3 Templates
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [~] | `TemplateModule` | **[~] stub** — `forward_trunk_step` no-op; [template_module.rs](boltr-backend-tch/src/boltz2/template_module.rs). **TBD:** real template bias / pairformer. |
+| [x] | `TemplateV2Module` | Ported from [`trunkv2.py`](boltz-reference/src/boltz/model/modules/trunkv2.py). [template_module.rs](boltr-backend-tch/src/boltz2/template_module.rs): CB–CB distogram (pairwise L2 → linspace binning → one-hot), unit vectors from frame rotations (`R^T @ (ca_j − t_i)` + normalize), visibility-ID asym mask, res-type pairwise features, `a_proj` → `z_proj(z_norm(z))` + `PairformerNoSeqModule` stack → `v_norm` → template aggregation → `relu` + `u_proj`. |
+| [x] | `PairformerNoSeqModule` | [pairformer_no_seq.rs](boltr-backend-tch/src/layers/pairformer_no_seq.rs): stack of `PairformerNoSeqLayer` (tri-mul-out/in, tri-att-start/end, transition), matching Python `PairformerNoSeqModule`. |
+| [x] | Trunk + model wiring | `TrunkV2` now holds `Option<TemplateV2Module>` (created when `template_args` is `Some`). Template bias applied **before** MSA in the recycling loop, matching Python order. `Boltz2Model.predict_step_trunk(…, template_feats)` threads features through. Checkpoint key `template_module` added to [inference_keys.rs](boltr-backend-tch/src/inference_keys.rs). **TBD:** golden test (one forward pass vs Python on tiny batch; needs LibTorch). |
 
 ### 5.4 MSA module
 
