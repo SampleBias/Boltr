@@ -350,8 +350,11 @@ mod tests {
         let atoms: Vec<_> = coords
             .iter()
             .map(|&c| AtomV2Row {
+                name: String::new(),
                 coords: c,
                 is_present: true,
+                bfactor: 0.0,
+                plddt: 0.0,
             })
             .collect();
         let s = StructureV2Tables {

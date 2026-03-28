@@ -2,11 +2,18 @@
 //!
 //! Field layout matches the numpy structured dtypes consumed by [`crate::tokenize::boltz2::tokenize_structure`].
 
-/// One atom row (`AtomV2` in Python: `coords`, `is_present`; tokenizer also reads `coords` for frames).
+/// One atom row (`AtomV2` in Python: `name`, `coords`, `is_present`, `bfactor`, `plddt`).
+///
+/// `name` is a max-4-character PDB atom name (e.g. `"N"`, `"CA"`, `"OP1"`, `"C1'"`).
+/// `bfactor` and `plddt` default to `0.0` in inference.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AtomV2Row {
+    /// PDB atom name (up to 4 chars, stripped).
+    pub name: String,
     pub coords: [f32; 3],
     pub is_present: bool,
+    pub bfactor: f32,
+    pub plddt: f32,
 }
 
 /// One residue row (`Residue` dtype).

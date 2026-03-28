@@ -199,13 +199,19 @@ fn decode_unicode_u32(s: &[u8], code_units: usize) -> Result<String> {
 }
 
 fn decode_atom_row(r: &[u8]) -> Result<AtomV2Row> {
-    let (off_coords, off_flag) = match r.len() {
-        ATOM_V2_AL | ATOM_V2_PK => (16, 28),
+    let (off_name, off_coords, off_flag, off_bfactor, off_plddt) = match r.len() {
+        ATOM_V2_AL => (0, 16, 28, 32, 36),
+        ATOM_V2_PK => (0, 16, 28, 29, 33),
         n => bail!("atoms: unexpected record size {n} (expected {ATOM_V2_AL} or {ATOM_V2_PK})"),
     };
+    // name is 4 × uint32 LE (Unicode code units), occupying bytes [0..16)
+    let name = decode_unicode_u32(&r[off_name..off_name + 16], 4)?;
     Ok(AtomV2Row {
+        name,
         coords: read_coords3(r, off_coords)?,
         is_present: r.get(off_flag).copied().unwrap_or(0) != 0,
+        bfactor: read_f32_le(r, off_bfactor)?,
+        plddt: read_f32_le(r, off_plddt)?,
     })
 }
 
@@ -427,12 +433,13 @@ fn encode_u32_name(dst: &mut [u8], s: &str, code_units: usize) {
 
 fn pack_atom_aligned(a: &AtomV2Row) -> [u8; ATOM_V2_AL] {
     let mut r = [0u8; ATOM_V2_AL];
-    encode_u32_name(&mut r[0..16], "", 4);
+    encode_u32_name(&mut r[0..16], &a.name, 4);
     for (i, &c) in a.coords.iter().enumerate() {
         r[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&c.to_le_bytes());
     }
     r[28] = u8::from(a.is_present);
-    // bfactor, plddt at 32, 36
+    r[32..36].copy_from_slice(&a.bfactor.to_le_bytes());
+    r[36..40].copy_from_slice(&a.plddt.to_le_bytes());
     r
 }
 

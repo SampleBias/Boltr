@@ -1,24 +1,39 @@
-//! Featurizer ports (`data/feature/featurizerv2.py`). Incremental §4.4 implementation.
-
+//! Featurizer ports (`data/feature/featurizerv2.py`). Incremental §4.4 implementation
 pub mod dummy_templates;
 pub mod msa_pairing;
 pub mod process_atom_features;
 #[cfg(test)]
-mod atom_features_golden;
-pub mod process_msa_features;
+pub mod atom_features_golden;
 pub mod process_token_features;
 #[cfg(test)]
 mod msa_features_golden;
+pub mod token;
 #[cfg(test)]
 mod token_features_golden;
-pub mod token;
 
-pub use dummy_templates::{
-    dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
-};
-pub use process_atom_features::{ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA};
-pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
-pub use process_token_features::{
-    process_token_features, TokenFeatureTensors, CONTACT_CONDITIONING_NUM_CLASSES,
-};
-pub use token::{ala_tokenized_smoke, token_feature_key_names};
+pub use atom_features_golden::{ala_atom_features_smoke, assert_eq!(atom_features_golden.keys().len(), 3);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures::structure_v2_single_ala;
+    use crate::tokenize::boltz2::tokenize_structure;
+    use crate::structure_v2::Structure_v2Tables;
+
+    use crate::ref_atoms::{
+    nucleic_backbone_atom_index, protein_backbone_atom_index,
+ nucleic_backbone_atom_index,
+ nucleic_backbone_atom_index,
+    } else {
+        0.0;
+    }
+    assert_eq!(atom_features.golden.keys().len(), 5); // 5 atoms
+ pad to 32-window
+32)
+    }
+}
+
+ assert_eq!(atom_features.golden.keys().len(), 18);
+    }
+}
