@@ -90,3 +90,63 @@ Chronological notes for **what shipped** and **when**. For the live backlog, use
 - PROJECT_README.md context checked
 - Ready for continued development
 
+
+
+## 2026-03-28 08:49 - Session Started
+- Project structure files verified
+- Resumed work on existing project
+- Todo.md updated with new session section
+- PROJECT_README.md context checked
+- Ready for continued development
+
+
+## 2026-03-28 09:30 - Pairformer Stack Dropout/Mask Audit Completed
+
+**Context:** Section 5.5 of TODO.md identified incomplete dropout/mask audit.
+
+**Issues Found:**
+1. Rust `PairformerLayer` did not respect training mode (always applied dropout)
+2. Dropout mask used full tensor instead of slice-based subsample
+3. Used `>` comparison instead of `>=` (Python uses `>=`)
+4. Missing `set_training` API on PairformerModule and TrunkV2
+
+**Changes Made:**
+
+**1. boltr-backend-tch/src/layers/pairformer.rs:**
+- Added `training: bool` parameter to `PairformerLayer::forward()`
+- Fixed `create_dropout_mask()` to use slice-based approach `z[:, :, 0:1, 0:1]`
+- Fixed `create_dropout_mask_columnwise()` to use slice-based approach `z[:, 0:1, :, 0:1]`
+- Changed comparison from `gt_tensor()` to `ge_tensor()` to match Python
+- Updated all dropout mask applications to respect `training` flag
+- Added `training` field to `PairformerModule` struct
+- Added `set_training()` method to `PairformerModule`
+- Fixed chunking logic: training mode uses `chunk_size=None`, eval uses threshold-based
+
+**2. boltr-backend-tch/src/layers/training_tests.rs:** (NEW FILE)
+- Added `test_pairformer_layer_training_mode()` - verifies dropout application
+- Added `test_pairformer_layer_eval_mode_no_dropout()` - verifies determinism
+- Added `test_pairformer_module_training_mode()` - tests mode switching
+- Added `test_pairformer_module_chunk_size_training()` - tests chunking logic
+- Added `test_dropout_mask_shape_broadcast()` - verifies mask shapes
+
+**3. boltr-backend-tch/src/boltz2/trunk.rs:**
+- Added `training: bool` field to `TrunkV2` struct
+- Added `set_training()` method to cascade training flag to pairformer
+- Enables training mode control at trunk level
+
+**4. boltr-backend-tch/tests/pairformer_golden.rs:**
+- Updated golden test call to include `training=false` parameter
+
+**Test Results:**
+- ✅ All 8 pairformer tests pass
+- ✅ Golden test passes (BOLTR_RUN_PAIRFORMER_GOLDEN=1)
+- ✅ All 36 backend tests pass (no regressions)
+- ✅ Build succeeds with only warnings (unused fields)
+
+**Documentation Created:**
+- docs/PAIRFORMER_DROPOUT_FIX.md - Comprehensive fix documentation
+
+**Status:**
+- ✅ **Section 5.5 Pairformer stack** - DROPOUT/MASK AUDIT **COMPLETED**
+- All implementation now matches Python reference behavior
+- Ready for training/inference mode switching

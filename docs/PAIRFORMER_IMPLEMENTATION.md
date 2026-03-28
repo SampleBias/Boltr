@@ -62,7 +62,50 @@ All core Pairformer components have been implemented following the Python refere
 
 ## Key Design Decisions
 
-### 1. Feature-Gated Implementation
+### 1. Training Mode Support
+The implementation includes proper training/evaluation mode handling:
+
+- **Training mode** (`training=true`): Dropout is applied with scaling
+- **Evaluation mode** (`training=false`): Dropout is disabled for deterministic outputs
+
+This matches Python's `get_dropout_mask()` behavior from `boltz-reference/src/boltz/model/layers/dropout.py`:
+
+```python
+def get_dropout_mask(dropout, z, training, columnwise=False):
+    dropout = dropout * training  # Zero during evaluation
+    # ... mask generation
+    return d
+```
+
+**Key Implementation Details:**
+
+1. **Slice-based Mask Generation**: Uses small subsample `z[:, :, 0:1, 0:1]` (non-columnwise) or `z[:, 0:1, :, 0:1]` (columnwise), matching Python's approach for efficiency.
+
+2. **Correct Comparison**: Uses `>=` comparison (not `>`) to match Python exactly.
+
+3. **Chunking Logic**: During training, `chunk_size_tri_attn = None` (no chunking); during evaluation, uses threshold-based chunking (128 for seq_len > 256, else 512).
+
+4. **API Support**: Both `PairformerModule` and `TrunkV2` provide `set_training()` methods for easy mode switching.
+
+**Usage:**
+
+```rust
+// Inference (default)
+let mut model = PairformerModule::new(/*...*/);
+model.set_training(false);  // Already default
+let (s, z) = model.forward(&s_in, &z_in, &mask, &pair_mask, false);
+// Result: Deterministic (no dropout)
+
+// Training
+let mut model = PairformerModule::new(/*...*/);
+model.set_training(true);  // Enable dropout
+let (s, z) = model.forward(&s_in, &z_in, &mask, &pair_mask, false);
+// Result: Stochastic (with dropout)
+```
+
+See [PAIRFORMER_DROPOUT_FIX.md](./PAIRFORMER_DROPOUT_FIX.md) for detailed implementation.
+
+### 2. Feature-Gated Implementation
 All tch-rs dependent code is behind the `tch-backend` feature flag:
 - Allows building without LibTorch for CI/testing
 - Maintains clean separation of concerns

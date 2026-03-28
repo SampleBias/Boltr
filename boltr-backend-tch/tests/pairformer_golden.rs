@@ -65,7 +65,7 @@ fn pairformer_layer_allclose_python_golden() {
     let s_ref = load_tensor_from_safetensors(&path, "golden.s_out", device).unwrap();
     let z_ref = load_tensor_from_safetensors(&path, "golden.z_out", device).unwrap();
 
-    let (s_rust, z_rust) = layer.forward(&s, &z, &mask, &pair_mask, None, false);
+    let (s_rust, z_rust) = layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
 
     let rtol = 1e-4_f64;
     let atol = 1e-5_f64;

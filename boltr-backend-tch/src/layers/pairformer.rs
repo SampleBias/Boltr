@@ -163,6 +163,7 @@ impl PairformerLayer {
     /// * `mask` - Sequence mask of shape [B, N, N]
     /// * `pair_mask` - Pairwise mask of shape [B, N, N]
     /// * `chunk_size_tri_attn` - Optional chunk size for triangular attention
+    /// * `training` - Whether model is in training mode (affects dropout)
     /// * `_use_kernels` - Placeholder for kernel usage
     ///
     /// # Returns
@@ -175,69 +176,50 @@ impl PairformerLayer {
         mask: &Tensor,
         pair_mask: &Tensor,
         chunk_size_tri_attn: Option<i64>,
+        training: bool,
         _use_kernels: bool,
     ) -> (Tensor, Tensor) {
         // Compute pairwise stack
         let mut z = z.shallow_clone();
 
         // Triangle multiplication outgoing
-        let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(&z))
-        } else {
-            None
-        };
-
+        let dropout_mask = self.create_dropout_mask(&z, training);
         let z_out = self.tri_mul_out.forward(&z, pair_mask, false);
-        z = if let Some(drop) = dropout_mask {
-            z + drop * z_out
-        } else {
+        z = if !training && self.dropout == 0.0 {
             z + z_out
+        } else {
+            z + dropout_mask * z_out
         };
 
         // Triangle multiplication incoming
-        let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(&z))
-        } else {
-            None
-        };
-
+        let dropout_mask = self.create_dropout_mask(&z, training);
         let z_out = self.tri_mul_in.forward(&z, pair_mask, false);
-        z = if let Some(drop) = dropout_mask {
-            z + drop * z_out
-        } else {
+        z = if !training && self.dropout == 0.0 {
             z + z_out
+        } else {
+            z + dropout_mask * z_out
         };
 
         // Triangle attention starting
-        let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask(&z))
-        } else {
-            None
-        };
-
+        let dropout_mask = self.create_dropout_mask(&z, training);
         let z_out = self
             .tri_att_start
             .forward(&z, Some(pair_mask), chunk_size_tri_attn, false);
-        z = if let Some(drop) = dropout_mask {
-            z + drop * z_out
-        } else {
+        z = if !training && self.dropout == 0.0 {
             z + z_out
+        } else {
+            z + dropout_mask * z_out
         };
 
         // Triangle attention ending (columnwise dropout)
-        let dropout_mask = if self.dropout > 0.0 {
-            Some(self.create_dropout_mask_columnwise(&z))
-        } else {
-            None
-        };
-
+        let dropout_mask = self.create_dropout_mask_columnwise(&z, training);
         let z_out = self
             .tri_att_end
             .forward(&z, Some(pair_mask), chunk_size_tri_attn, false);
-        z = if let Some(drop) = dropout_mask {
-            z + drop * z_out
-        } else {
+        z = if !training && self.dropout == 0.0 {
             z + z_out
+        } else {
+            z + dropout_mask * z_out
         };
 
         // Transition z
@@ -276,25 +258,38 @@ impl PairformerLayer {
         (s, z)
     }
 
-    fn create_dropout_mask(&self, tensor: &Tensor) -> Tensor {
-        let scale = 1.0 / (1.0 - self.dropout);
-        let thr = Tensor::from(self.dropout).to_device(tensor.device());
-        let mask = tensor.rand_like().gt_tensor(&thr);
-        mask.to_kind(tensor.kind()).to_kind(Kind::Float) * scale
+    /// Dropout mask matching Python's `get_dropout_mask` for pairformer (non-columnwise)
+    ///
+    /// Python: `v = z[:, :, 0:1, 0:1]` then `d = torch.rand(v.shape) >= dropout`
+    fn create_dropout_mask(&self, z: &Tensor, training: bool) -> Tensor {
+        let dropout = if training { self.dropout } else { 0.0 };
+        if dropout == 0.0 {
+            return Tensor::ones(&[1i64, 1, 1, 1], (Kind::Float, self.device));
+        }
+        let scale = 1.0 / (1.0 - dropout);
+        // Slice to small subsample like Python: z[:, :, 0:1, 0:1]
+        let v = z.narrow(2, 0, 1).narrow(3, 0, 1);
+        let thr = Tensor::from(dropout).to_device(v.device());
+        // Python uses >= comparison
+        let mask = v.rand_like().ge_tensor(&thr);
+        mask.to_kind(Kind::Float) * scale
     }
 
-    fn create_dropout_mask_columnwise(&self, tensor: &Tensor) -> Tensor {
-        let shape = tensor.size();
-        let _batch_size = shape[0];
-        let dim = shape[3];
-
-        // Create columnwise mask: broadcast over first two dimensions
-        let mask = Tensor::empty(&[1i64, 1, 1, dim], (Kind::Float, self.device));
-        let thr = Tensor::from(self.dropout).to_device(self.device);
-        let mask =
-            (mask.rand_like().gt_tensor(&thr)).to_kind(Kind::Float) * (1.0 / (1.0 - self.dropout));
-
-        mask.expand(shape.as_slice(), false)
+    /// Dropout mask matching Python's `get_dropout_mask(..., columnwise=True)` for pairformer
+    ///
+    /// Python: `v = z[:, 0:1, :, 0:1]` then `d = torch.rand(v.shape) >= dropout`
+    fn create_dropout_mask_columnwise(&self, z: &Tensor, training: bool) -> Tensor {
+        let dropout = if training { self.dropout } else { 0.0 };
+        if dropout == 0.0 {
+            return Tensor::ones(&[1i64, 1, 1, 1], (Kind::Float, self.device));
+        }
+        let scale = 1.0 / (1.0 - dropout);
+        // Slice to small subsample like Python: z[:, 0:1, :, 0:1]
+        let v = z.narrow(1, 0, 1).narrow(3, 0, 1);
+        let thr = Tensor::from(dropout).to_device(v.device());
+        // Python uses >= comparison
+        let mask = v.rand_like().ge_tensor(&thr);
+        mask.to_kind(Kind::Float) * scale
     }
 }
 
@@ -309,6 +304,7 @@ pub struct PairformerModule {
     num_heads: i64,
     post_layer_norm: bool,
     activation_checkpointing: bool,
+    training: bool,
 
     layers: Vec<PairformerLayer>,
 }
@@ -348,6 +344,7 @@ impl PairformerModule {
         let dropout = dropout.unwrap_or(0.25);
         let post_layer_norm = post_layer_norm.unwrap_or(false);
         let activation_checkpointing = activation_checkpointing.unwrap_or(false);
+        let training = false; // Default to eval mode
 
         // Match PyTorch `nn.ModuleList` names: `pairformer_module.layers.0.*`
         let layers_root = path.sub("layers");
@@ -375,6 +372,7 @@ impl PairformerModule {
             num_heads,
             post_layer_norm,
             activation_checkpointing,
+            training,
             layers,
         }
     }
@@ -382,6 +380,11 @@ impl PairformerModule {
     /// Number of pairformer blocks in this stack.
     pub fn num_blocks(&self) -> i64 {
         self.num_blocks
+    }
+
+    /// Set training mode (affects dropout behavior)
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
     }
 
     /// Forward pass through all layers
@@ -409,16 +412,22 @@ impl PairformerModule {
         let mut z = z.shallow_clone();
 
         // Determine chunk size based on sequence length (matching Python logic)
-        let chunk_size_tri_attn = if z.size()[1] > 256 {
-            // chunk_size_threshold from const.py
-            Some(128)
+        // During training, chunk_size is None; during eval, it's based on threshold
+        let chunk_size_tri_attn = if self.training {
+            None
         } else {
-            Some(512)
+            if z.size()[1] > 256 {
+                // chunk_size_threshold from const.py
+                Some(128)
+            } else {
+                Some(512)
+            }
         };
 
         for layer in &self.layers {
             // TODO: Implement activation checkpointing
-            let (s_new, z_new) = layer.forward(&s, &z, mask, pair_mask, chunk_size_tri_attn, false);
+            let (s_new, z_new) =
+                layer.forward(&s, &z, mask, pair_mask, chunk_size_tri_attn, self.training, false);
             s = s_new;
             z = z_new;
         }
@@ -465,7 +474,7 @@ mod tests {
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
         let pair_mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
 
-        let (s_out, z_out) = layer.forward(&s, &z, &mask, &pair_mask, None, false);
+        let (s_out, z_out) = layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
 
         assert_eq!(s_out.size(), vec![batch_size, seq_len, token_s]);
         assert_eq!(z_out.size(), vec![batch_size, seq_len, seq_len, token_z]);
@@ -512,3 +521,8 @@ mod tests {
         assert_eq!(z_out.size(), vec![batch_size, seq_len, seq_len, token_z]);
     }
 }
+
+// Additional training mode tests
+#[path = "training_tests.rs"]
+mod training_tests;
+

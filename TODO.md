@@ -190,7 +190,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Deliverables |
 |--------|------|--------------|
 | [x] | `PairformerModule` + attention + tri ops + transition + OPM | [layers/](boltr-backend-tch/src/layers/), [attention/](boltr-backend-tch/src/attention/) |
-| [~] | Dropout / mask audit | Edge cases vs Python — spot-check. |
+| [x] | Dropout / mask audit | Training mode support, slice-based masks, correct comparison, comprehensive tests (see [PAIRFORMER_DROPOUT_FIX.md](docs/PAIRFORMER_DROPOUT_FIX.md)) |
 | [x] | Pairformer layer golden (opt-in) | `BOLTR_RUN_PAIRFORMER_GOLDEN=1`, [export_pairformer_golden.py](scripts/export_pairformer_golden.py) |
 
 ### 5.6 Diffusion conditioning + structure

@@ -29,6 +29,7 @@ use super::template_module::TemplateModule;
 pub struct TrunkV2 {
     token_s: i64,
     token_z: i64,
+    training: bool,
 
     // Initialization layers (for first iteration)
     s_init: tch::nn::Linear,
@@ -172,6 +173,7 @@ impl TrunkV2 {
         Self {
             token_s,
             token_z,
+            training: false, // Default to eval mode
             s_init,
             z_init_1,
             z_init_2,
@@ -235,6 +237,12 @@ impl TrunkV2 {
         let z_recycled = z_init + self.z_recycle.forward(&self.z_norm.forward(z_prev));
 
         (s_recycled, z_recycled)
+    }
+
+    /// Set training mode (affects dropout in pairformer and MSA module)
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
+        self.pairformer.set_training(training);
     }
 
     /// Forward through pairformer stack (owned component)
