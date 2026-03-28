@@ -12,7 +12,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::structure_v2::{AtomV2Row, BondV2AtomRow, ChainRow, ResidueRow, StructureV2Tables};
+use crate::structure_v2::{
+    AtomV2Row, BondV2AtomRow, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables,
+};
 
 const MAGIC_PREFIX: &[u8] = b"\x93NUMPY";
 const ARRAY_ALIGN: usize = 64;
@@ -404,8 +406,18 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
     if epay.len() != n_ens * ENSEMBLE_AL {
         bail!("ensemble payload");
     }
-    let ensemble_atom_coord_idx = read_i32_le(epay, 0)?;
-    let _ensemble_atom_num = read_i32_le(epay, 4)?;
+    let mut ensemble = Vec::with_capacity(n_ens);
+    for i in 0..n_ens {
+        let base = i * ENSEMBLE_AL;
+        ensemble.push(EnsembleRow {
+            atom_coord_idx: read_i32_le(epay, base)?,
+            atom_num: read_i32_le(epay, base + 4)?,
+        });
+    }
+    let ensemble_atom_coord_idx = ensemble
+        .first()
+        .map(|e| e.atom_coord_idx)
+        .unwrap_or(0);
 
     Ok(StructureV2Tables {
         atoms,
@@ -413,6 +425,7 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
         chains,
         chain_mask,
         coords,
+        ensemble,
         ensemble_atom_coord_idx,
         bonds,
     })

@@ -1,7 +1,7 @@
 //! Small deterministic structures for tests, demos, and CLI smoke runs.
 
 use crate::boltz_const::{chain_type_id, token_id};
-use crate::structure_v2::{AtomV2Row, ChainRow, ResidueRow, StructureV2Tables};
+use crate::structure_v2::{AtomV2Row, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables};
 
 /// One protein chain with a single standard ALA residue (N, CA, C, O, CB) and trivial coords.
 ///
@@ -57,6 +57,10 @@ pub fn structure_v2_single_ala() -> StructureV2Tables {
         }],
         chain_mask: vec![true],
         coords: coords.clone(),
+        ensemble: vec![EnsembleRow {
+            atom_coord_idx: 0,
+            atom_num: 5,
+        }],
         ensemble_atom_coord_idx: 0,
         bonds: vec![],
     }

@@ -46,6 +46,13 @@ pub struct ChainRow {
     pub cyclic_period: i32,
 }
 
+/// One `ensemble` row (`StructureV2.ensemble[i]`): base offset into `coords` + atom count.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnsembleRow {
+    pub atom_coord_idx: i32,
+    pub atom_num: i32,
+}
+
 /// Bond row subset used by tokenizer (`BondV2`: global atom indices + bond type).
 #[derive(Clone, Debug, PartialEq)]
 pub struct BondV2AtomRow {
@@ -65,16 +72,38 @@ pub struct StructureV2Tables {
     pub chain_mask: Vec<bool>,
     /// Flattened coords table (`Coords`: one `[f32;3]` per atom slot in the ensemble slice).
     pub coords: Vec<[f32; 3]>,
-    /// `ensemble[0]["atom_coord_idx"]` — base offset into `coords` for the first conformer.
+    /// Conformer table (`ensemble.npy`): one row per available structure conformer.
+    pub ensemble: Vec<EnsembleRow>,
+    /// `ensemble[0].atom_coord_idx` — duplicated for callers that only track the first conformer.
     pub ensemble_atom_coord_idx: i32,
     pub bonds: Vec<BondV2AtomRow>,
 }
 
 impl StructureV2Tables {
+    /// Number of conformers (`len(structure.ensemble)` in Boltz).
+    #[inline]
+    #[must_use]
+    pub fn num_ensemble_conformers(&self) -> usize {
+        if !self.ensemble.is_empty() {
+            self.ensemble.len()
+        } else {
+            1
+        }
+    }
+
+    /// Base offset into `coords` for conformer `ensemble_idx` (defaults to first row).
+    #[inline]
+    pub(crate) fn ensemble_base_offset(&self, ensemble_idx: usize) -> i64 {
+        self.ensemble
+            .get(ensemble_idx)
+            .map(|e| i64::from(e.atom_coord_idx))
+            .unwrap_or(i64::from(self.ensemble_atom_coord_idx))
+    }
+
     /// Coords row for `ensemble[0].atom_coord_idx + atom_index` (Boltz coord table).
     #[inline]
     pub(crate) fn ensemble_coords(&self, atom_index: i32) -> Option<[f32; 3]> {
-        let o = self.ensemble_atom_coord_idx as i64 + i64::from(atom_index);
+        let o = self.ensemble_base_offset(0) + i64::from(atom_index);
         let u = usize::try_from(o).ok()?;
         self.coords.get(u).copied()
     }

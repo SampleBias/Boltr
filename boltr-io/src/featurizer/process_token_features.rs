@@ -280,7 +280,7 @@ mod tests {
     fn ligand_bond_fills_pair_matrices() {
         use crate::boltz_const::chain_type_id;
         use crate::structure_v2::{
-            AtomV2Row, BondV2AtomRow, ChainRow, ResidueRow, StructureV2Tables,
+            AtomV2Row, BondV2AtomRow, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables,
         };
 
         let np = chain_type_id("NONPOLYMER").expect("NONPOLYMER") as i8;
@@ -322,6 +322,10 @@ mod tests {
             }],
             chain_mask: vec![true],
             coords: coords.clone(),
+            ensemble: vec![EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 2,
+            }],
             ensemble_atom_coord_idx: 0,
             bonds: vec![BondV2AtomRow {
                 atom_1: 0,

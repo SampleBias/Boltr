@@ -4,7 +4,7 @@
 //! [`tokenize_boltz2_inference`] with [`Boltz2Tokenizer`].
 
 use crate::boltz_const::{chain_type_id, unk_token_id};
-use crate::structure_v2::{ChainRow, ResidueRow, StructureV2Tables};
+use crate::structure_v2::{ChainRow, EnsembleRow, ResidueRow, StructureV2Tables};
 
 /// One token row (logical `TokenData` / `TokenV2` before numpy packing).
 #[derive(Clone, Debug, PartialEq)]
@@ -387,6 +387,10 @@ mod tests {
             }],
             chain_mask: vec![true],
             coords: coords.clone(),
+            ensemble: vec![EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 2,
+            }],
             ensemble_atom_coord_idx: 0,
             bonds: vec![BondV2AtomRow {
                 atom_1: 0,
