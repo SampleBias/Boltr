@@ -288,7 +288,7 @@ pub fn process_template_features(
     let grouped = group_templates_by_name(record_templates);
     let mut rows: Vec<DummyTemplateTensors> = Vec::new();
 
-    for (template_id, (name, group)) in grouped.iter().enumerate() {
+    for (template_id, (_name, group)) in grouped.iter().enumerate() {
         let tmpl_struct = template_structures
             .get(&name)
             .ok_or_else(|| anyhow::anyhow!("missing template structure for name {name:?}"))?;
@@ -297,7 +297,7 @@ pub fn process_template_features(
             .ok_or_else(|| anyhow::anyhow!("missing template tokens for name {name:?}"))?;
 
         let mut all_row: Vec<RowToken> = Vec::new();
-        for template in &group {
+        for template in group.iter().copied() {
             all_row.extend(build_row_tokens(
                 template,
                 template_id,
@@ -327,7 +327,8 @@ mod tests {
 
     #[test]
     fn identity_ala_template_fills_mask_and_coords() {
-        let s = structure_v2_single_ala();
+        let mut s = structure_v2_single_ala();
+        s.chains[0].name = "A".to_string();
         let (q_tok, _) = tokenize_structure(&s, None);
         let (tmpl_tok, _) = tokenize_structure(&s, None);
         let mut structures = HashMap::new();

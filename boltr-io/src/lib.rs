@@ -55,9 +55,10 @@ pub use collate_golden::{
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, dummy_templates_as_feature_batch, inference_ensemble_features,
-    load_dummy_templates_features, process_atom_features, process_msa_features,
-    process_token_features, token_feature_key_names, AtomFeatureConfig, AtomFeatureTensors,
-    AtomRefDataProvider, DummyTemplateTensors, MsaFeatureTensors, StandardAminoAcidRefData,
+    load_dummy_templates_features, pad_template_tdim, process_atom_features, process_msa_features,
+    process_template_features, process_token_features, stack_template_feature_rows,
+    token_feature_key_names, AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider,
+    DummyTemplateTensors, MsaFeatureTensors, StandardAminoAcidRefData, TemplateAlignment,
     TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
     CONTACT_CONDITIONING_NUM_CLASSES,
 };
@@ -101,10 +102,10 @@ pub use format::PredictionRunSummary;
 pub use inference_dataset::{
     affinity_asym_id_from_record, atom_features_from_inference_input, load_input,
     msa_features_from_inference_input, parse_manifest_json, parse_manifest_path,
-    token_features_from_inference_input, tokenize_boltz2_inference,
-    trunk_smoke_feature_batch_from_inference_input, Boltz2ChainInfo, Boltz2InferenceInput,
-    Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, Boltz2Tokenized, Boltz2Tokenizer,
-    StructureInfo, TemplateInfo, TokenizeBoltz2Input,
+    template_features_from_tokenized, token_features_from_inference_input,
+    tokenize_boltz2_inference, trunk_smoke_feature_batch_from_inference_input, Boltz2ChainInfo,
+    Boltz2InferenceInput, Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, Boltz2Tokenized,
+    Boltz2Tokenizer, StructureInfo, TemplateInfo, TokenizeBoltz2Input,
 };
 pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EXCLUSION_COUNT};
 pub use msa::{write_a3m, MsaProcessor};

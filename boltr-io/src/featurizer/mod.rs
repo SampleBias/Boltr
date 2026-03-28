@@ -8,6 +8,7 @@ pub mod dummy_templates;
 pub mod msa_pairing;
 pub mod process_atom_features;
 pub mod process_msa_features;
+pub mod process_template_features;
 pub mod process_token_features;
 pub mod token;
 
@@ -29,6 +30,9 @@ pub use process_atom_features::{
     NUM_BACKBONE_FEAT_CLASSES,
 };
 pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
+pub use process_template_features::{
+    pad_template_tdim, process_template_features, stack_template_feature_rows, TemplateAlignment,
+};
 pub use process_token_features::{
     process_token_features, TokenFeatureTensors, CONTACT_CONDITIONING_NUM_CLASSES,
 };

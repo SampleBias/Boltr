@@ -42,22 +42,29 @@ pub fn load_dummy_templates_features(tdim: usize, num_tokens: usize) -> DummyTem
     }
 }
 
+impl DummyTemplateTensors {
+    /// Pack into a [`FeatureBatch`] (keys match Python `load_dummy_templates_features`).
+    #[must_use]
+    pub fn into_feature_batch(self) -> FeatureBatch {
+        let mut b = FeatureBatch::new();
+        b.insert_f32("template_restype", self.template_restype.into_dyn());
+        b.insert_f32("template_frame_rot", self.template_frame_rot.into_dyn());
+        b.insert_f32("template_frame_t", self.template_frame_t.into_dyn());
+        b.insert_f32("template_cb", self.template_cb.into_dyn());
+        b.insert_f32("template_ca", self.template_ca.into_dyn());
+        b.insert_f32("template_mask_cb", self.template_mask_cb.into_dyn());
+        b.insert_f32("template_mask_frame", self.template_mask_frame.into_dyn());
+        b.insert_f32("template_mask", self.template_mask.into_dyn());
+        b.insert_i64("query_to_template", self.query_to_template.into_dyn());
+        b.insert_f32("visibility_ids", self.visibility_ids.into_dyn());
+        b
+    }
+}
+
 /// Pack [`DummyTemplateTensors`] into a [`FeatureBatch`] (keys match Python `load_dummy_templates_features`).
 #[must_use]
 pub fn dummy_templates_as_feature_batch(tdim: usize, num_tokens: usize) -> FeatureBatch {
-    let t = load_dummy_templates_features(tdim, num_tokens);
-    let mut b = FeatureBatch::new();
-    b.insert_f32("template_restype", t.template_restype.into_dyn());
-    b.insert_f32("template_frame_rot", t.template_frame_rot.into_dyn());
-    b.insert_f32("template_frame_t", t.template_frame_t.into_dyn());
-    b.insert_f32("template_cb", t.template_cb.into_dyn());
-    b.insert_f32("template_ca", t.template_ca.into_dyn());
-    b.insert_f32("template_mask_cb", t.template_mask_cb.into_dyn());
-    b.insert_f32("template_mask_frame", t.template_mask_frame.into_dyn());
-    b.insert_f32("template_mask", t.template_mask.into_dyn());
-    b.insert_i64("query_to_template", t.query_to_template.into_dyn());
-    b.insert_f32("visibility_ids", t.visibility_ids.into_dyn());
-    b
+    load_dummy_templates_features(tdim, num_tokens).into_feature_batch()
 }
 
 #[cfg(test)]

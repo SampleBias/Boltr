@@ -16,9 +16,10 @@ use crate::a3m::A3mMsa;
 use crate::boltz_const::MAX_MSA_SEQS;
 use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
-    dummy_templates_as_feature_batch, inference_ensemble_features, process_atom_features,
-    process_msa_features, process_token_features, AtomFeatureConfig, AtomFeatureTensors,
-    MsaFeatureTensors, StandardAminoAcidRefData, TokenFeatureTensors,
+    inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
+    process_atom_features, process_msa_features, process_template_features, process_token_features,
+    AtomFeatureConfig, AtomFeatureTensors, MsaFeatureTensors, StandardAminoAcidRefData,
+    TemplateAlignment, TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
 use crate::structure_v2::StructureV2Tables;
@@ -99,6 +100,22 @@ pub struct TemplateInfo {
     pub force: bool,
     #[serde(default)]
     pub threshold: Option<f32>,
+}
+
+impl From<&TemplateInfo> for TemplateAlignment {
+    fn from(t: &TemplateInfo) -> Self {
+        Self {
+            name: t.name.clone(),
+            query_chain: t.query_chain.clone(),
+            query_st: t.query_st,
+            query_en: t.query_en,
+            template_chain: t.template_chain.clone(),
+            template_st: t.template_st,
+            template_en: t.template_en,
+            force: t.force,
+            threshold: t.threshold,
+        }
+    }
 }
 
 /// Boltz `Record` (manifest row).
@@ -371,13 +388,51 @@ pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFea
     )
 }
 
-/// Token + MSA + atom + dummy template tensors in one [`FeatureBatch`].
+/// Template tensors: real [`process_template_features`](crate::featurizer::process_template_features)
+/// when `record.templates`, loaded template `.npz`, and tokenized template loops are present and
+/// `query_chain` / `template_chain` are set; otherwise padded dummy rows (same keys as Boltz).
+#[must_use]
+pub fn template_features_from_tokenized(
+    input: &Boltz2InferenceInput,
+    tokenized: &Boltz2Tokenized,
+    max_tokens: usize,
+    min_tdim: usize,
+) -> crate::featurizer::DummyTemplateTensors {
+    let min_t = min_tdim.max(1);
+    let dummy = || load_dummy_templates_features(min_t, max_tokens);
+    let record = match &input.record.templates {
+        Some(t) if !t.is_empty() => t.as_slice(),
+        _ => return pad_template_tdim(dummy(), min_t),
+    };
+    let (templates, tmpl_tok) = match (&input.templates, &tokenized.template_tokens) {
+        (Some(ts), Some(tt)) if !ts.is_empty() && !tt.is_empty() => (ts, tt),
+        _ => return pad_template_tdim(dummy(), min_t),
+    };
+    let alignments: Vec<TemplateAlignment> = record.iter().map(|t| t.into()).collect();
+    if alignments.iter().all(|a| a.query_chain.is_empty()) {
+        return pad_template_tdim(dummy(), min_t);
+    }
+    match process_template_features(
+        &tokenized.tokens,
+        &input.structure,
+        templates,
+        tmpl_tok,
+        &alignments,
+        max_tokens,
+    ) {
+        Ok(t) => {
+            let need = t.template_restype.shape()[0].max(min_t);
+            pad_template_tdim(t, need)
+        }
+        Err(_) => pad_template_tdim(dummy(), min_t),
+    }
+}
+
+/// Token + MSA + atom + template tensors in one [`FeatureBatch`].
 ///
 /// Matches the featurizer slice Boltz merges before the input embedder: `process_token_features`,
 /// `process_msa_features`, [`process_atom_features`](crate::featurizer::process_atom_features), and
-/// [`load_dummy_templates_features`](crate::featurizer::load_dummy_templates_features)
-/// with `template_dim` template slots and `num_tokens` from the token path. Use `template_dim = 1` to mirror
-/// Python when templates are absent.
+/// template features ([`template_features_from_tokenized`] or padded dummies).
 ///
 /// Does **not** include `s_inputs` (computed inside the model from the embedder stack).
 #[must_use]
@@ -385,14 +440,16 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
     input: &Boltz2InferenceInput,
     template_dim: usize,
 ) -> FeatureBatch {
-    let tok = token_features_from_inference_input(input);
-    let n = tok.token_index.len();
+    let tokenized = tokenize_boltz2_inference(input);
+    let n = tokenized.tokens.len();
+    let tok = process_token_features(&tokenized.tokens, &tokenized.bonds, None);
     let msa = msa_features_from_inference_input(input);
     let atoms = atom_features_from_inference_input(input);
     let mut batch = tok.to_feature_batch();
     batch.merge(msa.to_feature_batch());
     batch.merge(atoms.to_feature_batch());
-    batch.merge(dummy_templates_as_feature_batch(template_dim, n));
+    let tmpl = template_features_from_tokenized(input, &tokenized, n, template_dim);
+    batch.merge(tmpl.into_feature_batch());
     batch
 }
 
