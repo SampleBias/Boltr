@@ -16,6 +16,7 @@ use rand::SeedableRng;
 
 use itertools::Itertools;
 
+use crate::feature_batch::FeatureBatch;
 use crate::ref_atoms::{ref_atoms_key_from_token, ref_symmetry_groups};
 use crate::structure_v2::StructureV2Tables;
 use crate::tokenize::boltz2::TokenData;
@@ -35,6 +36,31 @@ pub struct SymmetryFeatures {
     pub amino_acids_symmetries: Vec<Vec<Vec<(usize, usize)>>>,
     /// Per ligand / non-standard molecule: groups of `(i, j)` swaps in crop space (empty when no CCD symmetries).
     pub ligand_symmetries: Vec<Vec<Vec<(usize, usize)>>>,
+}
+
+impl SymmetryFeatures {
+    /// Convert tensor fields into a [`FeatureBatch`].
+    ///
+    /// Note: `chain_symmetries`, `amino_acids_symmetries`, and `ligand_symmetries`
+    /// are ragged Python objects and cannot be stored as tensors. They go into
+    /// the "excluded" batch for per-example collation (not stacked).
+    #[must_use]
+    pub fn to_feature_batch(&self) -> FeatureBatch {
+        let mut b = FeatureBatch::new();
+        b.insert_f32("all_coords", self.all_coords.clone().into_dyn());
+        // all_resolved_mask: bool → i64
+        b.insert_i64(
+            "all_resolved_mask",
+            self.all_resolved_mask
+                .mapv(|v| if v { 1_i64 } else { 0 })
+                .into_dyn(),
+        );
+        b.insert_i64(
+            "crop_to_all_atom_map",
+            self.crop_to_all_atom_map.clone().into_dyn(),
+        );
+        b
+    }
 }
 
 fn all_different_after_swap(combo: &[ChainSwap]) -> bool {

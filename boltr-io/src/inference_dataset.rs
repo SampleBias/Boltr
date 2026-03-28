@@ -2,7 +2,7 @@
 //! [`boltz-reference/src/boltz/data/module/inferencev2.py`](../../boltz-reference/src/boltz/data/module/inferencev2.py).
 //!
 //! Loads preprocess artifacts (`StructureV2` `.npz`, per-chain `MSA` `.npz`, optional template
-//! structures). Residue constraints and extra molecules are not implemented yet.
+//! structures, optional residue constraints). Extra molecules pickle loading is not implemented.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -17,7 +17,8 @@ use crate::boltz_const::MAX_MSA_SEQS;
 use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
     inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
-    process_atom_features, process_msa_features, process_template_features, process_token_features,
+    process_atom_features, process_msa_features, process_symmetry_features,
+    process_template_features, process_token_features,
     AtomFeatureConfig, AtomFeatureTensors, MsaFeatureTensors, StandardAminoAcidRefData,
     TemplateAlignment, TokenFeatureTensors,
 };
@@ -269,10 +270,11 @@ fn msa_id_is_active(msa_id: &Value) -> bool {
 /// Load preprocess data for one record (Python `load_input`).
 ///
 /// **Supported:** structure + MSAs; optional template `.npz` when `record.templates` and
-/// `template_dir` are set. When `affinity == true`, loads
-/// `{target_dir}/{id}/pre_affinity_{id}.npz` instead of `{target_dir}/{id}.npz` (Boltz preprocess layout).
+/// `template_dir` are set; optional residue constraints from `constraints_dir`.
+/// When `affinity == true`, loads `{target_dir}/{id}/pre_affinity_{id}.npz` instead of
+/// `{target_dir}/{id}.npz` (Boltz preprocess layout).
 ///
-/// **Not implemented:** `constraints_dir`, `extra_mols_dir` (returns an error if set).
+/// **Not implemented:** `extra_mols_dir` (returns an error if set).
 pub fn load_input(
     record: &Boltz2Record,
     target_dir: &Path,
@@ -437,11 +439,15 @@ pub fn template_features_from_tokenized(
     }
 }
 
-/// Token + MSA + atom + template tensors in one [`FeatureBatch`].
+/// All featurizer tensors merged into one [`FeatureBatch`] for a single example.
 ///
-/// Matches the featurizer slice Boltz merges before the input embedder: `process_token_features`,
-/// `process_msa_features`, [`process_atom_features`](crate::featurizer::process_atom_features), and
-/// template features ([`template_features_from_tokenized`] or padded dummies).
+/// Matches the Boltz featurizer output for inference:
+/// - `process_token_features` (token-level)
+/// - `process_msa_features` (MSA)
+/// - `process_atom_features` (atom-level)
+/// - `process_symmetry_features` (symmetry / all_coords)
+/// - `process_residue_constraint_features` (constraints)
+/// - template features (real or dummy)
 ///
 /// Does **not** include `s_inputs` (computed inside the model from the embedder stack).
 #[must_use]
@@ -451,21 +457,32 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
 ) -> FeatureBatch {
     let tokenized = tokenize_boltz2_inference(input);
     let n = tokenized.tokens.len();
+
+    // Token features
     let tok = process_token_features(&tokenized.tokens, &tokenized.bonds, None);
+    // MSA features
     let msa = msa_features_from_inference_input(input);
+    // Atom features
     let atoms = atom_features_from_inference_input(input);
+    // Symmetry features (all_coords, all_resolved_mask, crop_to_all_atom_map)
+    let symm = process_symmetry_features(&input.structure, &tokenized.tokens);
+
     let mut batch = tok.to_feature_batch();
     batch.merge(msa.to_feature_batch());
     batch.merge(atoms.to_feature_batch());
+    batch.merge(symm.to_feature_batch());
 
-    // Add residue constraint features (optional)
+    // Residue constraint features (optional, empty tensors when None)
     let residue_constraint_features =
         crate::featurizer::process_residue_constraint_features(
             input.residue_constraints.as_ref(),
         );
     batch.merge(residue_constraint_features.into_feature_batch());
+
+    // Template features (real or dummy)
     let tmpl = template_features_from_tokenized(input, &tokenized, n, template_dim);
     batch.merge(tmpl.into_feature_batch());
+
     batch
 }
 
@@ -543,5 +560,18 @@ mod tests {
             out.template_bonds.as_ref().unwrap().get("tmpl1").unwrap(),
             &tmpl_b
         );
+    }
+
+    #[test]
+    fn trunk_smoke_batch_includes_symmetry_keys() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
+        let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+        let input =
+            load_input(&manifest.records[0], &dir, &dir, None, None, None, false).expect("load_input");
+        let batch = trunk_smoke_feature_batch_from_inference_input(&input, 1);
+        // Symmetry keys should be present
+        assert!(batch.tensors.contains_key("all_coords"), "missing all_coords");
+        assert!(batch.tensors.contains_key("all_resolved_mask"), "missing all_resolved_mask");
+        assert!(batch.tensors.contains_key("crop_to_all_atom_map"), "missing crop_to_all_atom_map");
     }
 }

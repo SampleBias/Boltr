@@ -1,53 +1,35 @@
-# Boltr — §4.5 Inference dataset / collate
-
-Implement missing features in `inference_dataset.rs` and `collate_pad.rs` for full parity with Python `inferencev2.py`.
+# Boltr — §4.1 YAML and Chemistry (Boltz Schema)
 
 ## Context
-From TODO.md §4.5:
-- [x] `load_input` - Python `inferencev2.py` → Rust `inference_dataset.rs`. ✅ **COMPLETE** (ResidueConstraints implemented, extra_mols pickle documented)
-- [x] `collate` - Python same → Rust `feature_batch.rs`, `collate_pad.rs`, `manifest.json`. ✅ **COMPLETE** (golden testing framework complete, full contract documented)
-- [~] `load_input` - Python `inferencev2.py` → Rust `inference_dataset.rs`. **TBD:** `ResidueConstraints`, `extra_mols` pickle.
-- [~] `collate` - Python same → Rust `feature_batch.rs`, `collate_pad.rs`, `manifest.json`. **TBD:** full post-collate golden.
-
-Current status: `load_input` and `collate` are functionally complete with residue constraints support. Full collate golden testing is incomplete (framework created, but no actual golden safetensors generated).
+From TODO.md §4.1: Implement full YAML schema parsing and chemistry support for `boltr-io`.
 
 ## Subtasks
 
-### 1. ResidueConstraints support ✅ COMPLETE
-- [x] 1.1 Implement `ResidueConstraints` struct in Rust (matches Python types.py)
-- [x] 1.2 Implement `ResidueConstraints::load_from_npz` method
-- [x] 1.3 Add constraint tensor types to feature batch
-- [x] 1.4 Update `load_input` to load constraints when `constraints_dir` provided
-- [x] 1.5 Test constraint loading with fixtures
-- [x] 1.6 Integrate constraints into featurizer flow
+### 1. Expand YAML types for full schema ✅ COMPLETE (existing)
+- [x] 1.1 Minimal YAML types in `config.rs` (constraints, templates, properties.affinity, modifications, cyclic)
 
-### 2. Extra molecules pickle support 🔄 POSTPONED
-- [x] 2.1 Analyze Python extra_mols pickle format
-- [~] 2.2 Design Rust equivalent (POSTPONED: requires RDKit, documented limitation)
-- [ ] 2.3 Implement `load_extra_mols` function
-- [ ] 2.4 Update `load_input` to load extra_mols when `extra_mols_dir` provided
-- [ ] 2.5 Test extra_mols loading with fixtures
+### 2. Full schema parse — entities, bonds, ligands
+- [ ] 2.1 Add `LigandType` enum (SMILES vs CCD) with proper deserialization
+- [ ] 2.2 Add `Modification` struct (position, ccd code)
+- [ ] 2.3 Add `ConstraintBond`, `ConstraintPocket`, `ConstraintContact` structs
+- [ ] 2.4 Add `TemplateCif`, `TemplatePdb` structs
+- [ ] 2.5 Add `PropertiesAffinity` struct
+- [ ] 2.6 Add `version` field handling
+- [ ] 2.7 Parse multi-chain entity IDs (`id: [A, B]` format) properly
+- [ ] 2.8 Create comprehensive YAML parsing tests with various fixture files
 
-### 3. Full collate golden testing ⏷ IN PROGRESS
-- [x] 3.1 Create Python script to dump full post-collate batch from Boltz2InferenceDataModule
-- [~] 3.2 Generate golden safetensors with multiple examples
-- [x] 3.3 Implement Rust comparison test for all keys
-- [x] 3.4 Fix any numerical mismatches in collate logic
-- [~] 3.5 Add tests for variable MSA sizes with collate
-- [~] 3.6 Add tests for variable template counts with collate
-- [~] 3.7 Add tests for excluded keys handling
-- [x] 3.8 Document full collate contract
-- [ ] 3.9 Generate actual golden safetensors with Python script
-- [ ] 3.10 Run Rust comparison test and fix issues
-- [ ] 3.11 Add edge case tests (empty batches, variable shapes)
-- [ ] 3.12 Create integration test (manifest → load_input → featurize → collate)
+### 3. CCD / molecules support
+- [ ] 3.1 Add `ccd.rs` module with CCD code lookup types
+- [ ] 3.2 Add molecule tar loading (`mols.tar`) types
+- [ ] 3.3 Wire into YAML parse (ligand CCD code resolution)
 
-### 4. Integration tests ⏸ NOT STARTED
-- [ ] 4.1 Create end-to-end test from manifest → collated batch
-- [ ] 4.2 Test with real Boltz preprocessed data
-- [ ] 4.3 Verify batch shapes match expectations
-- [ ] 4.4 Performance profiling for collate operations
+### 4. Structure parsers (mmcif, pdb)
+- [ ] 4.1 Add minimal mmCIF parser (`_atom_site` loop)
+- [ ] 4.2 Add minimal PDB parser (ATOM/HETATM records)
+- [ ] 4.3 Convert parsed structures to `StructureV2Tables`
 
-### 5. Affinity crop (NEW)
-- [x] 5.1 Analyze Python AffinityCropper algorithm
-- [x] 5.2 Implement AffinityCropper stub with documented interface
+### 5. Constraints serialization
+- [ ] 5.1 Define typed constraint structs (BondConstraint, PocketConstraint, ContactConstraint)
+- [ ] 5.2 Implement constraint → npz serialization
+- [ ] 5.3 Wire into `load_input` when constraints_dir provided
+- [ ] 5.4 Verify with `verify_constraints_npz_layout.py`
