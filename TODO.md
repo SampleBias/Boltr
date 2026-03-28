@@ -146,9 +146,9 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [ ] | `BoltzWriter` | `write/writer.py` | Predictions layout, confidence outputs. |
-| [ ] | `BoltzAffinityWriter` | same | Affinity outputs. |
-| [ ] | Structure formats | `write/mmcif.py`, `write/pdb.py` | Consumer-compatible files. |
+| [~] | `BoltzWriter` (confidence JSON + paths) | `write/writer.py` | [write/writer.rs](boltr-io/src/write/writer.rs): [`ConfidenceSummary`](boltr-io/src/write/writer.rs), [`write_confidence_json`](boltr-io/src/write/writer.rs), [`PredictionFileNames`](boltr-io/src/write/writer.rs). **TBD:** Lightning callback, `plddt`/`pae`/`pde` npz dumps, embeddings npz (Python-only I/O). |
+| [~] | `BoltzAffinityWriter` | same | [write/affinity_writer.rs](boltr-io/src/write/affinity_writer.rs): [`AffinitySummary`](boltr-io/src/write/affinity_writer.rs), [`write_affinity_json`](boltr-io/src/write/affinity_writer.rs). |
+| [~] | Structure formats | `write/mmcif.py`, `write/pdb.py` | [write/pdb.rs](boltr-io/src/write/pdb.rs) [`structure_v2_to_pdb`](boltr-io/src/write/pdb.rs), [write/mmcif.rs](boltr-io/src/write/mmcif.rs) [`structure_v2_to_mmcif`](boltr-io/src/write/mmcif.rs) (minimal `_atom_site`; **not** full ModelCIF / `ihm`). **TBD:** byte-for-byte Python parity, CONECT edge cases. |
 
 ---
 

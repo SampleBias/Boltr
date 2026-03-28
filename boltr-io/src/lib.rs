@@ -32,6 +32,7 @@ pub mod token_npz;
 pub mod token_v2_numpy;
 pub mod tokenize;
 pub mod vdw_radii;
+pub mod write;
 
 pub use a3m::{parse_a3m_path, parse_a3m_str, A3mMsa, A3mSequenceMeta};
 pub use ambiguous_atoms::{
@@ -115,3 +116,7 @@ pub use msa::{write_a3m, MsaProcessor};
 pub use parser::parse_input_path as parse_input;
 pub use parser::{parse_input_path, parse_input_str};
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
+pub use write::{
+    confidence_json_filename, structure_v2_to_mmcif, structure_v2_to_pdb, write_affinity_json,
+    write_confidence_json, AffinitySummary, ConfidenceSummary, PredictionFileNames,
+};

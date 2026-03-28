@@ -1,4 +1,4 @@
-//! Prediction output helpers (intermediate JSON until structure writers land).
+//! Prediction run summary JSON. Structure export and confidence JSON live in [`crate::write`].
 
 use std::fs;
 use std::path::Path;
