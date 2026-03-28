@@ -44,6 +44,7 @@ pub fn structure_v2_single_ala() -> StructureV2Tables {
             is_present: true,
         }],
         chains: vec![ChainRow {
+            name: "A".to_string(),
             mol_type: p,
             sym_id: 0,
             asym_id: 0,

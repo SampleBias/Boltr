@@ -236,12 +236,18 @@ fn decode_residue_row(r: &[u8]) -> Result<ResidueRow> {
 }
 
 fn decode_chain_row(r: &[u8]) -> Result<ChainRow> {
+    let name = if r.len() >= 20 {
+        decode_unicode_u32(&r[0..20], 5)?
+    } else {
+        String::new()
+    };
     let (o_mt, o_ent, o_sym, o_asym, o_ai, o_an, o_ri, o_rn, o_cy) = match r.len() {
         CHAIN_AL => (20, 24, 28, 32, 36, 40, 44, 48, 52),
         CHAIN_PK => (20, 21, 25, 29, 33, 37, 41, 45, 49),
         n => bail!("chains: unexpected record size {n}"),
     };
     Ok(ChainRow {
+        name,
         mol_type: *r.get(o_mt).ok_or_else(|| anyhow!("mol_type"))? as i8,
         sym_id: read_i32_le(r, o_sym)?,
         asym_id: read_i32_le(r, o_asym)?,
@@ -460,7 +466,7 @@ fn pack_residue_aligned(res: &ResidueRow) -> [u8; RESIDUE_AL] {
 
 fn pack_chain_aligned(ch: &ChainRow) -> [u8; CHAIN_AL] {
     let mut r = [0u8; CHAIN_AL];
-    encode_u32_name(&mut r[..20], "", 5);
+    encode_u32_name(&mut r[..20], &ch.name, 5);
     r[20] = ch.mol_type as u8;
     r[24..28].copy_from_slice(&ch.entity_id.to_le_bytes());
     r[28..32].copy_from_slice(&ch.sym_id.to_le_bytes());

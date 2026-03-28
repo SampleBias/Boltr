@@ -77,10 +77,28 @@ pub struct Boltz2InterfaceInfo {
     pub valid: bool,
 }
 
-/// Template entry in a [`Boltz2Record`]; only `name` is required for filesystem paths.
+/// Template entry in a [`Boltz2Record`] (`boltz.data.types.TemplateInfo`).
+/// For real [`process_template_features`](crate::featurizer::process_template_features), set
+/// `query_chain` / `template_chain` and residue bounds; `name` selects `{record.id}_{name}.npz`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateInfo {
     pub name: String,
+    #[serde(default)]
+    pub query_chain: String,
+    #[serde(default)]
+    pub query_st: i32,
+    #[serde(default)]
+    pub query_en: i32,
+    #[serde(default)]
+    pub template_chain: String,
+    #[serde(default)]
+    pub template_st: i32,
+    #[serde(default)]
+    pub template_en: i32,
+    #[serde(default)]
+    pub force: bool,
+    #[serde(default)]
+    pub threshold: Option<f32>,
 }
 
 /// Boltz `Record` (manifest row).

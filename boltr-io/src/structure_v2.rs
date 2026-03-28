@@ -33,6 +33,8 @@ pub struct ResidueRow {
 /// One chain row (`Chain` dtype).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChainRow {
+    /// PDB chain name (e.g. `"A"`), used by template alignment (`TemplateInfo.query_chain`).
+    pub name: String,
     pub mol_type: i8,
     pub sym_id: i32,
     pub asym_id: i32,

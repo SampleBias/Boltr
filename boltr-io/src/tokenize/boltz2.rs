@@ -374,6 +374,7 @@ mod tests {
                 is_present: true,
             }],
             chains: vec![ChainRow {
+                name: String::new(),
                 mol_type: np,
                 sym_id: 0,
                 asym_id: 0,
