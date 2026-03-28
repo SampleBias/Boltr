@@ -1,83 +1,74 @@
-# Boltr - Rust Native Boltz Implementation Activity Log
+# Boltr — activity log
 
-## 2026-03-22 09:54 - Project Initialization
-- Created project structure files (tasks/todo.md, docs/activity.md, docs/PROJECT_README.md)
-- Analyzed TODO.md master implementation checklist
-- Reviewed existing codebase (boltr-cli, boltr-io, boltr-backend-tch)
+Chronological notes for **what shipped** and **when**. For the live backlog, use **[TODO.md](../TODO.md)**. For rolling featurizer notes, see **[tasks/todo.md](../tasks/todo.md)**.
 
-## 2025-03-22 - Pairformer Stack Implementation
-- Implemented full Pairformer stack (§5.5): AttentionPairBiasV2, TriangleMultiplication (incoming/outgoing), TriangleAttention (starting/ending), Transition, OuterProductMean, PairformerLayer, PairformerModule
-- Created docs/PAIRFORMER_IMPLEMENTATION.md
-- All code feature-gated behind `tch-backend`, builds clean
+---
 
-## 2025-03-22 - TrunkV2 Integration
-- Wired PairformerModule into TrunkV2 with initialization layers, normalization, recycling projections
-- Smoke tests for batch sizes,1,2,4) and recycling steps (0,1,2)
-- Created docs/TRUNKV2_INTEGRATION.md
+## How to read this file
 
-## 2026-03-23–25 - Embeddings, MSA, VarStore
-- RelativePositionEncoder + z_init path (encodersv2.py parity)
-- token_bonds / token_bonds_type encoding
-- ContactConditioning (FourierEmbedding + encoder)
-- InputEmbedder (partial: res_type + msa_profile + external a)
-- MSAModule real stack (PairWeightedAveraging, OuterProductMeanMsa, PairformerNoSeqLayer)
-- Boltz2Model wraps TrunkV2 (single VarStore, forward_trunk, predict_step_trunk)
-- LibTorch runtime fix: scripts/cargo-tch / with_dev_venv.sh for LD_LIBRARY_PATH
-- Collate smoke → predict_step_trunk integration test
+| Section | Contents |
+|--------|----------|
+| [Milestones (by theme)](#milestones-by-theme) | Backend, I/O, featurizer — major deliverables |
+| [Timeline (chronological)](#timeline-chronological) | Dated entries, shortest path through history |
+| [Current snapshot](#current-snapshot-march-2026) | Where the repo stands for the next phase |
 
-## 2026-03-27 - process_atom_features Full Rust Port
+---
 
-### Phase 1: Data type extensions
-- Extended `AtomV2Row` with `name: String`, `bfactor: f32`, `plddt: f32` fields
-- Updated `structure_v2_npz.rs` reader to decode atom name (4×U4 unicode), bfactor, plddt from packed/aligned NPZ records
-- Updated `structure_v2_npz.rs` writer to encode atom name, bfactor, plddt
-- Updated ALA fixture (`fixtures.rs`) with canonical atom names: N, CA, C, O, CB
-- Fixed all downstream `AtomV2Row` constructors in `process_token_features.rs` and `tokenize/boltz2.rs` tests
-- Generated `boltr-io/data/ambiguous_atoms.json` from upstream Boltz const.py (185 atom keys)
-- Verified: all structure_v2 roundtrip + golden NPZ tests still pass
+## Milestones (by theme)
 
-### Phase 2: process_atom_features core implementation
-- Created `process_atom_features.rs` (~1200 lines) with full parity against Python `featurizerv2.py` L1113–1540
-- `AtomFeatureTensors` struct: all 18 output tensors matching Python dict keys
-- `AtomRefDataProvider` trait for molecule-dependent fields (element, charge, chirality, conformer)
-- `StandardAminoAcidRefData`: static tables for 20 amino acids + 10 nucleic acid tokens
-  - Element mapping via `atom_name_to_element()` → `element_to_atomic_num()`
-  - Charge: all zero for canonical residues at pH 7
-  - Chirality: all `CHI_OTHER` (UNK) matching Python's default
-  - Conformer: idealized positions for ALA, heuristic fallback for others
-- `ZeroAtomRefData`: zero-fill fallback provider
-- `EnsembleFeatures` + `inference_ensemble_features()` for single-ensemble inference
-- `AtomFeatureConfig` with defaults matching Python: atoms_per_window_queries=32, min_dist=2.0, max_dist=22.0, num_bins=64
+### A. Backend (`boltr-backend-tch`) — trunk and layers
 
-### Phase 3: Feature computation details
-- `convert_atom_name()`: PDB name → 4-element ASCII encoding (ord(c)-32)
-- Backbone feature: protein (N,CA,C,O → indices 1-4) + nucleic (12 atoms ��� indices 5-16) + non-backbone (0)
-- `ref_space_uid`: chain-residue unique id per atom (matches Python `chain_res_ids`)
-- Distogram: distance binning with linspace boundaries, one-hot encoding
-- Coordinate centering: mean of resolved atom coords subtracted from all coords
-- Padding: ceil to `atoms_per_window_queries` boundary (32 for ALA → 32)
-- max_tokens padding: extends token-indexed tensors with zeros
+- **Pairformer stack (§5.5):** `AttentionPairBiasV2`, triangular mult/attn (fallback), `Transition`, `OuterProductMean`, `PairformerLayer`, `PairformerModule`. Doc: [PAIRFORMER_IMPLEMENTATION.md](PAIRFORMER_IMPLEMENTATION.md).
+- **TrunkV2:** Owns pairformer, recycling projections/norms, `forward_pairformer`, recycling loop. [boltz2/trunk.rs](../boltr-backend-tch/src/boltz2/trunk.rs).
+- **Boltz2Model:** Single `VarStore`, `forward_trunk`, `predict_step_trunk` (trunk-only; no full `predict_step` yet). [boltz2/model.rs](../boltr-backend-tch/src/boltz2/model.rs).
+- **Embeddings / init:** `RelativePositionEncoder`, `token_bonds` (+ optional type), `ContactConditioning`, partial `InputEmbedder` (res_type + msa_profile + external atom repr `a`).
+- **MSAModule:** Real stack (`PairWeightedAveraging`, `OuterProductMeanMsa`, `PairformerNoSeqLayer`); golden export + opt-in Rust test (`BOLTR_RUN_MSA_GOLDEN=1`).
+- **TemplateModule:** Stub (no template bias); still TBD for parity.
+- **Integration:** [collate_predict_trunk.rs](../boltr-backend-tch/tests/collate_predict_trunk.rs) loads `trunk_smoke_collate.safetensors` → `predict_step_trunk` + `MsaFeatures`.
+- **Tooling:** `scripts/cargo-tch`, `scripts/with_dev_venv.sh` — `LD_LIBRARY_PATH` for LibTorch when using PyTorch’s `torch/lib`.
 
-### Phase 4: Golden parity tests
-- 19 unit tests in `process_atom_features::tests`:
-  - pad_mask sum = 5, resolved mask, atom_to_token, token_to_rep_atom (CB=4), token_to_center_atom (CA=1)
-  - backbone_feat (N=1, CA=2, C=3, O=4, CB=0), ref_element (N=7, CA=6, C=6, O=8, CB=6)
-  - ref_charge=0, ref_atom_name_chars encoding, ref_space_uid=0
-  - coords centered (mean≈0), disto_target (self-distance=bin0)
-  - All padded shapes verified (32 atoms, 17 backbone classes, 128 elements, etc.)
-  - `to_feature_batch()` keys verified
-- 1 golden schema test (`atom_features_golden::tests`)
-- 1 golden allclose test (`atom_features_ala_rust_matches_python_golden_allclose`)
-- **Total: 87 boltr-io tests, 0 failures**
+### B. I/O (`boltr-io`) — preprocess-shaped data
 
-### Phase 5: Wiring
-- Updated `featurizer/mod.rs` exports: process_atom_features, AtomFeatureTensors, AtomFeatureConfig, EnsembleFeatures, inference_ensemble_features, AtomRefDataProvider, StandardAminoAcidRefData, ZeroAtomRefData, AtomRefData, all constants
-- Updated `lib.rs` re-exports for new types
-- `to_feature_batch()` integrates with existing FeatureBatch collate pipeline
-- Compatible with `trunk_smoke_feature_batch_from_inference_input`
+- **Structures:** `StructureV2` tables, [structure_v2_npz.rs](../boltr-io/src/structure_v2_npz.rs) read/write; ALA fixtures; token batch `.npz` ([token_npz.rs](../boltr-io/src/token_npz.rs)).
+- **MSA:** A3M/CSV parse, MSA `.npz`, `boltr msa-to-npz`, golden verification workflow.
+- **Tokenizer:** `tokenize_structure`, `TokenData` / bonds on `StructureV2Tables` (partial vs full Python `Tokenized` / template loop).
+- **Featurizer:** `process_token_features`, `process_msa_features`, `process_atom_features` (canonical AA + nucleic paths, `AtomRefDataProvider`), dummy templates; inference helpers on `Boltz2InferenceInput`.
+- **Collate:** `FeatureBatch`, `pad_to_max_f32`, `collate_inference_batches`, manifest + goldens under `tests/fixtures/collate_golden/`.
+- **Inference:** `load_input` + manifest JSON; `trunk_smoke_feature_batch_from_inference_input` merges token + MSA + atoms + dummy templates (no `s_inputs` — model-side).
 
-### Build status
-```
-cargo build -p boltr-io       ✅ (16 warnings, 0 errors)
-cargo test -p boltr-io        ✅ 87 passed, 0 failed
-```
+### C. CLI & repo hygiene
+
+- **`boltr download`**, partial **`predict`**, YAML parsing, `minimal_protein.yaml` fixture.
+- **Makefile / scripts:** checkpoint export, hparams export, safetensors verify, regression script placeholders.
+
+---
+
+## Timeline (chronological)
+
+| Period | Focus |
+|--------|--------|
+| **2025-03-22** | Pairformer stack + TrunkV2 wiring; project scaffold. |
+| **2026-03-23–25** | Relative position, bonds, contact conditioning, partial input embedder, MSAModule, Boltz2Model APIs, collate → `predict_step_trunk` test, LibTorch env fixes. |
+| **2026-03-23** | `boltr-io` expansion: constants, ref_atoms, MSA npz, structure npz, inference_dataset, collate goldens, tooling. |
+| **2026-03-24** | Pairformer layer Python golden + mask fix; attention pairwise mask broadcast. |
+| **2026-03-27** | Inference collate + MSA + merged `FeatureBatch`; atom golden fixtures; two-example MSA collate golden; `featurizer/mod.rs` repair + type fixes; **`atom_features_from_inference_input`** + merge + partial atom allclose vs Python safetensors (`ATOM_GOLDEN_SKIP_*` for RDKit/geometry keys); manifest `atom_features_ala_golden_keys`. |
+
+---
+
+## Current snapshot (March 2026)
+
+**In good shape**
+
+- Trunk forward path through pairformer + optional MSA; numerical goldens for pairformer layer, MSA module (opt-in), pairformer mask behavior documented.
+- End-to-end **data path** from preprocess-shaped inputs to a **single merged `FeatureBatch`** (token, MSA, atom, dummy templates) for smoke tests; `load_input` + ALA smoke fixtures.
+
+**Not done (see [TODO.md](../TODO.md))**
+
+- Full **`predict_step`** (diffusion, confidence, affinity).
+- Real **template** featurizer + **TemplateModule** (backend stub).
+- **Writers** (mmcif/pdb, prediction layout).
+- Full **schema/CCD** in Rust, full **collate dict** allclose vs Python, full **atom** allclose on identical NPZ + mols.
+
+---
+
+*This file is the narrative checkpoint; [TODO.md](../TODO.md) is the actionable checklist.*

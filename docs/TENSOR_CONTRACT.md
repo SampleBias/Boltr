@@ -46,7 +46,7 @@ Python optional `[cuda]` extra installs **cuequivariance** kernels for faster tr
 
 ## Numerical tolerances (Phase 7)
 
-Document per-test `rtol` / `atol` as goldens land (TODO.md §7):
+Document per-test `rtol` / `atol` as goldens land ([TODO.md](../TODO.md) §6.5 Testing):
 
 | Class | Typical policy |
 |-------|------------------|
