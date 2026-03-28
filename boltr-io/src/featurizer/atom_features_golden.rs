@@ -2,10 +2,9 @@
 //! ([`scripts/dump_atom_features_golden.py`](../../../scripts/dump_atom_features_golden.py)).
 //!
 //! [`tests::atom_features_ala_rust_matches_python_golden_allclose`] compares live Rust tensors
-//! (fixture [`structure_v2_single_ala`](crate::fixtures::structure_v2_single_ala) + canonical
-//! ref data) to the checked-in safetensors. The Python dump uses
-//! `structure_v2_numpy_packed_ala.npz` + RDKit mols; small numeric drift on `ref_pos` / `coords` is
-//! possible if the structure NPZ differs from the in-code fixture.
+//! ([`structure_v2_single_ala`](crate::fixtures::structure_v2_single_ala) — same geometry as
+//! `structure_v2_numpy_packed_ala.npz` — plus [`StandardAminoAcidRefData`](super::process_atom_features::StandardAminoAcidRefData)
+//! ALA RDKit-matched ref data) to the checked-in safetensors. All listed keys are compared.
 
 #[cfg(test)]
 mod tests {
@@ -135,16 +134,6 @@ mod tests {
         a.iter().cloned().collect()
     }
 
-    /// Keys excluded from Rust-vs-Python allclose: golden is built from `structure_v2_numpy_packed_ala.npz`
-    /// + RDKit `mols/*.pkl`; this test uses [`structure_v2_single_ala`] + idealized conformers.
-    const ATOM_GOLDEN_SKIP_ALCLOSE: &[&str] = &[
-        "ref_chirality", // RDKit per-atom tags vs `CHI_OTHER` in `StandardAminoAcidRefData`
-        "coords",        // input Cartesian vs packed NPZ
-        "ref_pos",       // RDKit conformer vs idealized ALA
-        "disto_coords_ensemble",
-        "disto_target", // depends on structure geometry
-    ];
-
     /// Compare Rust `process_atom_features` (ALA in-code fixture) to Python golden safetensors.
     /// Golden may use I64/BOOL where Rust uses F32; compare numerically after casting.
     #[test]
@@ -154,9 +143,6 @@ mod tests {
         let st = SafeTensors::deserialize(&bytes).expect("safetensors");
 
         for key in ATOM_FEATURE_KEYS_ALA {
-            if ATOM_GOLDEN_SKIP_ALCLOSE.contains(key) {
-                continue;
-            }
             let view = st
                 .tensor(key)
                 .unwrap_or_else(|e| panic!("golden missing {key}: {e:?}"));
@@ -181,6 +167,19 @@ mod tests {
                     let got = feat.bfactor.as_slice().unwrap().to_vec();
                     assert_golden_numeric_allclose(&view, &got, key);
                 }
+                "coords" => {
+                    let got = flatten_row_major_f32(&feat.coords.clone().into_dyn());
+                    assert_golden_numeric_allclose(&view, &got, key);
+                }
+                "disto_coords_ensemble" => {
+                    let got =
+                        flatten_row_major_f32(&feat.disto_coords_ensemble.clone().into_dyn());
+                    assert_golden_numeric_allclose(&view, &got, key);
+                }
+                "disto_target" => {
+                    let got = flatten_row_major_f32(&feat.disto_target.clone().into_dyn());
+                    assert_golden_numeric_allclose(&view, &got, key);
+                }
                 "plddt" => {
                     let got = feat.plddt.as_slice().unwrap().to_vec();
                     assert_golden_numeric_allclose(&view, &got, key);
@@ -197,8 +196,16 @@ mod tests {
                     let got = feat.ref_charge.as_slice().unwrap().to_vec();
                     assert_golden_numeric_allclose(&view, &got, key);
                 }
+                "ref_chirality" => {
+                    let got = feat.ref_chirality.as_slice().unwrap().to_vec();
+                    assert_golden_int_exact(&view, &got, key);
+                }
                 "ref_element" => {
                     let got = flatten_row_major_f32(&feat.ref_element.clone().into_dyn());
+                    assert_golden_numeric_allclose(&view, &got, key);
+                }
+                "ref_pos" => {
+                    let got = flatten_row_major_f32(&feat.ref_pos.clone().into_dyn());
                     assert_golden_numeric_allclose(&view, &got, key);
                 }
                 "ref_space_uid" => {

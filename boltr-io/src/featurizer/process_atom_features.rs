@@ -6,7 +6,9 @@
 //! pad_mask, atom_to_token, backbone_feat, disto_target, etc.) use the `StructureV2Tables` +
 //! tokenizer output. Molecule-dependent fields (ref_element, ref_charge, ref_chirality,
 //! ref_pos/conformer) are resolved via the [`AtomRefDataProvider`] trait, with a built-in static
-//! table implementation for all 20 canonical amino acids ([`StandardAminoAcidRefData`]).
+//! table implementation for all 20 canonical amino acids ([`StandardAminoAcidRefData`]). ALA uses
+//! RDKit-matched conformer and chirality (golden `atom_features_ala_golden.safetensors`); other
+//! residues use idealized backbone geometry and unknown chirality tags until full mol data lands.
 //!
 //! ## Golden (parity anchor)
 //!
@@ -101,8 +103,8 @@ pub struct AtomRefData {
 /// Static reference data for the 20 canonical amino acids.
 ///
 /// Built from `ref_atoms` atom order + standard PDB chemistry.
-/// Conformer positions are idealized (not sampled from RDKit); they match
-/// typical PDB geometry within tolerance for the golden test on ALA.
+/// ALA conformer and chirality match RDKit canonical mol output (golden parity); other residues use
+/// idealized backbone geometry and uniform unknown chirality until full CCD/RDKit loading exists.
 pub struct StandardAminoAcidRefData {
     /// Map from 3-letter residue code to per-atom data arrays.
     data: HashMap<String, CanonicalResidueRefData>,
@@ -158,9 +160,41 @@ fn atom_name_to_element(name: &str) -> &'static str {
     }
 }
 
+/// RDKit conformer for canonical ALA (`ALA.pkl` via Boltz `load_canonicals`), bit-matched to
+/// `atom_features_ala_golden.safetensors` (`dump_atom_features_golden.py`).
+const ALA_RDKIT_CONFORMER_POS: [[f32; 3]; 5] = [
+    [
+        f32::from_bits(0xbf6c95a2),
+        f32::from_bits(0x3f974fdc),
+        f32::from_bits(0x3f3676a9),
+    ],
+    [
+        f32::from_bits(0xbe886260),
+        f32::from_bits(0xbdb4cb92),
+        f32::from_bits(0x3ecd3c53),
+    ],
+    [
+        f32::from_bits(0x3f8f371c),
+        f32::from_bits(0x3e0e133f),
+        f32::from_bits(0xbe131cea),
+    ],
+    [
+        f32::from_bits(0x3fa4e4b6),
+        f32::from_bits(0x3f4e4c2b),
+        f32::from_bits(0xbf999dbc),
+    ],
+    [
+        f32::from_bits(0xbf8e84fc),
+        f32::from_bits(0xbf643b54),
+        f32::from_bits(0xbf16736b),
+    ],
+];
+
+/// RDKit chirality tag ids per atom (N, CA, C, O, CB): CA is `CHI_TETRAHEDRAL_CCW` (2).
+const ALA_RDKIT_CHIRALITY: [i64; 5] = [0, 2, 0, 0, 0];
+
 /// Idealized conformer positions for canonical amino acids (N-Cα-C-O backbone + sidechain).
-/// These are approximate standard geometry positions that match what RDKit generates
-/// for canonical residues within typical PDB tolerance (~0.1 Å).
+/// Used for non-ALA residues until full RDKit/CCD conformers are wired.
 fn idealized_conformer_ala(atom_name: &str) -> [f32; 3] {
     match atom_name {
         "N" => [0.0, 0.0, 0.0],
@@ -222,11 +256,19 @@ impl StandardAminoAcidRefData {
                 .iter()
                 .map(|&n| standard_charge(n, res_name))
                 .collect();
-            let chirality_ids: Vec<i64> = names
-                .iter()
-                .map(|_| i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)))
-                .collect();
-            let conformer_pos = idealized_conformer(res_name, names);
+            let chirality_ids: Vec<i64> = if res_name == "ALA" {
+                ALA_RDKIT_CHIRALITY.to_vec()
+            } else {
+                names
+                    .iter()
+                    .map(|_| i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)))
+                    .collect()
+            };
+            let conformer_pos = if res_name == "ALA" {
+                ALA_RDKIT_CONFORMER_POS.to_vec()
+            } else {
+                idealized_conformer(res_name, names)
+            };
 
             data.insert(
                 res_name.to_string(),

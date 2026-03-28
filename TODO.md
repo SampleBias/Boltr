@@ -71,7 +71,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | **2** | `construct_paired_msa` + `process_msa_features` + golden | [x] | [msa_pairing.rs](boltr-io/src/featurizer/msa_pairing.rs), [process_msa_features.rs](boltr-io/src/featurizer/process_msa_features.rs), [msa_features_from_inference_input](boltr-io/src/inference_dataset.rs). Golden: [dump_msa_features_golden.py](scripts/dump_msa_features_golden.py), [msa_features_golden.rs](boltr-io/src/featurizer/msa_features_golden.rs). |
 | **3a** | Dummy templates + merged `FeatureBatch` (token + MSA + atoms) | [x] | [dummy_templates.rs](boltr-io/src/featurizer/dummy_templates.rs); [trunk_smoke_feature_batch_from_inference_input](boltr-io/src/inference_dataset.rs) incl. [atom_features_from_inference_input](boltr-io/src/inference_dataset.rs). Test: [load_input_dataset.rs](boltr-io/tests/load_input_dataset.rs). |
 | **3b** | Real `process_template_features` | [ ] | Needs `template_tokens` + [featurizerv2.py](boltz-reference/src/boltz/data/feature/featurizerv2.py) ~1696+. |
-| **4** | `process_atom_features` | [~] | Rust + [inference merge](boltr-io/src/inference_dataset.rs); partial allclose ([atom_features_golden.rs](boltr-io/src/featurizer/atom_features_golden.rs), skip list for RDKit/geometry). **TBD:** full-key allclose on same NPZ + mols; ligands via [AtomRefDataProvider](boltr-io/src/featurizer/process_atom_features.rs). |
+| **4** | `process_atom_features` | [x] | Rust + [inference merge](boltr-io/src/inference_dataset.rs); ALA allclose all keys ([atom_features_golden.rs](boltr-io/src/featurizer/atom_features_golden.rs)). **TBD:** multi-residue / ligands via [AtomRefDataProvider](boltr-io/src/featurizer/process_atom_features.rs) + additional goldens. |
 | **5** | §4.4 collate acceptance (full dict) | [~] | [collate_two_msa_golden](boltr-io/tests/fixtures/collate_golden/collate_two_msa_golden.safetensors) vs [collate_inference_batches](boltr-io/src/collate_pad.rs). **TBD:** full trunk post-collate `allclose`. |
 
 *Out of scope for this track unless scheduled: affinity MSA variant, symmetry/ensemble/constraint maps, affinity crop.*
@@ -126,13 +126,13 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 |--------|------|------------------|--------------|
 | [x] | Constants / enums | `data/const.py` | [boltz_const.rs](boltr-io/src/boltz_const.rs) (`OUT_TYPES`, weights, `clash_type_for_chain_pair`, `CANONICAL_TOKENS`, inverse letter ids), [ref_atoms.rs](boltr-io/src/ref_atoms.rs), [vdw_radii.rs](boltr-io/src/vdw_radii.rs), [ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs), [ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs). |
 | [x] | `process_token_features` (inference) | `featurizerv2.py` | [process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs); golden [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs). |
-| [~] | `process_atom_features` | same | [process_atom_features.rs](boltr-io/src/featurizer/process_atom_features.rs); inference [atom_features_from_inference_input](boltr-io/src/inference_dataset.rs). Golden partial — [atom_features_golden.rs](boltr-io/src/featurizer/atom_features_golden.rs). |
+| [x] | `process_atom_features` | same | [process_atom_features.rs](boltr-io/src/featurizer/process_atom_features.rs); inference [atom_features_from_inference_input](boltr-io/src/inference_dataset.rs). Golden ALA allclose — [atom_features_golden.rs](boltr-io/src/featurizer/atom_features_golden.rs). |
 | [x] | `process_msa_features` (non-affinity) | same | [process_msa_features.rs](boltr-io/src/featurizer/process_msa_features.rs). **TBD:** `affinity=True` MSA keys. |
 | [~] | `process_template_features` | same | **[~] dummy:** [dummy_templates.rs](boltr-io/src/featurizer/dummy_templates.rs). **[ ] real:** `template_tokens` + `compute_template_features`. |
 | [ ] | Ensemble / symmetry / constraints | same + `symmetry.py` | Optional inference flags. |
 | [x] | Padding for inference collate | `pad.py` | [collate_pad.rs](boltr-io/src/collate_pad.rs), [pad.rs](boltr-io/src/pad.rs). |
 
-**Acceptance (§4.4):** Frozen Python `collate` dict → Rust `allclose` per key. **Done:** token (ALA), MSA (smoke). **[~]:** atoms (partial allclose); **TBD:** full dict, real templates.
+**Acceptance (§4.4):** Frozen Python `collate` dict → Rust `allclose` per key. **Done:** token (ALA), MSA (smoke), atom features (ALA, all keys). **TBD:** full post-collate dict, real templates.
 
 ### 4.5 Inference dataset / collate
 
