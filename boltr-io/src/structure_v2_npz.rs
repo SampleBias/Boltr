@@ -431,6 +431,22 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
     })
 }
 
+fn pack_ensemble_npy(s: &StructureV2Tables) -> Result<Vec<u8>> {
+    let ncoord = i32::try_from(s.coords.len()).unwrap_or(i32::MAX);
+    if s.ensemble.is_empty() {
+        let mut ens = [0u8; ENSEMBLE_AL];
+        ens[0..4].copy_from_slice(&s.ensemble_atom_coord_idx.to_le_bytes());
+        ens[4..8].copy_from_slice(&ncoord.to_le_bytes());
+        return write_npy_1d(DESCR_ENSEMBLE, 1, &ens);
+    }
+    let mut ens_v = Vec::with_capacity(s.ensemble.len() * ENSEMBLE_AL);
+    for e in &s.ensemble {
+        ens_v.extend_from_slice(&e.atom_coord_idx.to_le_bytes());
+        ens_v.extend_from_slice(&e.atom_num.to_le_bytes());
+    }
+    write_npy_1d(DESCR_ENSEMBLE, s.ensemble.len(), &ens_v)
+}
+
 // --- Writer (aligned layout only) ---
 
 const DESCR_ATOM: &str =

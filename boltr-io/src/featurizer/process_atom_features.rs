@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use ndarray::{Array1, Array2, Array3, Array4};
 
+use super::process_ensemble_features::EnsembleFeatures;
 use crate::boltz_const::{chain_type_id, chirality_type_id, NUM_ELEMENTS, UNK_CHIRALITY_TYPE};
 use crate::feature_batch::FeatureBatch;
 use crate::ref_atoms::{
@@ -563,22 +564,6 @@ fn pad_2d_f32_dim0_i64(arr: &Array2<i64>, target_tokens: usize) -> Array2<i64> {
     out
 }
 
-// ─── Ensemble features (simplified for inference) ─────────────────────────────
-
-/// Minimal ensemble features for inference (single-ensemble, no sampling).
-#[derive(Debug, Clone)]
-pub struct EnsembleFeatures {
-    /// Indices into `structure.ensemble` (always `[0]` for fix_single_ensemble).
-    pub ensemble_ref_idxs: Vec<usize>,
-}
-
-/// Build inference ensemble features (single ensemble, first conformer).
-pub fn inference_ensemble_features() -> EnsembleFeatures {
-    EnsembleFeatures {
-        ensemble_ref_idxs: vec![0],
-    }
-}
-
 // ─── Main process_atom_features ───────────────────────────────────────────────
 
 /// Parameters for `process_atom_features`.
@@ -641,11 +626,14 @@ pub fn process_atom_features(
     let ensemble_atom_starts: Vec<i64> = ensemble_features
         .ensemble_ref_idxs
         .iter()
-        .map(|&idx| i64::from(structure.ensemble_atom_coord_idx) + 0)
-        // For a single-ensemble structure, ensemble[0].atom_coord_idx == ensemble_atom_coord_idx
+        .map(|&idx| {
+            structure
+                .ensemble
+                .get(idx)
+                .map(|e| i64::from(e.atom_coord_idx))
+                .unwrap_or_else(|| i64::from(structure.ensemble_atom_coord_idx))
+        })
         .collect();
-
-    let e_offsets = i64::from(structure.ensemble_atom_coord_idx);
 
     // Chain-residue unique id tracking (matches Python `chain_res_ids`)
     let mut chain_res_ids: HashMap<(i32, i32), usize> = HashMap::new();
@@ -780,10 +768,11 @@ pub fn process_atom_features(
             }
         }
 
-        // Distogram coords: [n_ensemble, 3]
-        let di = (e_offsets + token.disto_idx as i64) as usize;
-        let dc = structure.coords.get(di).copied().unwrap_or([0.0; 3]);
-        for _ in &ensemble_features.ensemble_ref_idxs {
+        // Distogram coords: [n_ensemble, 3] — one center per selected conformer
+        for &e_ref in &ensemble_features.ensemble_ref_idxs {
+            let base = structure.ensemble_base_offset(e_ref);
+            let di = (base + token.disto_idx as i64) as usize;
+            let dc = structure.coords.get(di).copied().unwrap_or([0.0; 3]);
             disto_coords_ensemble.extend_from_slice(&dc);
         }
 
