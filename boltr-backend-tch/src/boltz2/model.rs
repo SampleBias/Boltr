@@ -11,6 +11,9 @@ use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore
 use tch::{Device, Kind, Tensor};
 
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
+use super::diffusion::{AtomDiffusion, AtomDiffusionConfig, DiffusionSampleOutput};
+use super::diffusion_conditioning::{DiffusionConditioning, DiffusionConditioningOutput};
+use super::distogram::{BFactorModule, DistogramModule};
 use super::input_embedder::InputEmbedder;
 use super::msa_module::{MsaFeatures, MsaModule};
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
@@ -21,7 +24,8 @@ use crate::checkpoint::load_tensor_from_safetensors;
 /// `len(const.bond_types) + 1` in Boltz (`boltz-reference/.../const.py`).
 pub const BOND_TYPE_EMBEDDING_NUM: i64 = 7;
 
-/// Boltz2 inference skeleton: trunk + pairformer + `rel_pos` + token-bond bias on a shared [`VarStore`].
+/// Boltz2 inference model: trunk + pairformer + diffusion conditioning + structure module +
+/// distogram/bfactor heads on a shared [`VarStore`].
 pub struct Boltz2Model {
     device: Device,
     var_store: VarStore,
@@ -35,21 +39,76 @@ pub struct Boltz2Model {
     contact_conditioning: ContactConditioning,
     /// Partial `input_embedder`: `res_type` + `msa_profile` linears; pass atom-attn `a` from outside.
     input_embedder: InputEmbedder,
+    /// Pre-computes conditioning for the diffusion score model.
+    diffusion_conditioning: DiffusionConditioning,
+    /// EDM sampler + score network.
+    structure_module: AtomDiffusion,
+    /// Predicted distogram logits from pair representation.
+    distogram_module: DistogramModule,
+    /// Optional B-factor head.
+    bfactor_module: Option<BFactorModule>,
     token_s: i64,
     token_z: i64,
+    atom_s: i64,
+    atom_z: i64,
+    num_bins: i64,
+}
+
+/// Boltz2 default score model / diffusion hyper-parameters (matching Python defaults).
+#[derive(Debug, Clone)]
+pub struct Boltz2DiffusionArgs {
+    pub atom_s: i64,
+    pub atom_z: i64,
+    pub atoms_per_window_queries: i64,
+    pub atoms_per_window_keys: i64,
+    pub atom_encoder_depth: i64,
+    pub atom_encoder_heads: i64,
+    pub token_transformer_depth: i64,
+    pub token_transformer_heads: i64,
+    pub atom_decoder_depth: i64,
+    pub atom_decoder_heads: i64,
+    pub atom_feature_dim: i64,
+    pub conditioning_transition_layers: i64,
+    pub dim_fourier: i64,
+    pub num_bins: i64,
+    pub predict_bfactor: bool,
+}
+
+impl Default for Boltz2DiffusionArgs {
+    fn default() -> Self {
+        Self {
+            atom_s: 128,
+            atom_z: 16,
+            atoms_per_window_queries: 32,
+            atoms_per_window_keys: 128,
+            atom_encoder_depth: 3,
+            atom_encoder_heads: 4,
+            token_transformer_depth: 24,
+            token_transformer_heads: 8,
+            atom_decoder_depth: 3,
+            atom_decoder_heads: 4,
+            atom_feature_dim: 128,
+            conditioning_transition_layers: 2,
+            dim_fourier: 256,
+            num_bins: 64,
+            predict_bfactor: false,
+        }
+    }
 }
 
 impl Boltz2Model {
     /// Build from exported Lightning `hyper_parameters` JSON ([`Boltz2Hparams`]).
     pub fn from_hparams_json(device: Device, json_bytes: &[u8]) -> Result<Self> {
         let h = Boltz2Hparams::from_json_slice(json_bytes)?;
-        Ok(Self::with_options_bonds(
+        Self::with_all_options(
             device,
             h.resolved_token_s(),
             h.resolved_token_z(),
             h.resolved_num_pairformer_blocks(),
             h.resolved_bond_type_feature(),
-        ))
+            Boltz2DiffusionArgs::default(),
+            AtomDiffusionConfig::default(),
+        )
     }
 
     /// Build with default pairformer depth (`4` blocks) and `token_z = 128`.
@@ -75,6 +134,29 @@ impl Boltz2Model {
         num_pairformer_blocks: Option<i64>,
         bond_type_feature: bool,
     ) -> Self {
+        Self::with_all_options(
+            device,
+            token_s,
+            token_z,
+            num_pairformer_blocks,
+            bond_type_feature,
+            Boltz2DiffusionArgs::default(),
+            AtomDiffusionConfig::default(),
+        )
+        .expect("default diffusion args should not fail")
+    }
+
+    /// Full constructor with all diffusion / head arguments.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_all_options(
+        device: Device,
+        token_s: i64,
+        token_z: i64,
+        num_pairformer_blocks: Option<i64>,
+        bond_type_feature: bool,
+        diff_args: Boltz2DiffusionArgs,
+        diff_config: AtomDiffusionConfig,
+    ) -> Result<Self> {
         let var_store = VarStore::new(device);
         let root = var_store.root();
         let trunk = TrunkV2::new(
@@ -113,7 +195,60 @@ impl Boltz2Model {
         let contact_conditioning =
             ContactConditioning::new(root.sub("contact_conditioning"), token_z, 4.0, 20.0);
         let input_embedder = InputEmbedder::new(root.sub("input_embedder"), token_s);
-        Self {
+
+        let diffusion_conditioning = DiffusionConditioning::new(
+            root.sub("diffusion_conditioning"),
+            token_s,
+            token_z,
+            diff_args.atom_s,
+            diff_args.atom_z,
+            diff_args.atoms_per_window_queries,
+            diff_args.atoms_per_window_keys,
+            diff_args.atom_encoder_depth,
+            diff_args.atom_encoder_heads,
+            diff_args.token_transformer_depth,
+            diff_args.token_transformer_heads,
+            diff_args.atom_decoder_depth,
+            diff_args.atom_decoder_heads,
+            diff_args.atom_feature_dim,
+            diff_args.conditioning_transition_layers,
+            device,
+        );
+
+        let structure_module = AtomDiffusion::new(
+            root.sub("structure_module"),
+            token_s,
+            diff_args.atom_s,
+            diff_args.atoms_per_window_queries,
+            diff_args.atoms_per_window_keys,
+            diff_args.dim_fourier,
+            diff_args.atom_encoder_depth,
+            diff_args.atom_encoder_heads,
+            diff_args.token_transformer_depth,
+            diff_args.token_transformer_heads,
+            diff_args.atom_decoder_depth,
+            diff_args.atom_decoder_heads,
+            diff_args.conditioning_transition_layers,
+            diff_config,
+            device,
+        );
+
+        let distogram_module = DistogramModule::new(
+            root.sub("distogram_module"),
+            token_z,
+            diff_args.num_bins,
+            None,
+        );
+
+        let bfactor_module = diff_args.predict_bfactor.then(|| {
+            BFactorModule::new(
+                root.sub("bfactor_module"),
+                token_s,
+                diff_args.num_bins,
+            )
+        });
+
+        Ok(Self {
             device,
             var_store,
             trunk,
@@ -122,9 +257,16 @@ impl Boltz2Model {
             token_bonds_type,
             contact_conditioning,
             input_embedder,
+            diffusion_conditioning,
+            structure_module,
+            distogram_module,
+            bfactor_module,
             token_s,
             token_z,
-        }
+            atom_s: diff_args.atom_s,
+            atom_z: diff_args.atom_z,
+            num_bins: diff_args.num_bins,
+        })
     }
 
     pub fn device(&self) -> Device {
@@ -360,15 +502,97 @@ impl Boltz2Model {
             .forward_from_init(&s_init, &z_init, recycling_steps, msa_feats)
     }
 
-    /// Full structure forward is not wired until diffusion + featurizer match Python.
-    pub fn forward_structure(&self, _feats: &Tensor) -> Result<Tensor> {
-        anyhow::bail!(
-            "Boltz2 full structure forward not yet implemented; use forward_trunk(s_inputs, ...) with embedder outputs"
+    pub fn diffusion_conditioning(&self) -> &DiffusionConditioning {
+        &self.diffusion_conditioning
+    }
+
+    pub fn structure_module(&self) -> &AtomDiffusion {
+        &self.structure_module
+    }
+
+    pub fn distogram_module(&self) -> &DistogramModule {
+        &self.distogram_module
+    }
+
+    pub fn bfactor_module(&self) -> Option<&BFactorModule> {
+        self.bfactor_module.as_ref()
+    }
+
+    pub fn atom_s(&self) -> i64 {
+        self.atom_s
+    }
+
+    pub fn atom_z(&self) -> i64 {
+        self.atom_z
+    }
+
+    pub fn num_bins(&self) -> i64 {
+        self.num_bins
+    }
+
+    /// Run `DiffusionConditioning` on trunk outputs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn forward_diffusion_conditioning(
+        &self,
+        s_trunk: &Tensor,
+        z_trunk: &Tensor,
+        relative_position_encoding: &Tensor,
+        ref_pos: &Tensor,
+        ref_charge: &Tensor,
+        ref_element: &Tensor,
+        atom_pad_mask: &Tensor,
+        ref_space_uid: &Tensor,
+        atom_to_token: &Tensor,
+    ) -> DiffusionConditioningOutput {
+        self.diffusion_conditioning.forward(
+            s_trunk,
+            z_trunk,
+            relative_position_encoding,
+            ref_pos,
+            ref_charge,
+            ref_element,
+            atom_pad_mask,
+            ref_space_uid,
+            atom_to_token,
+        )
+    }
+
+    /// Run the distogram head on pair representation `z`.
+    pub fn forward_distogram(&self, z: &Tensor) -> Tensor {
+        self.distogram_module.forward(z)
+    }
+
+    /// Run the B-factor head on single representation `s` (returns `None` if disabled).
+    pub fn forward_bfactor(&self, s: &Tensor) -> Option<Tensor> {
+        self.bfactor_module.as_ref().map(|m| m.forward(s))
+    }
+
+    /// Run the full reverse-diffusion sampling.
+    #[allow(clippy::too_many_arguments)]
+    pub fn forward_diffusion_sample(
+        &self,
+        s_inputs: &Tensor,
+        s_trunk: &Tensor,
+        cond: &DiffusionConditioningOutput,
+        token_pad_mask: &Tensor,
+        atom_pad_mask: &Tensor,
+        atom_to_token: &Tensor,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+    ) -> DiffusionSampleOutput {
+        self.structure_module.sample(
+            s_inputs,
+            s_trunk,
+            cond,
+            token_pad_mask,
+            atom_pad_mask,
+            atom_to_token,
+            num_sampling_steps,
+            multiplicity,
         )
     }
 
     /// `predict_step`-shaped entry: **trunk only** (recycling + MSA/template stubs + pairformer).
-    /// Diffusion sampling and confidence heads are not called yet (§5.6–5.7).
     pub fn predict_step_trunk(
         &self,
         s_inputs: &Tensor,

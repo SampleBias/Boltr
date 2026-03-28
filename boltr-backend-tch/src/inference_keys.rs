@@ -24,6 +24,10 @@ pub const BOLTZ2_INFERENCE_TOP_LEVEL_KEYS: &[&str] = &[
     "token_bonds_type",
     "contact_conditioning",
     "input_embedder",
+    "diffusion_conditioning",
+    "structure_module",
+    "distogram_module",
+    "bfactor_module",
 ];
 
 #[inline]

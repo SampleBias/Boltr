@@ -197,7 +197,8 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [ ] | `DiffusionConditioning`, `AtomDiffusion`, score model, distogram, B-factor | Placeholder [diffusion.rs](boltr-backend-tch/src/boltz2/diffusion.rs) |
+| [x] | `DiffusionConditioning` + `AtomDiffusion` (v2) + score model | Ported from [`diffusion_conditioning.py`](boltz-reference/src/boltz/model/modules/diffusion_conditioning.py) and [`diffusionv2.py`](boltz-reference/src/boltz/model/modules/diffusionv2.py). New files: [diffusion_conditioning.rs](boltr-backend-tch/src/boltz2/diffusion_conditioning.rs), [diffusion.rs](boltr-backend-tch/src/boltz2/diffusion.rs) (`DiffusionModule` score network + `AtomDiffusion` EDM sampler), [encoders.rs](boltr-backend-tch/src/boltz2/encoders.rs) (`FourierEmbedding`, `SingleConditioning`, `PairwiseConditioning`, `AtomEncoder`, `AtomAttentionEncoder`, `AtomAttentionDecoder`), [transformers.rs](boltr-backend-tch/src/boltz2/transformers.rs) (`AdaLN`, `ConditionedTransitionBlock`, `DiffusionTransformer`, `AtomTransformer`). Wired into [model.rs](boltr-backend-tch/src/boltz2/model.rs) with `forward_diffusion_conditioning`, `forward_diffusion_sample`, `predict_step_trunk`. **TBD:** golden test for one reverse-diffusion step vs Python on a tiny batch (needs LibTorch). |
+| [x] | `DistogramModule`, optional `BFactorModule`, wiring | [distogram.rs](boltr-backend-tch/src/boltz2/distogram.rs): `DistogramModule(z + z^T → Linear → reshape)`, `BFactorModule(s → Linear)`. Wired into [model.rs](boltr-backend-tch/src/boltz2/model.rs) as `distogram_module` and optional `bfactor_module`; exposed via `forward_distogram()`, `forward_bfactor()`. Checkpoint keys added to [inference_keys.rs](boltr-backend-tch/src/inference_keys.rs). |
 
 ### 5.7 Confidence
 
@@ -221,8 +222,8 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [~] | Trunk-only predict | [predict_step_trunk](boltr-backend-tch/src/boltz2/model.rs) — recycling + trunk + optional MSA; template stub. |
-| [ ] | Full `predict_step` | Diffusion + confidence + affinity + writers. |
+| [x] | Trunk-only predict | [predict_step_trunk](boltr-backend-tch/src/boltz2/model.rs) — recycling + trunk + optional MSA; template stub. |
+| [~] | Full `predict_step` | **Trunk + diffusion + distogram/bfactor wired** (`forward_diffusion_conditioning`, `forward_diffusion_sample`, `forward_distogram`, `forward_bfactor`). Missing: confidence + affinity + writers (§5.7–5.8). |
 | [ ] | Recycling loop parity | Match `predict_args` step counts. |
 
 ---
