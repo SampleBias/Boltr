@@ -15,8 +15,9 @@ use serde_json::Value;
 use crate::a3m::A3mMsa;
 use crate::boltz_const::MAX_MSA_SEQS;
 use crate::featurizer::{
-    dummy_templates_as_feature_batch, process_msa_features, process_token_features, MsaFeatureTensors,
-    TokenFeatureTensors,
+    dummy_templates_as_feature_batch, inference_ensemble_features, process_atom_features,
+    process_msa_features, process_token_features, AtomFeatureConfig, AtomFeatureTensors,
+    MsaFeatureTensors, StandardAminoAcidRefData, TokenFeatureTensors,
 };
 use crate::feature_batch::FeatureBatch;
 use crate::msa_npz::read_msa_npz_path;
@@ -238,6 +239,26 @@ pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> Toke
     process_token_features(&tokens, &bonds, None)
 }
 
+/// Atom-level features after `load_input`: `tokenize_structure` + [`process_atom_features`](crate::featurizer::process_atom_features).
+///
+/// Uses [`StandardAminoAcidRefData`] for canonical residue chemistry (matches Boltz `load_canonicals`
+/// for standard amino acids). **Ligands and residues requiring RDKit / CCD mol graphs** need a
+/// different [`AtomRefDataProvider`](crate::AtomRefDataProvider)
+/// once wired.
+#[must_use]
+pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomFeatureTensors {
+    let (tokens, _bonds) = tokenize_structure(&input.structure, None);
+    let provider = StandardAminoAcidRefData::new();
+    let config = AtomFeatureConfig::default();
+    process_atom_features(
+        &tokens,
+        &input.structure,
+        &inference_ensemble_features(),
+        &provider,
+        &config,
+    )
+}
+
 /// MSA tensors after `load_input`: `tokenize_structure` + [`process_msa_features`](crate::featurizer::process_msa_features).
 ///
 /// Uses deterministic RNG seed **42** (matches typical Boltz inference seeding in `inferencev2`).
@@ -259,12 +280,15 @@ pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFea
     )
 }
 
-/// Token + MSA + dummy template tensors in one [`FeatureBatch`] (no atom features, no `s_inputs`).
+/// Token + MSA + atom + dummy template tensors in one [`FeatureBatch`].
 ///
 /// Matches the featurizer slice Boltz merges before the input embedder: `process_token_features`,
-/// `process_msa_features`, and [`load_dummy_templates_features`](crate::featurizer::load_dummy_templates_features)
+/// `process_msa_features`, [`process_atom_features`](crate::featurizer::process_atom_features), and
+/// [`load_dummy_templates_features`](crate::featurizer::load_dummy_templates_features)
 /// with `template_dim` template slots and `num_tokens` from the token path. Use `template_dim = 1` to mirror
 /// Python when templates are absent.
+///
+/// Does **not** include `s_inputs` (computed inside the model from the embedder stack).
 #[must_use]
 pub fn trunk_smoke_feature_batch_from_inference_input(
     input: &Boltz2InferenceInput,
@@ -273,8 +297,10 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
     let tok = token_features_from_inference_input(input);
     let n = tok.token_index.len();
     let msa = msa_features_from_inference_input(input);
+    let atoms = atom_features_from_inference_input(input);
     let mut batch = tok.to_feature_batch();
     batch.merge(msa.to_feature_batch());
+    batch.merge(atoms.to_feature_batch());
     batch.merge(dummy_templates_as_feature_batch(template_dim, n));
     batch
 }

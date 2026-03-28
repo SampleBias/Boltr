@@ -44,6 +44,26 @@
     "query_to_template": {"rank": 2, "shape": "[T, N]", "dtype": "int64"},
     "visibility_ids": {"rank": 2, "shape": "[T, N]", "dtype": "float32"}
   },
+  "atom_features_ala_golden_keys": [
+    "atom_backbone_feat",
+    "atom_pad_mask",
+    "atom_resolved_mask",
+    "atom_to_token",
+    "bfactor",
+    "coords",
+    "disto_coords_ensemble",
+    "disto_target",
+    "plddt",
+    "r_set_to_rep_atom",
+    "ref_atom_name_chars",
+    "ref_charge",
+    "ref_chirality",
+    "ref_element",
+    "ref_pos",
+    "ref_space_uid",
+    "token_to_center_atom",
+    "token_to_rep_atom"
+  ],
   "token_features_ala_golden_keys": [
     "token_index",
     "residue_index",

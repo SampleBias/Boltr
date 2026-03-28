@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use ndarray::{Array1, Array2, Array3, Array4, ArrayD, Ix1, IxDyn};
+use ndarray::{Array1, Array2, Array3, Array4};
 
 use crate::boltz_const::{chain_type_id, chirality_type_id, NUM_ELEMENTS, UNK_CHIRALITY_TYPE};
 use crate::feature_batch::FeatureBatch;
@@ -218,9 +218,7 @@ impl StandardAminoAcidRefData {
             let charges: Vec<f32> = names.iter().map(|&n| standard_charge(n, res_name)).collect();
             let chirality_ids: Vec<i64> = names
                 .iter()
-                .map(|_| {
-                    chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)
-                })
+                .map(|_| i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)))
                 .collect();
             let conformer_pos = idealized_conformer(res_name, names);
 
@@ -268,7 +266,7 @@ impl AtomRefDataProvider for ZeroAtomRefData {
         Some(AtomRefData {
             atomic_nums: vec![0; n],
             charges: vec![0.0; n],
-            chirality_ids: vec![chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6); n],
+            chirality_ids: vec![i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6)); n],
             conformer_pos: vec![[0.0; 3]; n],
         })
     }
@@ -566,7 +564,7 @@ pub fn process_atom_features(
     let rna_chain = chain_type_id("RNA").unwrap() as i8;
     let nonpoly_chain = chain_type_id("NONPOLYMER").unwrap() as i8;
 
-    let unk_chir_id = chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6);
+    let unk_chir_id = i64::from(chirality_type_id(UNK_CHIRALITY_TYPE).unwrap_or(6));
 
     // Ensemble atom starts
     let ensemble_atom_starts: Vec<i64> = ensemble_features

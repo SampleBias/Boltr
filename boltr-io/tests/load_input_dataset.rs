@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use boltr_io::{
     load_input, msa_features_from_inference_input, parse_manifest_path, process_token_features,
     structure_v2_single_ala, token_features_from_inference_input,
-    tokenize::boltz2::tokenize_structure, trunk_smoke_feature_batch_from_inference_input, A3mMsa,
-    A3mSequenceMeta,
+    tokenize::boltz2::tokenize_structure, trunk_smoke_feature_batch_from_inference_input,
+    ATOM_FEATURE_KEYS_ALA, A3mMsa, A3mSequenceMeta,
 };
 
 fn fixture_dir() -> PathBuf {
@@ -84,7 +84,7 @@ fn load_input_msa_features_runs() {
 }
 
 /// Featurizer keys expected by [`boltr_io::collate_golden::trunk_smoke_collate_path`] minus `s_inputs`
-/// (computed inside the model, not the featurizer).
+/// (computed inside the model, not the featurizer), plus atom keys from [`ATOM_FEATURE_KEYS_ALA`].
 #[test]
 fn trunk_smoke_feature_batch_covers_collate_manifest_keys() {
     let dir = fixture_dir();
@@ -107,6 +107,12 @@ fn trunk_smoke_feature_batch_covers_collate_manifest_keys() {
         assert!(
             batch.tensors.contains_key(key),
             "trunk smoke batch missing {key}"
+        );
+    }
+    for key in ATOM_FEATURE_KEYS_ALA {
+        assert!(
+            batch.tensors.contains_key(*key),
+            "trunk smoke batch missing atom key {key}"
         );
     }
 }
