@@ -1,17 +1,26 @@
 //! Partial Boltz2 hyperparameters from Lightning checkpoints (`hyper_parameters` dict).
 //!
 //! Export JSON with [`scripts/export_hparams_from_ckpt.py`](../../scripts/export_hparams_from_ckpt.py).
+//!
+//! Typed fields mirror common top-level keys in [`Boltz2`](../../../boltz-reference/src/boltz/model/models/boltz2.py);
+//! anything else is preserved in [`Boltz2Hparams::other`].
 
 use anyhow::Result;
 use serde::Deserialize;
 
-/// Subset of keys used to size the Rust inference graph. Extend as needed.
+/// Subset of keys used to size the Rust inference graph; nested dicts kept as JSON.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Boltz2Hparams {
+    #[serde(default)]
+    pub atom_s: Option<i64>,
+    #[serde(default)]
+    pub atom_z: Option<i64>,
     #[serde(default)]
     pub token_s: Option<i64>,
     #[serde(default)]
     pub token_z: Option<i64>,
+    #[serde(default)]
+    pub num_bins: Option<i64>,
     #[serde(default)]
     pub num_blocks: Option<i64>,
     /// Matches Python `Boltz2(bond_type_feature=…)` when present in checkpoint hparams.
@@ -19,6 +28,33 @@ pub struct Boltz2Hparams {
     pub bond_type_feature: Option<bool>,
     #[serde(default)]
     pub pairformer_args: Option<PairformerArgs>,
+    #[serde(default)]
+    pub embedder_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub msa_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub training_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub validation_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub score_model_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub diffusion_process_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub diffusion_loss_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub confidence_model_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub affinity_model_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub template_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub predict_args: Option<serde_json::Value>,
+    #[serde(default)]
+    pub steering_args: Option<serde_json::Value>,
+    /// Remaining Lightning `hyper_parameters` keys (flags, optimizers, etc.).
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -62,6 +98,21 @@ impl Boltz2Hparams {
     pub fn resolved_bond_type_feature(&self) -> bool {
         self.bond_type_feature.unwrap_or(false)
     }
+
+    /// `training_args["recycling_steps"]` when present (Boltz2 training / finetune scripts).
+    #[must_use]
+    pub fn recycling_steps_from_training_args(&self) -> Option<i64> {
+        self.training_args
+            .as_ref()
+            .and_then(|v| v.get("recycling_steps"))
+            .and_then(|x| x.as_i64())
+    }
+
+    /// Count of extra top-level keys stored in [`Self::other`].
+    #[must_use]
+    pub fn other_key_count(&self) -> usize {
+        self.other.len()
+    }
 }
 
 #[cfg(test)]
@@ -78,6 +129,7 @@ mod tests {
         assert_eq!(h.resolved_token_z(), 128);
         assert_eq!(h.resolved_num_pairformer_blocks(), Some(4));
         assert!(!h.resolved_bond_type_feature());
+        assert_eq!(h.other_key_count(), 0);
     }
 
     #[test]
@@ -94,5 +146,32 @@ mod tests {
         let h = Boltz2Hparams::from_json_slice(&raw).unwrap();
         assert_eq!(h.resolved_token_s(), 384);
         assert_eq!(h.resolved_token_z(), 128);
+    }
+
+    #[test]
+    fn preserves_unknown_top_level_in_other() {
+        let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4, "confidence_prediction": true, "ema": true}"#;
+        let h = Boltz2Hparams::from_json_slice(j).unwrap();
+        assert_eq!(h.other.get("confidence_prediction"), Some(&serde_json::json!(true)));
+        assert_eq!(h.other.get("ema"), Some(&serde_json::json!(true)));
+    }
+
+    #[test]
+    fn nested_training_args_and_recycling_steps() {
+        let j = br#"{"token_s": 384, "token_z": 128, "training_args": {"recycling_steps": 3, "max_lr": 0.001}}"#;
+        let h = Boltz2Hparams::from_json_slice(j).unwrap();
+        assert_eq!(h.recycling_steps_from_training_args(), Some(3));
+        assert!(h.training_args.as_ref().unwrap().get("max_lr").is_some());
+    }
+
+    #[test]
+    fn parses_sample_full_fixture() {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hparams/sample_full.json");
+        let raw = std::fs::read(&p).expect("sample_full.json");
+        let h = Boltz2Hparams::from_json_slice(&raw).unwrap();
+        assert_eq!(h.atom_s, Some(128));
+        assert_eq!(h.resolved_token_s(), 384);
+        assert!(h.embedder_args.is_some());
+        assert!(h.other.contains_key("use_templates"));
     }
 }

@@ -160,8 +160,8 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 |--------|------|--------------|
 | [x] | Device + CUDA check | [device.rs](boltr-backend-tch/src/device.rs) |
 | [x] | Safetensors load | [checkpoint.rs](boltr-backend-tch/src/checkpoint.rs) |
-| [~] | Full `VarStore` mapping | Smoke [boltz2_smoke.safetensors](boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors); **TBD:** full checkpoint allowlist. |
-| [~] | Config struct | [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs) + JSON; **TBD:** full Lightning parity. |
+| [~] | Full `VarStore` mapping | Smoke [boltz2_smoke.safetensors](boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors); **inference key taxonomy:** [`inference_keys.rs`](boltr-backend-tch/src/inference_keys.rs) [`BOLTZ2_INFERENCE_TOP_LEVEL_KEYS`](boltr-backend-tch/src/inference_keys.rs), [`partition_safetensors_keys_for_inference`](boltr-backend-tch/src/inference_keys.rs), [`Boltz2Model::partition_checkpoint_keys_for_inference`](boltr-backend-tch/src/boltz2/model.rs); [`verify_boltz2_safetensors --partition`](boltr-backend-tch/src/bin/verify_boltz2_safetensors.rs). **TBD:** optional strict allowlist load when graph grows (template/diffusion ports). |
+| [~] | Config struct | [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs): nested `embedder_args` / `msa_args` / `training_args` / … + [`serde` flatten `other`](boltr-backend-tch/src/boltz_hparams.rs); fixtures [minimal.json](boltr-backend-tch/tests/fixtures/hparams/minimal.json), [sample_full.json](boltr-backend-tch/tests/fixtures/hparams/sample_full.json). **TBD:** deserialize every Boltz2 `__init__` field 1:1 if needed. |
 
 ### 5.2 Embeddings and trunk input
 

@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 
 use boltr_backend_tch::Boltz2Model;
+use boltr_backend_tch::partition_safetensors_keys_for_inference;
 use tch::Device;
 
 fn usage() -> ! {
@@ -21,6 +22,7 @@ Options:
   --token-z N           pair width (default 128)
   --blocks N            pairformer depth (default 4)
   --bond-type-feature   match checkpoints with bond_type_feature=true
+  --partition           print inference vs other key counts (see BOLTZ2_INFERENCE_TOP_LEVEL_KEYS)
 "
     );
     std::process::exit(2);
@@ -32,6 +34,7 @@ fn main() {
     let mut token_z = 128_i64;
     let mut blocks: Option<i64> = None;
     let mut bond_type = false;
+    let mut partition = false;
     let mut path: Option<PathBuf> = None;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -65,6 +68,10 @@ fn main() {
             }
             "--bond-type-feature" => {
                 bond_type = true;
+                i += 1;
+            }
+            "--partition" => {
+                partition = true;
                 i += 1;
             }
             s if s.starts_with('-') => {
@@ -107,6 +114,23 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    if partition {
+        let names = match boltr_backend_tch::list_safetensor_names(path.as_path()) {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("{e:#}");
+                std::process::exit(1);
+            }
+        };
+        let (infer, other) = partition_safetensors_keys_for_inference(&names);
+        eprintln!(
+            "Partition: {} inference-related keys, {} other keys (diffusion/confidence/affinity/template/…)",
+            infer.len(),
+            other.len()
+        );
+        eprintln!("Inference top-level prefixes: {:?}", boltr_backend_tch::BOLTZ2_INFERENCE_TOP_LEVEL_KEYS);
+    }
 
     let n_vs = model.var_store().variables().len();
     eprintln!("VarStore parameters: {n_vs}");

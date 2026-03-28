@@ -5,8 +5,12 @@
 // implementing the neural network architecture and tensor operations.
 
 pub mod boltz_hparams;
+pub mod inference_keys;
 
 pub use boltz_hparams::Boltz2Hparams;
+pub use inference_keys::{
+    partition_safetensors_keys_for_inference, BOLTZ2_INFERENCE_TOP_LEVEL_KEYS,
+};
 
 #[cfg(feature = "tch-backend")]
 pub mod attention;

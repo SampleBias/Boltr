@@ -250,6 +250,17 @@ impl Boltz2Model {
         crate::checkpoint::safetensor_names_not_in_var_store(path, &self.var_store)
     }
 
+    /// Classify all tensor names in a `.safetensors` file into Rust inference–related keys vs
+    /// other heads (see [`crate::inference_keys::BOLTZ2_INFERENCE_TOP_LEVEL_KEYS`]).
+    pub fn partition_checkpoint_keys_for_inference(
+        path: &Path,
+    ) -> Result<(Vec<String>, Vec<String>)> {
+        let names = crate::checkpoint::list_safetensor_names(path)?;
+        Ok(crate::inference_keys::partition_safetensors_keys_for_inference(
+            &names,
+        ))
+    }
+
     /// [`load_partial_from_safetensors`] then fail if any model parameter was not found in the file.
     pub fn load_from_safetensors_require_all_vars(&mut self, path: &Path) -> Result<()> {
         let missing = self.load_partial_from_safetensors(path)?;
