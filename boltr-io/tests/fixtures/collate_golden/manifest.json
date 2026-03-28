@@ -3,46 +3,190 @@
   "source": "boltz src/boltz/data/feature/featurizerv2.py (process merge + process_token_features return)",
   "notes": "Shapes are nominal for B=1; N_tokens, N_atoms, S_msa vary by target. Dtypes: model typically float32; indices int64.",
   "process_token_features": {
-    "token_index": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "residue_index": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "asym_id": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "entity_id": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "sym_id": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "mol_type": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "res_type": {"rank": 3, "shape": "[N, num_tokens]", "dtype": "float32"},
-    "disto_center": {"rank": 2, "shape": "[N, 3]", "dtype": "float32"},
-    "token_bonds": {"rank": 3, "shape": "[N, N, 1]", "dtype": "float32"},
-    "type_bonds": {"rank": 2, "shape": "[N, N]", "dtype": "int64"},
-    "token_pad_mask": {"rank": 1, "shape": "[N]", "dtype": "float32"},
-    "token_resolved_mask": {"rank": 1, "shape": "[N]", "dtype": "float32"},
-    "token_disto_mask": {"rank": 1, "shape": "[N]", "dtype": "float32"},
-    "contact_conditioning": {"rank": 3, "shape": "[N, N, C_contact]", "dtype": "float32"},
-    "contact_threshold": {"rank": 2, "shape": "[N, N]", "dtype": "float32"},
-    "method_feature": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "modified": {"rank": 1, "shape": "[N]", "dtype": "int64"},
-    "cyclic_period": {"rank": 1, "shape": "[N]", "dtype": "float32"},
-    "affinity_token_mask": {"rank": 1, "shape": "[N]", "dtype": "float32"}
+    "token_index": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "residue_index": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "asym_id": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "entity_id": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "sym_id": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "mol_type": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "res_type": {
+      "rank": 3,
+      "shape": "[N, num_tokens]",
+      "dtype": "float32"
+    },
+    "disto_center": {
+      "rank": 2,
+      "shape": "[N, 3]",
+      "dtype": "float32"
+    },
+    "token_bonds": {
+      "rank": 3,
+      "shape": "[N, N, 1]",
+      "dtype": "float32"
+    },
+    "type_bonds": {
+      "rank": 2,
+      "shape": "[N, N]",
+      "dtype": "int64"
+    },
+    "token_pad_mask": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    },
+    "token_resolved_mask": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    },
+    "token_disto_mask": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    },
+    "contact_conditioning": {
+      "rank": 3,
+      "shape": "[N, N, C_contact]",
+      "dtype": "float32"
+    },
+    "contact_threshold": {
+      "rank": 2,
+      "shape": "[N, N]",
+      "dtype": "float32"
+    },
+    "method_feature": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "modified": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "int64"
+    },
+    "cyclic_period": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    },
+    "affinity_token_mask": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    }
   },
   "process_msa_features_non_affinity": {
-    "msa": {"rank": 2, "shape": "[S_msa, N]", "dtype": "int64"},
-    "msa_paired": {"rank": 2, "shape": "[S_msa, N]", "dtype": "int64"},
-    "deletion_value": {"rank": 2, "shape": "[S_msa, N]", "dtype": "float32"},
-    "has_deletion": {"rank": 2, "shape": "[S_msa, N]", "dtype": "int64"},
-    "deletion_mean": {"rank": 1, "shape": "[N]", "dtype": "float32"},
-    "profile": {"rank": 2, "shape": "[N, num_tokens]", "dtype": "float32"},
-    "msa_mask": {"rank": 2, "shape": "[S_msa, N]", "dtype": "int64"}
+    "msa": {
+      "rank": 2,
+      "shape": "[S_msa, N]",
+      "dtype": "int64"
+    },
+    "msa_paired": {
+      "rank": 2,
+      "shape": "[S_msa, N]",
+      "dtype": "int64"
+    },
+    "deletion_value": {
+      "rank": 2,
+      "shape": "[S_msa, N]",
+      "dtype": "float32"
+    },
+    "has_deletion": {
+      "rank": 2,
+      "shape": "[S_msa, N]",
+      "dtype": "int64"
+    },
+    "deletion_mean": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
+    },
+    "profile": {
+      "rank": 2,
+      "shape": "[N, num_tokens]",
+      "dtype": "float32"
+    },
+    "msa_mask": {
+      "rank": 2,
+      "shape": "[S_msa, N]",
+      "dtype": "int64"
+    }
   },
   "load_dummy_templates_features": {
-    "template_restype": {"rank": 3, "shape": "[T, N, num_tokens]", "dtype": "float32"},
-    "template_frame_rot": {"rank": 4, "shape": "[T, N, 3, 3]", "dtype": "float32"},
-    "template_frame_t": {"rank": 3, "shape": "[T, N, 3]", "dtype": "float32"},
-    "template_cb": {"rank": 3, "shape": "[T, N, 3]", "dtype": "float32"},
-    "template_ca": {"rank": 3, "shape": "[T, N, 3]", "dtype": "float32"},
-    "template_mask_cb": {"rank": 2, "shape": "[T, N]", "dtype": "float32"},
-    "template_mask_frame": {"rank": 2, "shape": "[T, N]", "dtype": "float32"},
-    "template_mask": {"rank": 2, "shape": "[T, N]", "dtype": "float32"},
-    "query_to_template": {"rank": 2, "shape": "[T, N]", "dtype": "int64"},
-    "visibility_ids": {"rank": 2, "shape": "[T, N]", "dtype": "float32"}
+    "template_restype": {
+      "rank": 3,
+      "shape": "[T, N, num_tokens]",
+      "dtype": "float32"
+    },
+    "template_frame_rot": {
+      "rank": 4,
+      "shape": "[T, N, 3, 3]",
+      "dtype": "float32"
+    },
+    "template_frame_t": {
+      "rank": 3,
+      "shape": "[T, N, 3]",
+      "dtype": "float32"
+    },
+    "template_cb": {
+      "rank": 3,
+      "shape": "[T, N, 3]",
+      "dtype": "float32"
+    },
+    "template_ca": {
+      "rank": 3,
+      "shape": "[T, N, 3]",
+      "dtype": "float32"
+    },
+    "template_mask_cb": {
+      "rank": 2,
+      "shape": "[T, N]",
+      "dtype": "float32"
+    },
+    "template_mask_frame": {
+      "rank": 2,
+      "shape": "[T, N]",
+      "dtype": "float32"
+    },
+    "template_mask": {
+      "rank": 2,
+      "shape": "[T, N]",
+      "dtype": "float32"
+    },
+    "query_to_template": {
+      "rank": 2,
+      "shape": "[T, N]",
+      "dtype": "int64"
+    },
+    "visibility_ids": {
+      "rank": 2,
+      "shape": "[T, N]",
+      "dtype": "float32"
+    }
   },
   "atom_features_ala_golden_keys": [
     "atom_backbone_feat",
@@ -97,5 +241,21 @@
     "profile",
     "template_restype",
     "template_mask"
+  ],
+  "residue_constraints_keys": [
+    "rdkit_bounds_index",
+    "rdkit_bounds_bond_mask",
+    "rdkit_bounds_angle_mask",
+    "rdkit_upper_bounds",
+    "rdkit_lower_bounds",
+    "chiral_atom_index",
+    "chiral_reference_mask",
+    "chiral_atom_orientations",
+    "stereo_bond_index",
+    "stereo_reference_mask",
+    "stereo_bond_orientations",
+    "planar_bond_index",
+    "planar_ring_5_index",
+    "planar_ring_6_index"
   ]
 }

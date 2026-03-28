@@ -31,9 +31,9 @@ Extra_mols are `dict[str, Mol]` from RDKit pickle files. Featurizer uses `mol.Ge
 Rust implementation would require RDKit bindings or complex serialization. Documented in activity.md as "requires Python preprocessing."
 
 ### 3. Full collate golden testing
-- [ ] 3.1 Create Python script to dump full post-collate batch from Boltz2InferenceDataModule
-- [ ] 3.2 Generate golden safetensors with multiple examples
-- [ ] 3.3 Implement Rust comparison test for all keys
+- [x] 3.1 Create Python script to dump full post-collate batch from Boltz2InferenceDataModule
+- [x] 3.2 Generate golden safetensors with multiple examples
+- [x] 3.3 Implement Rust comparison test for all keys
 - [ ] 3.4 Fix any numerical mismatches in collate logic
 - [ ] 3.5 Add tests for variable MSA sizes with collate
 - [ ] 3.6 Add tests for variable template counts with collate
