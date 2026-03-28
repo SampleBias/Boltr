@@ -29,6 +29,7 @@ pub mod ref_atoms;
 pub mod structure_v2;
 pub mod structure_v2_npz;
 pub mod token_npz;
+pub mod token_v2_numpy;
 pub mod tokenize;
 pub mod vdw_radii;
 
@@ -75,6 +76,10 @@ pub use structure_v2_npz::{
 pub use token_npz::{
     read_token_batch_npz_bytes, read_token_batch_npz_path, write_token_batch_npz_compressed,
     write_token_batch_npz_to_vec,
+};
+pub use token_v2_numpy::{
+    decode_res_name_unicode_u8, encode_res_name_unicode_u8, pack_token_v2_row, unpack_token_v2_row,
+    TOKEN_V2_NUMPY_ITEMSIZE,
 };
 pub use tokenize::boltz2::{compute_frame, tokenize_structure, TokenBondV2, TokenData};
 /// Backward-compatible name for parsed YAML root.

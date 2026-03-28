@@ -118,7 +118,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
 | [x] | `Boltz2Tokenizer` / core tokenize | `tokenize/boltz2.py` | [tokenize/boltz2.rs](boltr-io/src/tokenize/boltz2.rs), [`tokenize_boltz2_inference`](boltr-io/src/inference_dataset.rs) + [`TokenizeBoltz2Input`](boltr-io/src/inference_dataset.rs). Tests: preprocess [`load_input_smoke`](boltr-io/tests/fixtures/load_input_smoke) + template loop parity. |
-| [~] | Token/atom bookkeeping | `types.py` | [token_npz.rs](boltr-io/src/token_npz.rs); `boltr tokens-to-npz`. **TBD:** exact `TokenV2` numpy padding if required. |
+| [x] | Token/atom bookkeeping | `types.py` (`TokenV2`) | [token_npz.rs](boltr-io/src/token_npz.rs), [token_v2_numpy.rs](boltr-io/src/token_v2_numpy.rs) — packed `TokenV2` rows (`TOKEN_V2_NUMPY_ITEMSIZE=164`, `|V164` `t_tokens_v2.npy`); `boltr tokens-to-npz`. |
 
 ### 4.4 Featurizer (Boltz2)
 

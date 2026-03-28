@@ -1,8 +1,9 @@
 //! Columnar NumPy `.npz` for Boltz2 token batches (`TokenData` / token bonds).
 //!
-//! Layout is **not** a single structured `TokenV2` array (alignment/padding differs by NumPy version);
-//! it is a zip of `.npy` files keyed under `t_*` and `bond_*` so Python can
-//! `np.load(...); np.testing.assert_equal` per field or rebuild `dtype=TokenV2` for parity tests.
+//! Columnar `t_*.npy` files are the primary format for diffing and Python reloads. Additionally,
+//! **`t_tokens_v2.npy`** stores one opaque row per token (`dtype='|V164'`, shape `(N,)`) that matches
+//! the packed Boltz [`TokenV2`](crate::token_v2_numpy::TOKEN_V2_NUMPY_ITEMSIZE) layout (see
+//! [`crate::token_v2_numpy`]) — use `arr.view(np.dtype(TokenV2))` in Python when itemsizes match.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -13,6 +14,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
+use crate::token_v2_numpy::{
+    decode_res_name_unicode_u8, encode_res_name_unicode_u8, pack_token_v2_row, unpack_token_v2_row,
+    TOKEN_V2_NUMPY_ITEMSIZE,
+};
 use crate::tokenize::boltz2::{TokenBondV2, TokenData};
 
 const MAGIC_PREFIX: &[u8] = b"\x93NUMPY";
@@ -25,6 +30,7 @@ const DESCR_I1: &str = "'|i1'";
 const DESCR_U1: &str = "'|u1'";
 const DESCR_U4: &str = "'<u4'";
 const DESCR_F4: &str = "'<f4'";
+const DESCR_V164: &str = "'|V164'";
 
 fn shape_repr(dims: &[usize]) -> String {
     match dims.len() {
@@ -94,35 +100,6 @@ fn bool_to_u1(b: bool) -> u8 {
     u8::from(b)
 }
 
-fn encode_res_name_u32(s: &str) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    for (i, ch) in s.chars().take(8).enumerate() {
-        let u = ch as u32;
-        out[i * 4..i * 4 + 4].copy_from_slice(&u.to_le_bytes());
-    }
-    out
-}
-
-fn decode_res_name_u32(chunk: &[u8]) -> Result<String> {
-    if chunk.len() != 32 {
-        bail!("res_name chunk len {}", chunk.len());
-    }
-    let mut s = String::new();
-    for i in 0..8 {
-        let u = u32::from_le_bytes(
-            chunk[i * 4..i * 4 + 4]
-                .try_into()
-                .map_err(|_| anyhow!("res_name slice"))?,
-        );
-        if u == 0 {
-            break;
-        }
-        let ch = char::from_u32(u).ok_or_else(|| anyhow!("invalid res_name scalar {u}"))?;
-        s.push(ch);
-    }
-    Ok(s)
-}
-
 fn build_token_npz_blobs(
     tokens: &[TokenData],
     bonds: &[TokenBondV2],
@@ -165,7 +142,7 @@ fn build_token_npz_blobs(
 
     let mut res_name = Vec::with_capacity(n * 32);
     for t in tokens {
-        res_name.extend_from_slice(&encode_res_name_u32(&t.res_name));
+        res_name.extend_from_slice(&encode_res_name_unicode_u8(&t.res_name));
     }
     cols.insert(
         "t_res_name.npy".to_string(),
@@ -232,6 +209,15 @@ fn build_token_npz_blobs(
     cols.insert(
         "t_affinity_mask.npy".to_string(),
         write_npy(DESCR_U1, &[n], &ab)?,
+    );
+
+    let mut packed_v2 = Vec::with_capacity(n * TOKEN_V2_NUMPY_ITEMSIZE);
+    for t in tokens {
+        packed_v2.extend_from_slice(&pack_token_v2_row(t));
+    }
+    cols.insert(
+        "t_tokens_v2.npy".to_string(),
+        write_npy(DESCR_V164, &[n], &packed_v2)?,
     );
 
     let mut b1 = Vec::with_capacity(m * 4);
@@ -504,7 +490,8 @@ pub fn read_token_batch_npz_bytes(zip_bytes: &[u8]) -> Result<(Vec<TokenData>, V
         frame_rot.copy_from_slice(&rot_flat[base_r..base_r + 9]);
         let mut frame_t = [0.0_f32; 3];
         frame_t.copy_from_slice(&ft_flat[base_c..base_c + 3]);
-        let name = decode_res_name_u32(&rpay[i * 32..i * 32 + 32])?;
+        let rn: &[u8; 32] = rpay[i * 32..i * 32 + 32].try_into().unwrap();
+        let name = decode_res_name_unicode_u8(rn)?;
         tokens.push(TokenData {
             token_idx: token_idx[i],
             atom_idx: atom_idx[i],
@@ -531,6 +518,22 @@ pub fn read_token_batch_npz_bytes(zip_bytes: &[u8]) -> Result<(Vec<TokenData>, V
         });
     }
 
+    if let Ok(npy_v2) = read_zip_npy(&mut archive, "t_tokens_v2") {
+        let (shape, payload) = parse_npy_shape_and_payload(&npy_v2)?;
+        if shape.len() == 1 && shape[0] == n && payload.len() == n * TOKEN_V2_NUMPY_ITEMSIZE {
+            for i in 0..n {
+                let s = i * TOKEN_V2_NUMPY_ITEMSIZE;
+                let row: &[u8; TOKEN_V2_NUMPY_ITEMSIZE] = payload[s..s + TOKEN_V2_NUMPY_ITEMSIZE]
+                    .try_into()
+                    .map_err(|_| anyhow!("t_tokens_v2 row slice"))?;
+                let td = unpack_token_v2_row(row)?;
+                if td != tokens[i] {
+                    bail!("t_tokens_v2 row {i} disagrees with columnar token decode");
+                }
+            }
+        }
+    }
+
     Ok((tokens, bonds))
 }
 
@@ -549,6 +552,24 @@ mod tests {
         let (back_t, back_b) = read_token_batch_npz_bytes(&raw).unwrap();
         assert_eq!(back_t, tokens);
         assert_eq!(back_b, bonds);
+    }
+
+    #[test]
+    fn npz_includes_packed_tokens_v2_void() {
+        let s = structure_v2_single_ala();
+        let (tokens, bonds) = tokenize_structure(&s, None);
+        let raw = write_token_batch_npz_to_vec(&tokens, &bonds).unwrap();
+        let cursor = Cursor::new(&raw);
+        let mut ar = ZipArchive::new(cursor).unwrap();
+        let mut buf = Vec::new();
+        ar.by_name("t_tokens_v2.npy")
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        let (_, pay) = parse_npy_shape_and_payload(&buf).unwrap();
+        assert_eq!(pay.len(), TOKEN_V2_NUMPY_ITEMSIZE);
+        let row: &[u8; TOKEN_V2_NUMPY_ITEMSIZE] = pay.try_into().unwrap();
+        assert_eq!(unpack_token_v2_row(row).unwrap(), tokens[0]);
     }
 
     #[test]
