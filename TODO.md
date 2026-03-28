@@ -138,9 +138,9 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | `load_input` | `inferencev2.py` | [inference_dataset.rs](boltr-io/src/inference_dataset.rs). **TBD:** `ResidueConstraints`, `extra_mols` pickle. |
-| [~] | `collate` | same | [feature_batch.rs](boltr-io/src/feature_batch.rs), [collate_pad.rs](boltr-io/src/collate_pad.rs), [manifest.json](boltr-io/tests/fixtures/collate_golden/manifest.json). **TBD:** full post-collate golden. |
-| [ ] | Affinity crop | `crop/affinity.py` | If affinity inference parity required. |
+| [x] | `load_input` | `inferencev2.py` | [inference_dataset.rs](boltr-io/src/inference_dataset.rs): `ResidueConstraints` from `constraints_dir`; `extra_mols` via [`CcdMolProvider::load_all_json_in_dir`](boltr-io/src/ccd.rs) when `extra_mols_dir` is set (JSON extracted from Boltz pickle cache). |
+| [~] | `collate` | same | [feature_batch.rs](boltr-io/src/feature_batch.rs), [collate_pad.rs](boltr-io/src/collate_pad.rs), [manifest.json](boltr-io/tests/fixtures/collate_golden/manifest.json). **Done:** [post_collate_golden.rs](boltr-io/tests/post_collate_golden.rs) key coverage vs `trunk_smoke_collate.safetensors` (same target as smoke). **TBD:** full post-collate `allclose` with golden generated from the same manifest/preprocess as Rust. |
+| [~] | Affinity crop | `crop/affinity.py` | [crop_affinity.rs](boltr-io/src/featurizer/crop_affinity.rs): `AffinityCropper` + `AffinityTokenized`; identity crop; [`Boltz2Tokenized`](boltr-io/src/inference_dataset.rs) `From` conversions. **TBD:** parity with Python distance/chain expansion. |
 
 ### 4.6 Output writers
 

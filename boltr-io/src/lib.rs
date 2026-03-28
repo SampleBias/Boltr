@@ -58,14 +58,15 @@ pub use collate_golden::{
 pub use ccd::{serialize_ccd_mol_json, CcdAtom, CcdBond, CcdMolData, CcdMolProvider};
 pub use config::BoltzInput;
 pub use featurizer::{
-    ala_tokenized_smoke, dummy_templates_as_feature_batch, inference_ensemble_features,
-    inference_residue_constraint_features, load_dummy_templates_features, pad_template_tdim,
-    process_atom_features, process_ensemble_features, process_msa_features, process_symmetry_features,
-    process_template_features, process_token_features, stack_template_feature_rows, token_feature_key_names,
+    ala_tokenized_smoke, atom_ref_data_from_ccd_mol, dummy_templates_as_feature_batch,
+    inference_ensemble_features, inference_residue_constraint_features, load_dummy_templates_features,
+    pad_template_tdim, process_atom_features, process_ensemble_features, process_msa_features,
+    process_symmetry_features, process_template_features, process_token_features,
+    stack_template_feature_rows, token_feature_key_names, AffinityCropper, AffinityTokenized,
     AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
-    MsaFeatureTensors, ResidueConstraintTensors, StandardAminoAcidRefData, SymmetryFeatures,
-    TemplateAlignment, TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA,
-    CONTACT_CONDITIONING_NUM_CLASSES,
+    InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors, StandardAminoAcidRefData,
+    SymmetryFeatures, TemplateAlignment, TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT,
+    ATOM_FEATURE_KEYS_ALA, CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};

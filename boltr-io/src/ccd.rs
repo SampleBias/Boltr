@@ -130,6 +130,12 @@ impl CcdMolProvider {
         self.mols.insert(mol.code.clone(), mol);
     }
 
+    /// Look up a molecule already loaded in memory (no disk I/O).
+    #[must_use]
+    pub fn get_loaded(&self, ccd_code: &str) -> Option<&CcdMolData> {
+        self.mols.get(ccd_code)
+    }
+
     /// Get a molecule by CCD code, loading from `mol_dir` if needed.
     ///
     /// Returns `None` if the molecule is not found in memory or on disk.
@@ -180,6 +186,25 @@ impl CcdMolProvider {
                     provider.insert(mol);
                 }
             }
+        }
+        Ok(provider)
+    }
+
+    /// Load every `*.json` file in `dir` (Boltz `extra_mols` cache as pre-extracted JSON).
+    ///
+    /// Molecule codes come from each file's `"code"` field (see [`load_ccd_json`]). This mirrors
+    /// Python loading a dict of extra CCD mols without RDKit pickles.
+    pub fn load_all_json_in_dir(dir: &Path) -> Result<Self> {
+        let mut provider = Self::new();
+        for ent in std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
+            let ent = ent?;
+            let path = ent.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let mol = load_ccd_json(&path)
+                .with_context(|| format!("load extra mol JSON {}", path.display()))?;
+            provider.insert(mol);
         }
         Ok(provider)
     }
@@ -386,6 +411,15 @@ mod tests {
         assert_eq!(m.code, "SAH");
         assert_eq!(m.num_heavy_atoms, 1);
         assert!(m.is_single_atom());
+    }
+
+    #[test]
+    fn load_all_json_in_dir_empty_is_ok() {
+        let dir = std::env::temp_dir().join(format!("boltr_empty_mols_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let p = CcdMolProvider::load_all_json_in_dir(&dir).expect("load_all");
+        assert!(p.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

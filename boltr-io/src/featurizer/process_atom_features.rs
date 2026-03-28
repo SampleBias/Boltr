@@ -29,6 +29,7 @@ use ndarray::{Array1, Array2, Array3, Array4};
 
 use super::process_ensemble_features::EnsembleFeatures;
 use crate::boltz_const::{chain_type_id, chirality_type_id, NUM_ELEMENTS, UNK_CHIRALITY_TYPE};
+use crate::ccd::{CcdMolData, CcdMolProvider};
 use crate::feature_batch::FeatureBatch;
 use crate::ref_atoms::{
     nucleic_backbone_atom_index, protein_backbone_atom_index, ref_atom_names,
@@ -321,7 +322,49 @@ impl AtomRefDataProvider for ZeroAtomRefData {
     }
 }
 
-// ─── Output tensors ────────────────���──────────────────────────────────────────
+/// Reference atom data from a [`CcdMolData`] graph when PDB atom names match the structure.
+#[must_use]
+pub fn atom_ref_data_from_ccd_mol(mol: &CcdMolData, atom_names: &[&str]) -> Option<AtomRefData> {
+    let mut atomic_nums = Vec::with_capacity(atom_names.len());
+    let mut charges = Vec::with_capacity(atom_names.len());
+    let mut chirality_ids = Vec::with_capacity(atom_names.len());
+    let mut conformer_pos = Vec::with_capacity(atom_names.len());
+    for name in atom_names {
+        let (_, atom) = mol.atom_by_name(name)?;
+        atomic_nums.push(i64::from(atom.atomic_num));
+        charges.push(atom.formal_charge as f32);
+        chirality_ids.push(i64::from(
+            chirality_type_id(atom.chirality_tag.as_str()).unwrap_or(6),
+        ));
+        conformer_pos.push(atom.conformer_coords);
+    }
+    Some(AtomRefData {
+        atomic_nums,
+        charges,
+        chirality_ids,
+        conformer_pos,
+    })
+}
+
+/// Standard amino-acid / nucleic [`StandardAminoAcidRefData`] with optional extra CCD molecules
+/// (same role as Boltz `extra_mols` after JSON extraction).
+pub struct InferenceAtomRefProvider<'a> {
+    pub standard: &'a StandardAminoAcidRefData,
+    pub extra_mols: Option<&'a CcdMolProvider>,
+}
+
+impl AtomRefDataProvider for InferenceAtomRefProvider<'_> {
+    fn get_ref_data(&self, res_name: &str, atom_names: &[&str]) -> Option<AtomRefData> {
+        if let Some(r) = self.standard.get_ref_data(res_name, atom_names) {
+            return Some(r);
+        }
+        let extra = self.extra_mols?;
+        let mol = extra.get_loaded(res_name)?;
+        atom_ref_data_from_ccd_mol(mol, atom_names)
+    }
+}
+
+// ─── Output tensors ───────────────────────────────────────────────────────────
 
 /// Atom-level tensors for one example (no batch axis), aligned with Python atom_features dict.
 #[derive(Debug, Clone)]

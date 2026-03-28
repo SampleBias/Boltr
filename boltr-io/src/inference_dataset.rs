@@ -2,7 +2,9 @@
 //! [`boltz-reference/src/boltz/data/module/inferencev2.py`](../../boltz-reference/src/boltz/data/module/inferencev2.py).
 //!
 //! Loads preprocess artifacts (`StructureV2` `.npz`, per-chain `MSA` `.npz`, optional template
-//! structures, optional residue constraints). Extra molecules pickle loading is not implemented.
+//! structures, optional residue constraints). Extra molecules: load `*.json` from
+//! [`CcdMolProvider::load_all_json_in_dir`](crate::ccd::CcdMolProvider::load_all_json_in_dir) when
+//! `extra_mols_dir` is set (Boltz pickle cache must be pre-extracted to JSON).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,13 +16,14 @@ use serde_json::Value;
 
 use crate::a3m::A3mMsa;
 use crate::boltz_const::MAX_MSA_SEQS;
+use crate::ccd::CcdMolProvider;
 use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
     inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
     process_atom_features, process_msa_features, process_symmetry_features,
     process_template_features, process_token_features,
-    AtomFeatureConfig, AtomFeatureTensors, MsaFeatureTensors, StandardAminoAcidRefData,
-    TemplateAlignment, TokenFeatureTensors,
+    AtomFeatureConfig, AtomFeatureTensors, InferenceAtomRefProvider, MsaFeatureTensors,
+    StandardAminoAcidRefData, TemplateAlignment, TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
 use crate::residue_constraints::ResidueConstraints;
@@ -165,7 +168,7 @@ pub fn parse_manifest_path(path: &Path) -> Result<Boltz2Manifest> {
     parse_manifest_json(&data).with_context(|| format!("manifest {}", path.display()))
 }
 
-/// Loaded preprocess bundle matching Python `Input` (subset: no RDKit / pickle fields yet).
+/// Loaded preprocess bundle matching Python `Input` (subset: no RDKit pickle in Rust).
 #[derive(Debug, Clone)]
 pub struct Boltz2InferenceInput {
     pub structure: StructureV2Tables,
@@ -174,6 +177,8 @@ pub struct Boltz2InferenceInput {
     /// Template id → structure tables (`{record.id}_{template_id}.npz`).
     pub templates: Option<HashMap<String, StructureV2Tables>>,
     pub residue_constraints: Option<ResidueConstraints>,
+    /// Optional extra CCD molecules (ligands, modified residues) from `extra_mols_dir` (`*.json`).
+    pub extra_mols: Option<CcdMolProvider>,
 }
 
 /// Token/bond tensors from Boltz [`Boltz2Tokenizer`](TokenizeBoltz2Input) — mirrors Python
@@ -184,6 +189,26 @@ pub struct Boltz2Tokenized {
     pub bonds: Vec<TokenBondV2>,
     pub template_tokens: Option<HashMap<String, Vec<TokenData>>>,
     pub template_bonds: Option<HashMap<String, Vec<TokenBondV2>>>,
+}
+
+impl From<&Boltz2Tokenized> for crate::featurizer::AffinityTokenized {
+    fn from(t: &Boltz2Tokenized) -> Self {
+        Self {
+            tokens: t.tokens.clone(),
+            bonds: t.bonds.clone(),
+        }
+    }
+}
+
+impl From<crate::featurizer::AffinityTokenized> for Boltz2Tokenized {
+    fn from(a: crate::featurizer::AffinityTokenized) -> Self {
+        Self {
+            tokens: a.tokens,
+            bonds: a.bonds,
+            template_tokens: None,
+            template_bonds: None,
+        }
+    }
 }
 
 /// Ligand `asym_id` to mark with `affinity_mask`, parsed from manifest `record.affinity` (Python `AffinityInfo.chain_id`).
@@ -270,11 +295,10 @@ fn msa_id_is_active(msa_id: &Value) -> bool {
 /// Load preprocess data for one record (Python `load_input`).
 ///
 /// **Supported:** structure + MSAs; optional template `.npz` when `record.templates` and
-/// `template_dir` are set; optional residue constraints from `constraints_dir`.
+/// `template_dir` are set; optional residue constraints from `constraints_dir`; optional
+/// `extra_mols_dir` with one `*.json` file per CCD code (see [`CcdMolProvider::load_all_json_in_dir`]).
 /// When `affinity == true`, loads `{target_dir}/{id}/pre_affinity_{id}.npz` instead of
 /// `{target_dir}/{id}.npz` (Boltz preprocess layout).
-///
-/// **Not implemented:** `extra_mols_dir` (returns an error if set).
 pub fn load_input(
     record: &Boltz2Record,
     target_dir: &Path,
@@ -284,9 +308,13 @@ pub fn load_input(
     extra_mols_dir: Option<&Path>,
     affinity: bool,
 ) -> Result<Boltz2InferenceInput> {
-    if extra_mols_dir.is_some() {
-        bail!("load_input: extra_mols pickle loading is not implemented; pass extra_mols_dir=None");
-    }
+    let extra_mols = match extra_mols_dir {
+        Some(dir) => Some(
+            CcdMolProvider::load_all_json_in_dir(dir)
+                .with_context(|| format!("load_input: extra_mols_dir {}", dir.display()))?,
+        ),
+        None => None,
+    };
     let structure_path = if affinity {
         target_dir
             .join(&record.id)
@@ -341,6 +369,7 @@ pub fn load_input(
         record: record.clone(),
         templates,
         residue_constraints: residue_constraints_local,
+        extra_mols,
     })
 }
 
@@ -359,14 +388,17 @@ pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> Toke
 /// Atom-level features after `load_input`: `tokenize_structure` + [`process_atom_features`](crate::featurizer::process_atom_features).
 ///
 /// Uses [`StandardAminoAcidRefData`] for canonical residue chemistry (matches Boltz `load_canonicals`
-/// for standard amino acids). **Ligands and residues requiring RDKit / CCD mol graphs** need a
-/// different [`AtomRefDataProvider`](crate::AtomRefDataProvider)
-/// once wired.
+/// for standard amino acids). When [`Boltz2InferenceInput::extra_mols`] is set, non-standard
+/// residues are resolved via [`InferenceAtomRefProvider`] and CCD JSON graphs.
 #[must_use]
 pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomFeatureTensors {
     let aff = affinity_asym_id_from_record(&input.record);
     let (tokens, _bonds) = tokenize_structure(&input.structure, aff);
-    let provider = StandardAminoAcidRefData::new();
+    let standard = StandardAminoAcidRefData::new();
+    let provider = InferenceAtomRefProvider {
+        standard: &standard,
+        extra_mols: input.extra_mols.as_ref(),
+    };
     let config = AtomFeatureConfig::default();
     process_atom_features(
         &tokens,
@@ -546,6 +578,7 @@ mod tests {
             record,
             templates: Some(templates),
             residue_constraints: None,
+            extra_mols: None,
         };
         let out = TokenizeBoltz2Input::tokenize(&Boltz2Tokenizer, &input);
         let (main_t, main_b) = tokenize_structure(&s, None);
@@ -573,5 +606,25 @@ mod tests {
         assert!(batch.tensors.contains_key("all_coords"), "missing all_coords");
         assert!(batch.tensors.contains_key("all_resolved_mask"), "missing all_resolved_mask");
         assert!(batch.tensors.contains_key("crop_to_all_atom_map"), "missing crop_to_all_atom_map");
+    }
+
+    #[test]
+    fn load_input_extra_mols_dir_empty_ok() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
+        let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+        let empty = std::env::temp_dir().join(format!("boltr_extra_mols_{}", std::process::id()));
+        std::fs::create_dir_all(&empty).expect("mkdir");
+        let input = load_input(
+            &manifest.records[0],
+            &dir,
+            &dir,
+            None,
+            None,
+            Some(&empty),
+            false,
+        )
+        .expect("load_input");
+        let _ = std::fs::remove_dir_all(&empty);
+        assert!(input.extra_mols.as_ref().is_some_and(|m| m.is_empty()));
     }
 }

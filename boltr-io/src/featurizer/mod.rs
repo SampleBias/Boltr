@@ -6,6 +6,7 @@
 //! and empty residue-constraint tensors (`process_symmetry_features`, `process_ensemble_features`,
 //! `inference_residue_constraint_features`) mirror Boltz optional inference outputs (see module docs).
 
+pub mod crop_affinity;
 pub mod dummy_templates;
 pub mod msa_pairing;
 pub mod process_ensemble_features;
@@ -24,6 +25,7 @@ mod msa_features_golden;
 #[cfg(test)]
 mod token_features_golden;
 
+pub use crop_affinity::{AffinityCropper, AffinityTokenized};
 pub use dummy_templates::{
     dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
 };
@@ -38,8 +40,9 @@ pub use process_symmetry_features::{
     process_symmetry_features, ChainSwap, SymmetryFeatures,
 };
 pub use process_atom_features::{
-    process_atom_features, AtomFeatureConfig, AtomFeatureTensors, AtomRefData, AtomRefDataProvider,
-    StandardAminoAcidRefData, ZeroAtomRefData, ALA_STANDARD_HEAVY_ATOM_COUNT,
+    atom_ref_data_from_ccd_mol, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
+    AtomRefData, AtomRefDataProvider, InferenceAtomRefProvider, StandardAminoAcidRefData,
+    ZeroAtomRefData, ALA_STANDARD_HEAVY_ATOM_COUNT,
     ATOMS_PER_WINDOW_QUERIES, ATOM_FEATURE_KEYS_ALA, ATOM_NAME_VOCAB_SIZE, DEFAULT_MAX_DIST,
     DEFAULT_MIN_DIST, DEFAULT_NUM_BINS, NUM_BACKBONE_FEAT_CLASSES,
 };
