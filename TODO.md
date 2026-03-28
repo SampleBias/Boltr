@@ -124,7 +124,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Python reference | Deliverables |
 |--------|------|------------------|--------------|
-| [~] | Constants / enums | `data/const.py` | [boltz_const.rs](boltr-io/src/boltz_const.rs), [ref_atoms.rs](boltr-io/src/ref_atoms.rs), [vdw_radii.rs](boltr-io/src/vdw_radii.rs), [ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs), [ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs). **TBD:** remaining large `const.py` maps. |
+| [x] | Constants / enums | `data/const.py` | [boltz_const.rs](boltr-io/src/boltz_const.rs) (`OUT_TYPES`, weights, `clash_type_for_chain_pair`, `CANONICAL_TOKENS`, inverse letter ids), [ref_atoms.rs](boltr-io/src/ref_atoms.rs), [vdw_radii.rs](boltr-io/src/vdw_radii.rs), [ligand_exclusion.rs](boltr-io/src/ligand_exclusion.rs), [ambiguous_atoms.rs](boltr-io/src/ambiguous_atoms.rs). |
 | [x] | `process_token_features` (inference) | `featurizerv2.py` | [process_token_features.rs](boltr-io/src/featurizer/process_token_features.rs); golden [token_features_golden.rs](boltr-io/src/featurizer/token_features_golden.rs). |
 | [~] | `process_atom_features` | same | [process_atom_features.rs](boltr-io/src/featurizer/process_atom_features.rs); inference [atom_features_from_inference_input](boltr-io/src/inference_dataset.rs). Golden partial — [atom_features_golden.rs](boltr-io/src/featurizer/atom_features_golden.rs). |
 | [x] | `process_msa_features` (non-affinity) | same | [process_msa_features.rs](boltr-io/src/featurizer/process_msa_features.rs). **TBD:** `affinity=True` MSA keys. |

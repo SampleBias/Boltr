@@ -509,4 +509,48 @@ mod tests {
         assert_eq!(ph_bin_id(7.0), 1);
         assert_eq!(ph_bin_id(99.0), 3);
     }
+
+    #[test]
+    fn out_types_weights_match_python() {
+        assert_eq!(OUT_TYPES.len(), 11);
+        assert_eq!(out_type_weight("ligand_protein"), Some(20.0));
+        assert_eq!(out_type_weight("intra_rna"), Some(8.0));
+        assert_eq!(out_type_weight("modified"), Some(0.0));
+        assert_eq!(out_type_weight_af3("dna_protein"), Some(10.0));
+        assert_eq!(out_type_weight_af3("intra_dna"), Some(4.0));
+        assert!(out_type_weight("not_a_type").is_none());
+    }
+
+    #[test]
+    fn clash_type_for_chain_pair_matches_frozenset_logic() {
+        assert_eq!(
+            clash_type_for_chain_pair("PROTEIN", "DNA"),
+            Some("dna_protein")
+        );
+        assert_eq!(
+            clash_type_for_chain_pair("DNA", "PROTEIN"),
+            Some("dna_protein")
+        );
+        assert_eq!(
+            clash_type_for_chain_pair("PROTEIN", "PROTEIN"),
+            Some("protein_protein")
+        );
+        assert_eq!(
+            clash_type_for_chain_pair("NONPOLYMER", "NONPOLYMER"),
+            Some("ligand_ligand")
+        );
+        assert_eq!(clash_type_for_chain_pair("DNA", "RNA"), Some("rna_dna"));
+        assert_eq!(chain_type_to_out_single_type("NONPOLYMER"), Some("ligand"));
+    }
+
+    #[test]
+    fn canonical_tokens_and_inverse_letters() {
+        assert_eq!(CANONICAL_TOKENS.len(), 21);
+        assert!(is_canonical_token("ALA"));
+        assert!(!is_canonical_token("<pad>"));
+        assert_eq!(prot_token_id_to_letter(token_id("UNK").unwrap()), Some('X'));
+        assert_eq!(prot_token_id_to_letter(token_id("ALA").unwrap()), Some('A'));
+        assert_eq!(rna_token_id_to_letter(token_id("U").unwrap()), Some('U'));
+        assert_eq!(dna_token_id_to_letter(token_id("DT").unwrap()), Some('T'));
+    }
 }
