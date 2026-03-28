@@ -539,11 +539,7 @@ pub fn write_structure_v2_npz_compressed(path: &Path, s: &StructureV2Tables) -> 
     }
     let coord_blob = write_npy_1d(DESCR_COORDS, s.coords.len(), &coord_v)?;
 
-    let ncoord = i32::try_from(s.coords.len()).unwrap_or(i32::MAX);
-    let mut ens = [0u8; ENSEMBLE_AL];
-    ens[0..4].copy_from_slice(&s.ensemble_atom_coord_idx.to_le_bytes());
-    ens[4..8].copy_from_slice(&ncoord.to_le_bytes());
-    let ens_blob = write_npy_1d(DESCR_ENSEMBLE, 1, &ens)?;
+    let ens_blob = pack_ensemble_npy(s)?;
 
     let mut file = File::create(path).with_context(|| path.display().to_string())?;
     let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -598,11 +594,7 @@ pub fn write_structure_v2_npz_to_vec(s: &StructureV2Tables) -> Result<Vec<u8>> {
         }
     }
     let coord_blob = write_npy_1d(DESCR_COORDS, s.coords.len(), &coord_v)?;
-    let ncoord = i32::try_from(s.coords.len()).unwrap_or(i32::MAX);
-    let mut ens = [0u8; ENSEMBLE_AL];
-    ens[0..4].copy_from_slice(&s.ensemble_atom_coord_idx.to_le_bytes());
-    ens[4..8].copy_from_slice(&ncoord.to_le_bytes());
-    let ens_blob = write_npy_1d(DESCR_ENSEMBLE, 1, &ens)?;
+    let ens_blob = pack_ensemble_npy(s)?;
 
     let mut buf = Cursor::new(Vec::new());
     let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
