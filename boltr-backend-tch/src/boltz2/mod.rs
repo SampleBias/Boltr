@@ -24,5 +24,5 @@ pub use input_embedder::{
 pub use model::{Boltz2Model, BOND_TYPE_EMBEDDING_NUM};
 pub use msa_module::{MsaFeatures, MsaModule};
 pub use relative_position::{RelPosFeatures, RelativePositionEncoder};
-pub use template_module::TemplateModule;
+pub use template_module::{TemplateFeatures, TemplateV2Module, TemplateModule};
 pub use trunk::TrunkV2;
