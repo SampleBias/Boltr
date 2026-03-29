@@ -3,6 +3,11 @@
 //! Python layout reference: `boltz-reference/src/boltz/model/models/boltz2.py`
 //! — `s_init`, `z_init_*`, recycling, and `pairformer_module` live on the **model root**
 //! (not inside a nested `trunk` submodule).
+//!
+//! **Embeddings / trunk input:** [`Boltz2Model::forward_s_inputs_from_embedder`] runs the full
+//! [`InputEmbedder`]; [`Boltz2Model::predict_step_trunk_from_embedder`] chains embedder →
+//! `z_init = z_pair + rel_pos + token_bonds + contact` → [`TrunkV2`]. Pre-embedded batches use
+//! [`Boltz2Model::predict_step_trunk`] with collated `s_inputs` directly.
 
 use std::path::Path;
 
@@ -1306,6 +1311,94 @@ mod tests {
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    /// `predict_step_trunk_from_embedder` must match `predict_step_trunk` when `s_inputs` is the
+    /// embedder output (§5.2 IO → full embedder → trunk).
+    #[test]
+    fn predict_step_trunk_from_embedder_matches_preembedded_s_inputs() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+        let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+        let b = 1_i64;
+        let n = 3_i64;
+        let n_atoms = 10_i64;
+        let ne = m.atom_s();
+        let nt = crate::boltz2::input_embedder::BOLTZ_NUM_TOKENS;
+
+        let ref_pos = Tensor::randn(&[b, n_atoms, 3], (Kind::Float, device));
+        let ref_charge = Tensor::randn(&[b, n_atoms], (Kind::Float, device));
+        let ref_element = Tensor::randn(&[b, n_atoms, ne], (Kind::Float, device));
+        let atom_pad_mask = Tensor::ones(&[b, n_atoms], (Kind::Float, device));
+        let ref_space_uid = Tensor::zeros(&[b, n_atoms], (Kind::Int64, device));
+        let atom_to_token = Tensor::from_slice(
+            &[0_i64, 0, 1, 1, 1, 2, 2, 2, 2, 2][..n_atoms as usize],
+        )
+        .view([1, n_atoms])
+        .to_device(device);
+        let res_type = Tensor::randn(&[b, n, nt], (Kind::Float, device));
+        let profile = Tensor::randn(&[b, n, nt], (Kind::Float, device));
+        let deletion_mean = Tensor::randn(&[b, n], (Kind::Float, device));
+
+        let feats = InputEmbedderFeats {
+            ref_pos: &ref_pos,
+            ref_charge: &ref_charge,
+            ref_element: &ref_element,
+            atom_pad_mask: &atom_pad_mask,
+            ref_space_uid: &ref_space_uid,
+            atom_to_token: &atom_to_token,
+            res_type: &res_type,
+            profile: &profile,
+            deletion_mean: &deletion_mean,
+            profile_affinity: None,
+            deletion_mean_affinity: None,
+            atom_encoder_batch: None,
+        };
+
+        let s_inputs = m.forward_s_inputs_from_embedder(&feats, false);
+
+        let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let residue_index = Tensor::arange(n, (Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let cyclic_period = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let pad = Tensor::ones(&[b, n], (Kind::Float, device));
+
+        let (s_a, z_a) = m
+            .predict_step_trunk(&s_inputs, &rel, None, None, None, &pad, Some(0), None, None)
+            .expect("predict_step_trunk");
+        let (s_b, z_b) = m
+            .predict_step_trunk_from_embedder(
+                &feats,
+                false,
+                &rel,
+                None,
+                None,
+                None,
+                &pad,
+                Some(0),
+                None,
+                None,
+            )
+            .expect("predict_step_trunk_from_embedder");
+
+        let ds = (s_a - s_b).abs().max().double_value(&[]);
+        let dz = (z_a - z_b).abs().max().double_value(&[]);
+        assert!(ds < 1e-5, "s_trunk mismatch max_abs={ds}");
+        assert!(dz < 1e-5, "z_trunk mismatch max_abs={dz}");
     }
 
     #[test]

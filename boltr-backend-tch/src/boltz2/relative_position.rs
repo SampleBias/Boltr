@@ -1,6 +1,8 @@
 //! Relative position encoding for pairwise token features (`z`), Algorithm 3 in AlphaFold3 lineage.
 //!
 //! Reference: `boltz-reference/src/boltz/model/modules/encodersv2.py` (`RelativePositionEncoder`).
+//! Python parity for `rel_pos` + `s_init` weights: opt-in `BOLTR_RUN_TRUNK_INIT_GOLDEN=1` +
+//! [`tests/trunk_init_golden.rs`](../../tests/trunk_init_golden.rs).
 
 use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
@@ -152,6 +154,51 @@ mod tests {
             .expand(&[b, n], false);
         let sym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
         let cyclic_period = Tensor::zeros(&[b, n], (Kind::Int64, device));
+
+        let rel = RelPosFeatures {
+            asym_id: &asym_id,
+            residue_index: &residue_index,
+            entity_id: &entity_id,
+            token_index: &token_index,
+            sym_id: &sym_id,
+            cyclic_period: &cyclic_period,
+        };
+        let z = enc.forward(&rel);
+        assert_eq!(z.size(), vec![b, n, n, token_z]);
+    }
+
+    /// `cyclic_pos_enc=true` with a non-zero period exercises the wrap branch (Python parity).
+    #[test]
+    fn forward_cyclic_period_runs() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let b = 1_i64;
+        let n = 9_i64;
+        let token_z = 48_i64;
+
+        let vs = VarStore::new(device);
+        let enc = RelativePositionEncoder::new(
+            vs.root(),
+            token_z,
+            None,
+            None,
+            false,
+            true,
+            device,
+        );
+
+        let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let residue_index = Tensor::arange(n, (Kind::Int64, device))
+            .view_(&[1, n])
+            .expand(&[b, n], false);
+        let entity_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let token_index = residue_index.shallow_clone();
+        let sym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let mut cyc_row = vec![0_i64; n as usize];
+        cyc_row[3] = 5;
+        let cyclic_period = Tensor::from_slice(&cyc_row)
+            .view([1, n])
+            .to_device(device);
 
         let rel = RelPosFeatures {
             asym_id: &asym_id,

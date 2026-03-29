@@ -167,11 +167,11 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [~] | `InputEmbedder` | [input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs) — partial (`res_type` + `msa_profile` + external `a`). **TBD:** AtomEncoder / AtomAttentionEncoder. |
-| [~] | `RelativePositionEncoder` | [relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — **TBD:** golden parity. |
-| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | [model.rs](boltr-backend-tch/src/boltz2/model.rs) — **TBD:** golden parity. |
+| [x] | `InputEmbedder` | [input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs) — full `AtomEncoder` → `atom_enc_proj_z` → `AtomAttentionEncoder` → token linears (`InputEmbedder::new`). Opt-in Python golden: `BOLTR_RUN_INPUT_EMBEDDER_GOLDEN=1`, [input_embedder_golden.rs](boltr-backend-tch/tests/input_embedder_golden.rs). |
+| [x] | `RelativePositionEncoder` | [relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — forward + cyclic branch test. Opt-in golden: `BOLTR_RUN_TRUNK_INIT_GOLDEN=1`, [trunk_init_golden.rs](boltr-backend-tch/tests/trunk_init_golden.rs). |
+| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | [model.rs](boltr-backend-tch/src/boltz2/model.rs) — `forward_trunk_with_z_init_terms` (`z_pair` + `rel_pos` + `token_bonds` + `contact`); unit tests for bonds/types/contact. **TBD:** optional safetensors golden for `token_bonds` / `contact` slices alone (beyond `rel_pos`/`s_init` export). |
 | [x] | LayerNorm / recycling projections | [trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs) |
-| [~] | Trunk wiring | Pairformer + MSA + Template path on `TrunkV2`. **TBD:** IO → full embedder → trunk. |
+| [x] | Trunk wiring | `predict_step_trunk` / `predict_step_trunk_from_embedder` on [model.rs](boltr-backend-tch/src/boltz2/model.rs); always-on test `predict_step_trunk_from_embedder_matches_preembedded_s_inputs` (embedder → trunk = pre-embedded `s_inputs` path). Collate smoke: [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). |
 
 ### 5.3 Templates
 

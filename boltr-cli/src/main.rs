@@ -66,17 +66,13 @@ struct Cli {
     command: Commands,
 
     /// Compute device: cpu, cuda, or cuda:N (requires `--features tch` and LibTorch for GPU).
-    #[arg(long, global = true, default_value = "cpu")]
+    #[arg(long, default_value = "cpu")]
     device: String,
 
     /// Model / asset cache directory.
     /// Falls back to `BOLTZ_CACHE` env var, then `~/.cache/boltr`.
-    #[arg(long, global = true)]
+    #[arg(long)]
     cache_dir: Option<PathBuf>,
-
-    /// Output directory (default: `./output`).
-    #[arg(short, long, global = true, default_value = "./output")]
-    output: String,
 
     /// Verbosity level (-v, -vv, -qqq, etc.).
     #[command(flatten)]
@@ -292,7 +288,7 @@ async fn main() -> Result<()> {
             let device_str = std::env::var("BOLTR_DEVICE").unwrap_or_else(|_| cli.device.clone());
 
             predict_flow(PredictFlowArgs {
-                input,
+                input: input.clone(),
                 cache,
                 out_dir: out_dir.to_path_buf(),
                 device: device_str,
@@ -502,10 +498,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
 
     // 6. Write run summary
     let summary = boltr_io::PredictionRunSummary::from_input(
-        &input,
+        input.as_str(),
         &parsed,
         *use_msa_server,
-        &device,
+        device.as_str(),
         *num_samples,
         backend_note,
         *affinity,

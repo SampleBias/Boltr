@@ -3,6 +3,12 @@
 //! Reference: `boltz-reference/src/boltz/model/modules/trunkv2.py` (`InputEmbedder`).
 //! VarStore prefix: **`input_embedder`** (`input_embedder.atom_encoder`, `atom_enc_proj_z`, …).
 //!
+//! **Implementation status:** [`InputEmbedder::new`] wires the full Python path
+//! `AtomEncoder` → LayerNorm+`atom_enc_proj_z` → `AtomAttentionEncoder` →
+//! `res_type_encoding` + `msa_profile_encoding`. Use [`InputEmbedder::new_tail_only`] only for
+//! narrow linear tests. Python parity: opt-in `BOLTR_RUN_INPUT_EMBEDDER_GOLDEN=1` +
+//! [`tests/input_embedder_golden.rs`](../../tests/input_embedder_golden.rs).
+//!
 //! Use [`AtomEncoderPlaceholder`] only for shape tests when bypassing the atom stack.
 
 use tch::nn::{linear, LinearConfig, Module, Path};

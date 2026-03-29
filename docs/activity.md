@@ -10,6 +10,12 @@ Activity log for the Boltr project. See [docs/PROJECT_README.md](docs/PROJECT_RE
 *- Commands executed*
 *- Any important notes or decisions*
 
+## 2026-03-29 — §5.2 Boltz2 embeddings / trunk input (docs + tests)
+
+- Clarified TODO §5.2: full [`InputEmbedder`](../boltr-backend-tch/src/boltz2/input_embedder.rs) stack and [`RelativePositionEncoder`](../boltr-backend-tch/src/boltz2/relative_position.rs) are implemented; opt-in Python goldens documented.
+- Added always-on [`predict_step_trunk_from_embedder_matches_preembedded_s_inputs`](../boltr-backend-tch/src/boltz2/model.rs) (embedder path ≡ pre-embedded `s_inputs` path).
+- Added cyclic [`RelativePositionEncoder`](../boltr-backend-tch/src/boltz2/relative_position.rs) smoke test.
+
 ## 2026-03-29 — §7 testing strategy (registry + harness + CI)
 
 - Added [docs/NUMERICAL_TOLERANCES.md](NUMERICAL_TOLERANCES.md) (central rtol/atol registry) and linked it from [TENSOR_CONTRACT.md](TENSOR_CONTRACT.md) §6.5.
