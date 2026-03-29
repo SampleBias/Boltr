@@ -249,7 +249,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | [~] | Golden fixture layout | [boltr-io/tests/fixtures/](boltr-io/tests/fixtures/) — expand README / coverage. |
 | [~] | Python export scripts | Checkpoint, pairformer, MSA module; **TBD:** full collate batch dumps. |
 | [~] | Numerical tolerances | [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) §6.5 |
-| [~] | Regression harness | [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh) — placeholder. |
+| [~] | Regression harness | [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh) — well-structured shell script with prerequisites checks, tolerance config, and Python comparison; gated behind `BOLTR_REGRESSION=1`. |
 | [~] | Backend unit tests | [scripts/cargo-tch](scripts/cargo-tch) for LibTorch path; [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). |
 
 ---

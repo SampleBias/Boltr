@@ -1,10 +1,6 @@
-# boltr-io-§4.5-inference-dataset-collate Activity Log
+# Boltr — Activity Log
 
-## 2026-03-28 16:15 - Project Initialization
-- Created project structure files
-- Initialized todo.md with project template
-- Initialized activity.md for logging
-- Generated PROJECT_README.md for context tracking
+Activity log for the Boltr project. See [docs/PROJECT_README.md](docs/PROJECT_README.md) for project context.
 
 ---
 *Activity logging format:*
@@ -14,92 +10,59 @@
 *- Commands executed*
 *- Any important notes or decisions*
 
-
-## 2026-03-28 16:54 - Session Started
-- Project structure files verified
-- Resumed work on existing project
-- Todo.md updated with new session section
-- PROJECT_README.md context checked
-- Ready for continued development
+## 2026-03-28 16:15 - Project Initialization
+- Created project structure files (tasks/todo.md, docs/activity.md, docs/PROJECT_README.md)
+- Initialized todo.md with project template
 
 ## 2026-03-29 §2.8 — Comprehensive YAML Parsing Tests
+- Audited every item in tasks/todo.md — found 2.1–2.7 already implemented in config.rs
+- Created 20 YAML fixture files under boltr-io/tests/fixtures/yaml/
+- Wrote 45 comprehensive tests covering all schema paths
+- Fixed `PropertyEntry` missing `#[serde(untagged)]` bug in config.rs
+- All 185 tests passing, 0 regressions
 
-### 2026-03-29 ~09:30 - Reviewed all todo items against codebase
+## 2026-03-29 §7 — Testing Strategy Assessment & Implementation
 
-- Audited every item in tasks/todo.md against the actual codebase
-- Found that items 2.1–2.7 were already fully implemented in `config.rs`
-- Found that section 3 (CCD/molecules) was fully implemented in `ccd.rs` and wired into `inference_dataset.rs`
-- Found that section 4 (structure parsers) is intentionally deferred to Python preprocess
-- Found that section 5 (constraints serialization) was fully implemented via `residue_constraints.rs` + `process_residue_constraint_features.rs` + `inference_dataset.rs`
-- Selected §2.8 as the most impactful and precise task to complete
+Assessed all 5 sub-items of TODO.md §7. Current status:
 
-### 2026-03-29 ~09:40 - Created comprehensive YAML fixture files
+| Item | Status | Assessment |
+|------|--------|-----------|
+| Golden fixture layout | `[~]` | 3 missing READMEs → created |
+| Python export scripts | `[~]` | 17 scripts exist, `dump_full_collate_golden.py` is functional |
+| Numerical tolerances | `[~]` | §6.5 table is vague → expanded with exact values from codebase |
+| Regression harness | `[~]` | Script was corrupted → rewrote as a proper 350-line harness |
+| Backend unit tests | `[~]` | 6 opt-in golden tests + 4 shape-only smokes exist |
 
-- Created 20 YAML fixture files under `boltr-io/tests/fixtures/yaml/`:
-  - `version_field.yaml` — version field parsing
-  - `multi_entity.yaml` — all entity types (protein, dna, rna, ligand)
-  - `ligand_smiles.yaml` — SMILES ligand
-  - `ligand_ccd_single.yaml` — single CCD code ligand
-  - `ligand_ccd_multi.yaml` — multi CCD code ligand
-  - `multi_chain_entity.yaml` — `id: [A, B]` format
-  - `modifications.yaml` — residue modifications
-  - `cyclic_protein.yaml` — cyclic peptide flag
-  - `protein_msa.yaml` — MSA path
-  - `constraints_bond.yaml` — bond constraint
-  - `constraints_pocket.yaml` — pocket constraint
-  - `constraints_contact.yaml` — contact constraint
-  - `constraints_mixed.yaml` — all three constraint types
-  - `template_cif.yaml` — CIF template
-  - `template_pdb.yaml` — PDB template with chain mapping
-  - `properties_affinity.yaml` — affinity property
-  - `minimal_protein_only.yaml` — minimal single protein
-  - `dna_entity.yaml` — DNA entity
-  - `rna_entity.yaml` — RNA entity
-  - `full_schema.yaml` — complete integration test with all features
+Completed:
+1. **Regression harness rewrite** (`scripts/regression_compare_predict.sh`):
+   - Replaced corrupted placeholder with 350-line syntactically valid bash script
+   - Gated behind `BOLTR_REGRESSION=1` (exit 0 when unset)
+   - 3-step flow: run `boltz predict` → run `boltr predict` → compare outputs
+   - Inline Python comparison script for NPZ/JSON output comparison
+   - Configurable tolerances via environment variables
+   - Proper error reporting with per-key pass/fail status
+   - Documented prerequisites, usage, and environment in header
 
-### 2026-03-29 ~09:50 - Wrote comprehensive test suite (45 tests)
+2. **Fixture READMEs created** (3 directories that were missing them):
+   - `boltr-io/tests/fixtures/README.md` — top-level fixture index
+   - `boltr-io/tests/fixtures/load_input_smoke/README.md` — smoke fixture doc
+   - `boltr-io/tests/fixtures/yaml/README.md` — YAML fixture coverage table
 
-- Rewrote `boltr-io/tests/yaml_parse.rs` with 45 comprehensive tests:
-  - Version field (2 tests)
-  - Protein entity (6 tests)
-  - DNA entity (1 test)
-  - RNA entity (1 test)
-  - Multi-entity (1 test)
-  - Multi-chain entity (2 tests)
-  - Ligand types (6 tests)
-  - Modifications (2 tests)
-  - Cyclic peptide (2 tests)
-  - Bond constraint (2 tests)
-  - Pocket constraint (3 tests)
-  - Contact constraint (2 tests)
-  - Mixed constraints (1 test)
-  - Template CIF (1 test)
-  - Template PDB (2 tests)
-  - Properties/affinity (2 tests)
-  - Full schema integration (1 test)
-  - Round-trip serialization (1 test)
-  - Edge cases (5 tests)
-  - Preserved tests (2 tests)
+3. **Backend fixture index** (`boltr-backend-tch/tests/fixtures/README.md`):
+   - Documents all 6 golden fixture directories with regeneration commands
+   - Notes which `.safetensors` are checked in vs generated on demand
+   - Links to opt-in env vars and test files
 
-### 2026-03-29 ~09:55 - Fixed PropertyEntry deserialization bug
+4. **`docs/TESTING_STRATEGY.md`** — comprehensive testing strategy document:
+   - Per-test coverage map (test name, fixture, tolerance, module, opt-in)
+   - Numerical tolerance reference table (rtol/atol per category)
+   - Fixture regeneration guide (every script with deps)
+   - CI coverage summary
+   - Adding new golden tests checklist
 
-- Discovered `PropertyEntry` was missing `#[serde(untagged)]` attribute
-- The `properties: - affinity:` YAML format requires untagged enum deserialization
-- Without this, serde expected externally-tagged format that doesn't match the schema
-- Fixed by adding `#[serde(untagged)]` to `PropertyEntry` enum in `config.rs`
-- This was a real bug that would have affected any YAML with `properties:` section
-
-### 2026-03-29 ~10:00 - All 45 tests passing, no regressions
-
-- `cargo test -p boltr-io --test yaml_parse` — 45 passed
-- `cargo test -p boltr-io --lib --tests` — all existing tests still pass
-- Updated todo.md: marked 2.1–2.8 as complete, section 3 as complete, section 4 as deferred, section 5 as complete
-
-### Key findings during review
-
-1. **Bug fix**: `PropertyEntry` in `config.rs` was missing `#[serde(untagged)]`, preventing `properties:` YAML from parsing
-2. All schema types (2.1–2.7) were already correctly implemented
-3. CCD/molecules support (section 3) is fully implemented with JSON loading
-4. Structure parsers (section 4) are correctly deferred to Python preprocess
-5. Constraints serialization (section 5) is fully implemented with NPZ I/O
-
+5. **Numerical tolerances audit**:
+   - Catalogued every tolerance value across codebase
+   - Deterministic features: rtol=1e-5, atol=1e-6
+   - Neural network forward passes: rtol=1e-4, atol=1e-5
+   - Exact/structural: no tolerance needed
+   - Sampling/stochastic: looser tolerances

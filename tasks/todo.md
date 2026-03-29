@@ -35,3 +35,58 @@ From TODO.md §4.1: Implement full YAML schema parsing and chemistry support for
 - [x] 5.2 Implement constraint → npz serialization (ResidueConstraintTensors → FeatureBatch)
 - [x] 5.3 Wire into `load_input` when constraints_dir provided
 - [x] 5.4 Verify with `verify_constraints_npz_layout.py`
+
+
+---
+
+## New Session - 2026-03-29 10:07
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-29 10:07*
+
+
+---
+
+## New Session - 2026-03-29 10:07
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-29 10:07*
+
+
+---
+
+## New Session - 2026-03-29 10:08
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-29 10:08*
+
+
+---
+
+## New Session - 2026-03-29 10:17
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-29 10:17*
+
+
+---
+
+## New Session - 2026-03-29 10:18
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-03-29 10:18*
