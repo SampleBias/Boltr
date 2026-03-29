@@ -37,7 +37,8 @@ pub use process_residue_constraint_features::{
 };
 pub use process_symmetry_features::{
     get_amino_acids_symmetries, get_chain_symmetries, get_ligand_symmetries_empty,
-    process_symmetry_features, ChainSwap, SymmetryFeatures,
+    get_ligand_symmetries_for_tokens, process_symmetry_features,
+    process_symmetry_features_with_ligand_symmetries, ChainSwap, SymmetryFeatures,
 };
 pub use process_atom_features::{
     atom_ref_data_from_ccd_mol, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,

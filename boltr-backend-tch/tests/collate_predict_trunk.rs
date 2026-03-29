@@ -1,5 +1,5 @@
 //! Collate golden → trunk milestone: load [`trunk_smoke_collate.safetensors`](../../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors)
-//! (from `boltr-io`, regen `cargo run -p boltr-io --bin write_collate_golden`) and run
+//! (from `boltr-io`, regen `cargo run -p boltr-io --bin write_trunk_collate_from_fixture`) and run
 //! [`Boltz2Model::predict_step_trunk`](boltr_backend_tch::Boltz2Model::predict_step_trunk) with
 //! real [`MsaFeatures`](boltr_backend_tch::MsaFeatures).
 //!

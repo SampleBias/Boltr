@@ -3,7 +3,7 @@
 //! Real template features: [`crate::featurizer::process_template_features`]. This module matches the
 //! Python helper for placeholder slots and padding extra template rows.
 
-use ndarray::{Array2, Array3, Array4};
+use ndarray::{Array1, Array2, Array3, Array4};
 
 use crate::boltz_const::NUM_TOKENS;
 use crate::feature_batch::FeatureBatch;
@@ -22,6 +22,10 @@ pub struct DummyTemplateTensors {
     pub template_mask: Array2<f32>,
     pub query_to_template: Array2<i64>,
     pub visibility_ids: Array2<f32>,
+    /// Per template row: `1.0` if template alignment requests a distance restraint, else `0.0` (Boltz `template_force`).
+    pub template_force: Array1<f32>,
+    /// Upper bound per template row when `template_force` is set; `f32::INFINITY` when not forced.
+    pub template_force_threshold: Array1<f32>,
 }
 
 /// Allocate zero-filled dummy template features (`tdim` templates × `num_tokens` tokens).
@@ -39,6 +43,8 @@ pub fn load_dummy_templates_features(tdim: usize, num_tokens: usize) -> DummyTem
         template_mask: Array2::zeros((tdim, num_tokens)),
         query_to_template: Array2::zeros((tdim, num_tokens)),
         visibility_ids: Array2::zeros((tdim, num_tokens)),
+        template_force: Array1::zeros(tdim),
+        template_force_threshold: Array1::from_elem(tdim, f32::INFINITY),
     }
 }
 
@@ -57,6 +63,11 @@ impl DummyTemplateTensors {
         b.insert_f32("template_mask", self.template_mask.into_dyn());
         b.insert_i64("query_to_template", self.query_to_template.into_dyn());
         b.insert_f32("visibility_ids", self.visibility_ids.into_dyn());
+        b.insert_f32("template_force", self.template_force.clone().into_dyn());
+        b.insert_f32(
+            "template_force_threshold",
+            self.template_force_threshold.clone().into_dyn(),
+        );
         b
     }
 }

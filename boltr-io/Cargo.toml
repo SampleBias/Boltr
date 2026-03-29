@@ -6,6 +6,12 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# rustdoc doctests write argument files under `$TMPDIR`; on quota-limited `/tmp` this can fail with
+# Os error 122 (QuotaExceeded) even when `cargo test --lib` succeeds. Integration tests keep coverage
+# for the former module-level ` ```rust` example in `config.rs`.
+[lib]
+doctest = false
+
 [dependencies]
 tokio.workspace = true
 reqwest.workspace = true
@@ -35,3 +41,7 @@ path = "src/bin/write_collate_golden.rs"
 [[bin]]
 name = "write_token_features_ala_golden"
 path = "src/bin/write_token_features_ala_golden.rs"
+
+[[bin]]
+name = "write_trunk_collate_from_fixture"
+path = "src/bin/write_trunk_collate_from_fixture.rs"

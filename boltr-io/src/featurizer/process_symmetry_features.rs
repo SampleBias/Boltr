@@ -14,8 +14,11 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
 
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
+use crate::boltz_const::chain_type_id;
 use crate::feature_batch::FeatureBatch;
 use crate::ref_atoms::{ref_atoms_key_from_token, ref_symmetry_groups};
 use crate::structure_v2::StructureV2Tables;
@@ -98,6 +101,39 @@ pub fn get_amino_acids_symmetries(tokens: &[TokenData]) -> Vec<Vec<Vec<(usize, u
 #[must_use]
 pub fn get_ligand_symmetries_empty() -> Vec<Vec<Vec<(usize, usize)>>> {
     Vec::new()
+}
+
+/// Map CCD-style residue keys (see [`ref_atoms_key_from_token`]) to symmetry swap groups, then lift
+/// atom indices into **crop** space (same convention as [`get_amino_acids_symmetries`]).
+///
+/// One entry is appended per **NONPOLYMER** token (Boltz ligand); use an empty inner `Vec` when the
+/// ligand has no entry in `symmetries`.
+#[must_use]
+pub fn get_ligand_symmetries_for_tokens(
+    tokens: &[TokenData],
+    symmetries: &HashMap<String, Vec<Vec<(usize, usize)>>>,
+) -> Vec<Vec<Vec<(usize, usize)>>> {
+    let nonpoly = chain_type_id("NONPOLYMER").expect("NONPOLYMER");
+    let mut out: Vec<Vec<Vec<(usize, usize)>>> = Vec::new();
+    let mut crop_start: usize = 0;
+    for token in tokens {
+        let n = token.atom_num as usize;
+        if token.mol_type == nonpoly {
+            let key = ref_atoms_key_from_token(&token.res_name);
+            let groups = symmetries.get(key).map(|v| v.as_slice()).unwrap_or(&[]);
+            let mapped: Vec<Vec<(usize, usize)>> = groups
+                .iter()
+                .map(|g| {
+                    g.iter()
+                        .map(|&(i, j)| (i + crop_start, j + crop_start))
+                        .collect()
+                })
+                .collect();
+            out.push(mapped);
+        }
+        crop_start += n;
+    }
+    out
 }
 
 /// `get_chain_symmetries` from `symmetry.py` (structure + tokens only; uses first conformer coords).
@@ -213,18 +249,33 @@ pub fn get_chain_symmetries(
     }
 }
 
+/// Like [`process_symmetry_features`]; when `ligand_symmetry_map` is `Some`, fills
+/// [`SymmetryFeatures::ligand_symmetries`] via [`get_ligand_symmetries_for_tokens`].
+#[inline]
+pub fn process_symmetry_features_with_ligand_symmetries(
+    structure: &StructureV2Tables,
+    tokens: &[TokenData],
+    ligand_symmetry_map: Option<&HashMap<String, Vec<Vec<(usize, usize)>>>>,
+) -> SymmetryFeatures {
+    let mut rng = StdRng::seed_from_u64(0);
+    let mut f = get_chain_symmetries(structure, tokens, 100, &mut rng);
+    if let Some(m) = ligand_symmetry_map {
+        f.ligand_symmetries = get_ligand_symmetries_for_tokens(tokens, m);
+    }
+    f
+}
+
 /// Boltz `process_symmetry_features(cropped, symmetries)`.
 #[inline]
 pub fn process_symmetry_features(structure: &StructureV2Tables, tokens: &[TokenData]) -> SymmetryFeatures {
-    let mut rng = StdRng::seed_from_u64(0);
-    get_chain_symmetries(structure, tokens, 100, &mut rng)
+    process_symmetry_features_with_ligand_symmetries(structure, tokens, None)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fixtures::structure_v2_single_ala;
-    use crate::tokenize::boltz2::tokenize_structure;
+    use crate::tokenize::boltz2::{tokenize_structure, TokenData};
 
     #[test]
     fn single_chain_ala_amino_swaps_empty() {
@@ -232,6 +283,45 @@ mod tests {
         let (tok, _) = tokenize_structure(&s, None);
         let aa = get_amino_acids_symmetries(&tok);
         assert!(aa.is_empty(), "ALA has no ref_symmetry groups");
+    }
+
+    #[test]
+    fn ligand_symmetry_map_maps_atom_indices() {
+        use std::collections::HashMap;
+
+        let mut m = HashMap::new();
+        m.insert(
+            "LIG".to_string(),
+            vec![vec![(0_usize, 1_usize), (1_usize, 0_usize)]],
+        );
+        let nonpoly = chain_type_id("NONPOLYMER").unwrap();
+        let lig = TokenData {
+            token_idx: 0,
+            atom_idx: 0,
+            atom_num: 5,
+            res_idx: 0,
+            res_type: 2,
+            res_name: "LIG".to_string(),
+            sym_id: 0,
+            asym_id: 0,
+            entity_id: 0,
+            mol_type: nonpoly,
+            center_idx: 0,
+            disto_idx: 0,
+            center_coords: [0.0; 3],
+            disto_coords: [0.0; 3],
+            resolved_mask: true,
+            disto_mask: true,
+            modified: false,
+            frame_rot: [0.0; 9],
+            frame_t: [0.0; 3],
+            frame_mask: true,
+            cyclic_period: 0,
+            affinity_mask: false,
+        };
+        let sy = get_ligand_symmetries_for_tokens(&[lig], &m);
+        assert_eq!(sy.len(), 1);
+        assert_eq!(sy[0], vec![vec![(0, 1), (1, 0)]]);
     }
 
     #[test]

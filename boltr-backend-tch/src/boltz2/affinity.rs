@@ -10,3 +10,6 @@ impl AffinityHead {
         Self
     }
 }
+
+/// Alias matching Boltz `AffinityModule` naming (`boltz.model.modules.affinity`).
+pub type AffinityModule = AffinityHead;

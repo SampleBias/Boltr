@@ -19,6 +19,7 @@ pub mod feature_batch;
 pub mod featurizer;
 pub mod fixtures;
 pub mod format;
+pub mod inference_collate_serialize;
 pub mod inference_dataset;
 pub mod ligand_exclusion;
 pub mod msa;
@@ -61,7 +62,8 @@ pub use featurizer::{
     ala_tokenized_smoke, atom_ref_data_from_ccd_mol, dummy_templates_as_feature_batch,
     inference_ensemble_features, inference_residue_constraint_features, load_dummy_templates_features,
     pad_template_tdim, process_atom_features, process_ensemble_features, process_msa_features,
-    process_symmetry_features, process_template_features, process_token_features,
+    process_symmetry_features, process_symmetry_features_with_ligand_symmetries,
+    process_template_features, process_token_features, get_ligand_symmetries_for_tokens,
     stack_template_feature_rows, token_feature_key_names, AffinityCropper, AffinityTokenized,
     AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
     InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors, StandardAminoAcidRefData,
@@ -108,6 +110,10 @@ pub use feature_batch::{
 };
 pub use fixtures::structure_v2_single_ala;
 pub use format::PredictionRunSummary;
+pub use inference_collate_serialize::{
+    compare_inference_collate_to_safetensors, inference_collate_to_golden_tensors,
+    write_inference_collate_golden, TRUNK_COLLATE_S_INPUT_LAST,
+};
 pub use inference_dataset::{
     affinity_asym_id_from_record, atom_features_from_inference_input, load_input,
     msa_features_from_inference_input, parse_manifest_json, parse_manifest_path,

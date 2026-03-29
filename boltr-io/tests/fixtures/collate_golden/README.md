@@ -9,7 +9,7 @@ This directory holds **machine-readable** artifacts for the Boltz2 inference bat
 | File | Purpose |
 |------|---------|
 | `manifest.json` | Authoritative **key names** and notes for `process_token_features`, MSA, dummy templates, and the merged `process()` return. |
-| `trunk_smoke_collate.safetensors` | Minimal **single-example** tensors (`batch=1`) for trunk smoke tests: `s_inputs`, `token_pad_mask`, MSA-related keys, template dummy keys. Regenerate with [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py). |
+| `trunk_smoke_collate.safetensors` | **Rust-native** single-example collate from [`load_input_smoke`](../load_input_smoke): `trunk_smoke_feature_batch_from_inference_input` → `collate_inference_batches`, plus zero `s_inputs` `[B,N,384]` for embedder smoke. Regenerate: `cargo run -p boltr-io --bin write_trunk_collate_from_fixture`. (Legacy synthetic script: [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py) — not aligned to `load_input_smoke`.) |
 | `ala_structure_v2.npz` | Single-chain ALA `StructureV2` matching Rust [`fixtures::structure_v2_single_ala`](../../src/fixtures.rs). Written by `write_token_features_ala_golden`. |
 | `token_features_ala_golden.safetensors` | Full **`process_token_features`** dict for that structure (no leading batch axis). Rust golden + tests: `cargo run -p boltr-io --bin write_token_features_ala_golden`. |
 | `token_features_ala_collated_golden.safetensors` | Same tensors with **`B=1`** prepended on every key (collate-style). |
@@ -18,17 +18,19 @@ This directory holds **machine-readable** artifacts for the Boltz2 inference bat
 
 ## Regeneration
 
-Preferred (no PyTorch):
+**Authoritative (aligned with `load_input_smoke` + parity test):**
+
+```bash
+cargo run -p boltr-io --bin write_trunk_collate_from_fixture
+```
+
+After featurizer changes (e.g. new template or MSA keys), always re-run the command above and commit the updated `trunk_smoke_collate.safetensors` so `post_collate_golden` and `collate_golden_fixture` stay green.
+
+Legacy synthetic shapes only (not fixture-aligned):
 
 ```bash
 cargo run -p boltr-io --bin write_collate_golden
-```
-
-Alternative:
-
-```bash
-pip install torch safetensors
-python3 scripts/dump_collate_golden.py
+# or: python3 scripts/dump_collate_golden.py
 ```
 
 **Token features (Boltz Python, authoritative):** with a full [jwohlwend/boltz](https://github.com/jwohlwend/boltz) checkout and `BOLTZ_SRC` set:

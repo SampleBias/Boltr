@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use anyhow::{bail, Result};
-use ndarray::{concatenate, Array2, Array3, Array4, Axis};
+use ndarray::{concatenate, Array1, Array2, Array3, Array4, Axis};
 
 use crate::boltz_const::NUM_TOKENS;
 use crate::featurizer::dummy_templates::{load_dummy_templates_features, DummyTemplateTensors};
@@ -122,6 +122,8 @@ fn compute_template_features_single(
     query_structure: &StructureV2Tables,
     row_tokens: &[RowToken],
     num_slots: usize,
+    force: bool,
+    threshold: f32,
 ) -> DummyTemplateTensors {
     let c = NUM_TOKENS;
     let mut template_restype = Array3::<f32>::zeros((1, num_slots, c));
@@ -190,6 +192,9 @@ fn compute_template_features_single(
         }
     }
 
+    let template_force = Array1::from_elem(1, if force { 1.0f32 } else { 0.0 });
+    let template_force_threshold = Array1::from_elem(1, threshold);
+
     DummyTemplateTensors {
         template_restype,
         template_frame_rot,
@@ -201,6 +206,8 @@ fn compute_template_features_single(
         template_mask,
         query_to_template,
         visibility_ids,
+        template_force,
+        template_force_threshold,
     }
 }
 
@@ -243,6 +250,16 @@ fn concat_templates(a: DummyTemplateTensors, b: DummyTemplateTensors) -> Result<
         visibility_ids: concatenate(
             Axis(0),
             &[a.visibility_ids.view(), b.visibility_ids.view()],
+        )?
+        .into_owned(),
+        template_force: concatenate(
+            Axis(0),
+            &[a.template_force.view(), b.template_force.view()],
+        )?
+        .into_owned(),
+        template_force_threshold: concatenate(
+            Axis(0),
+            &[a.template_force_threshold.view(), b.template_force_threshold.view()],
         )?
         .into_owned(),
     })
@@ -296,6 +313,16 @@ pub fn process_template_features(
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("missing template tokens for name {name:?}"))?;
 
+        let force = group.iter().any(|t| t.force);
+        let threshold = if force {
+            group
+                .iter()
+                .find_map(|t| t.threshold)
+                .unwrap_or(f32::INFINITY)
+        } else {
+            f32::INFINITY
+        };
+
         let mut all_row: Vec<RowToken> = Vec::new();
         for template in group.iter().copied() {
             all_row.extend(build_row_tokens(
@@ -313,6 +340,8 @@ pub fn process_template_features(
             query_structure,
             &all_row,
             num_slots,
+            force,
+            threshold,
         ));
     }
 

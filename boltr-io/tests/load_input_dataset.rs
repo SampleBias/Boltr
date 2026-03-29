@@ -94,6 +94,8 @@ fn trunk_smoke_feature_batch_covers_collate_manifest_keys() {
         "profile",
         "template_restype",
         "template_mask",
+        "template_force",
+        "template_force_threshold",
     ] {
         assert!(
             batch.tensors.contains_key(key),

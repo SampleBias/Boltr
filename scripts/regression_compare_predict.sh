@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Placeholder: compare `boltz predict` vs `boltr predict` on the same preprocess output.
-# Wire this to real CLIs when end-to-end prediction parity is available (TODO.md §7).
+# Compare `boltz predict` vs `boltr predict` on the same preprocess output (TODO.md §7).
+# Set BOLTR_REGRESSION=1 after both CLIs implement full writers + same manifest.
 
 set -euo pipefail
-echo "regression_compare_predict: not implemented yet (requires full predict pipeline + writers)."
-echo "See docs/TENSOR_CONTRACT.md and TODO.md §7."
-exit 0
+if [[ "${BOLTR_REGRESSION:-}" != "1" ]]; then
+  echo "regression_compare_predict: skipped (set BOLTR_REGRESSION=1 when parity is ready)."
+  echo "See docs/TENSOR_CONTRACT.md and TODO.md §7."
+  exit 0
+fi
+echo "regression_compare_predict: BOLTR_REGRESSION=1 but harness not wired yet."
+exit 1

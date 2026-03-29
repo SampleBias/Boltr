@@ -116,6 +116,8 @@ fn e2e_manifest_to_single_feature_batch() {
         "template_ca",
         "query_to_template",
         "visibility_ids",
+        "template_force",
+        "template_force_threshold",
     ] {
         assert!(
             batch.tensors.contains_key(*key),

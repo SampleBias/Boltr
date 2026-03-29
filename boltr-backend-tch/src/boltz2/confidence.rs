@@ -10,3 +10,6 @@ impl ConfidenceV2 {
         Self
     }
 }
+
+/// Alias matching Boltz `ConfidenceModule` naming (`boltz.model.modules.confidencev2`).
+pub type ConfidenceModule = ConfidenceV2;

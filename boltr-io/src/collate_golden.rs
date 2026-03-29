@@ -56,7 +56,8 @@ mod tests {
             .iter()
             .find(|(n, _)| n == "s_inputs")
             .expect("s_inputs present");
-        assert_eq!(s.1, vec![1, 4, 384]);
+        // Rust-native golden from `load_input_smoke` + collate (single-token ALA smoke): B=1, N=1
+        assert_eq!(s.1, vec![1, 1, 384]);
     }
 
     #[test]

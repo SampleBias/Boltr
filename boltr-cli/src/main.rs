@@ -50,6 +50,9 @@ enum Commands {
     Predict {
         /// Input YAML path
         input: String,
+        /// Affinity inference (expects preprocess `pre_affinity_*.npz` layout; same flag intent as Boltz)
+        #[arg(long)]
+        affinity: bool,
     },
     /// Download model weights and static assets
     Download {
@@ -116,8 +119,8 @@ async fn main() -> Result<()> {
     tracing::info!("Boltr starting...");
 
     match cli.command {
-        Commands::Predict { ref input } => {
-            predict_flow(&cli, input).await?;
+        Commands::Predict { ref input, affinity } => {
+            predict_flow(&cli, input, affinity).await?;
         }
         Commands::Download { version } => {
             let cache = cli.cache_dir.unwrap_or_else(default_cache_dir);
@@ -228,9 +231,12 @@ fn default_msa_npz_path(input: &Path) -> PathBuf {
     parent.join(format!("{}.npz", base.to_string_lossy()))
 }
 
-async fn predict_flow(cli: &Cli, input: &str) -> Result<()> {
+async fn predict_flow(cli: &Cli, input: &str, affinity: bool) -> Result<()> {
     let input_path = std::path::Path::new(input);
     let parsed = boltr_io::parse_input_path(input_path)?;
+    if affinity {
+        tracing::info!("--affinity set: use Boltz affinity preprocess (pre_affinity npz) when wiring full I/O");
+    }
     tracing::info!(
         chains = ?parsed.summary_chain_ids(),
         "parsed YAML"

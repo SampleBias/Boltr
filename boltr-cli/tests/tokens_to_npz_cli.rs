@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -22,7 +24,7 @@ fn boltr_bin() -> PathBuf {
 
 #[test]
 fn tokens_to_npz_from_structure_npz_roundtrip() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in(common::test_temp_root()).unwrap();
     let s = boltr_io::structure_v2_single_ala();
     let str_npz = dir.path().join("structure.npz");
     boltr_io::write_structure_v2_npz_compressed(&str_npz, &s).unwrap();
@@ -42,7 +44,7 @@ fn tokens_to_npz_from_structure_npz_roundtrip() {
 
 #[test]
 fn tokens_to_npz_ala_demo_writes_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in(common::test_temp_root()).unwrap();
     let npz = dir.path().join("tok.npz");
 
     let status = Command::new(boltr_bin())

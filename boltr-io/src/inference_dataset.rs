@@ -22,8 +22,9 @@ use crate::featurizer::{
     inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
     process_atom_features, process_msa_features, process_symmetry_features,
     process_template_features, process_token_features,
-    AtomFeatureConfig, AtomFeatureTensors, InferenceAtomRefProvider, MsaFeatureTensors,
-    StandardAminoAcidRefData, TemplateAlignment, TokenFeatureTensors,
+    AffinityCropper, AffinityTokenized, AtomFeatureConfig, AtomFeatureTensors,
+    InferenceAtomRefProvider, MsaFeatureTensors, StandardAminoAcidRefData, TemplateAlignment,
+    TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
 use crate::residue_constraints::ResidueConstraints;
@@ -416,9 +417,9 @@ pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomF
 #[must_use]
 pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFeatureTensors {
     let aff = affinity_asym_id_from_record(&input.record);
-    let (tokens, _bonds) = tokenize_structure(&input.structure, aff);
+    let (tokens, bonds) = tokenize_structure(&input.structure, aff);
     let mut rng = rand::rngs::StdRng::seed_from_u64(42);
-    process_msa_features(
+    let mut out = process_msa_features(
         &tokens,
         &input.structure,
         &input.msas,
@@ -428,7 +429,34 @@ pub fn msa_features_from_inference_input(input: &Boltz2InferenceInput) -> MsaFea
         None,
         false,
         false,
-    )
+    );
+    if aff.is_some() {
+        let mut rng_crop = rand::rngs::StdRng::seed_from_u64(43);
+        let cropped = AffinityCropper::default().crop(
+            &AffinityTokenized {
+                tokens: tokens.clone(),
+                bonds: bonds.clone(),
+            },
+            MAX_MSA_SEQS,
+            None,
+            &mut rng_crop,
+        );
+        let mut rng2 = rand::rngs::StdRng::seed_from_u64(42);
+        let second = process_msa_features(
+            &cropped.tokens,
+            &input.structure,
+            &input.msas,
+            &mut rng2,
+            MAX_MSA_SEQS,
+            MAX_MSA_SEQS,
+            None,
+            false,
+            false,
+        );
+        out.profile_affinity = Some(second.profile);
+        out.deletion_mean_affinity = Some(second.deletion_mean);
+    }
+    out
 }
 
 /// Template tensors: real [`process_template_features`](crate::featurizer::process_template_features)

@@ -18,7 +18,8 @@ This document tracks the data path Rust must mirror for parity with `boltz-refer
 `Boltz2Featurizer.process` merges several maps. The union includes (non-exhaustive; see [`featurizerv2.py`](../boltz-reference/src/boltz/data/feature/featurizerv2.py) around the final `return { **token_features, **atom_features, ... }`):
 
 - Token / atom / MSA blocks: `process_token_features`, `process_atom_features`, `process_msa_features`, `process_template_features` (or dummy templates), optional symmetry and constraint maps.
-- Affinity runs add a second `process_msa_features` pass and `affinity_mw` when `compute_affinity=True`.
+- Templates also expose `template_force` / `template_force_threshold` (per-template row, rank-1) for reference potentials.
+- Affinity runs add `profile_affinity` / `deletion_mean_affinity` for the input embedder plus a second `process_msa_features` pass on cropped tokens; `affinity_mw` when `compute_affinity=True`.
 
 Use a **golden export** from Python (pick one small input, dump `collate` output keys + shapes + dtypes) as the authoritative checklist while porting `boltr-io` featurization.
 
@@ -26,7 +27,7 @@ Use a **golden export** from Python (pick one small input, dump `collate` output
 
 | Artifact | Location |
 |----------|----------|
-| Key manifest (names, ranks, nominal shapes) | [`boltr-io/tests/fixtures/collate_golden/manifest.json`](../boltr-io/tests/fixtures/collate_golden/manifest.json) |
+| Key manifest (names, ranks, nominal shapes) | [`boltr-io/tests/fixtures/collate_golden/manifest.json`](../boltr-io/tests/fixtures/collate_golden/manifest.json) — `trunk_smoke_safetensors_keys` includes `template_force` / `template_force_threshold` when using the current featurizer. |
 | Minimal collated tensors for trunk smoke (`s_inputs`, MSA block, template dummies) | [`boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors`](../boltr-io/tests/fixtures/collate_golden/trunk_smoke_collate.safetensors) — consumed by [`boltr-backend-tch/tests/collate_predict_trunk.rs`](../boltr-backend-tch/tests/collate_predict_trunk.rs) (`predict_step_trunk` + `MsaFeatures`). Path helper: [`trunk_smoke_collate_path()`](../boltr-io/src/collate_golden.rs). |
 | ALA `process_token_features` golden (per-example + `B=1` collated) | [`token_features_ala_golden.safetensors`](../boltr-io/tests/fixtures/collate_golden/token_features_ala_golden.safetensors), [`token_features_ala_collated_golden.safetensors`](../boltr-io/tests/fixtures/collate_golden/token_features_ala_collated_golden.safetensors) — regenerate: `cargo run -p boltr-io --bin write_token_features_ala_golden`; Python: [`scripts/dump_token_features_ala_golden.py`](../scripts/dump_token_features_ala_golden.py) with `BOLTZ_SRC`. |
 | `MSAModule` weights + I/O (opt-in Rust test) | [`msa_module_golden.safetensors`](../boltr-backend-tch/tests/fixtures/msa_module_golden/msa_module_golden.safetensors) — [`scripts/export_msa_module_golden.py`](../scripts/export_msa_module_golden.py); run: `BOLTR_RUN_MSA_GOLDEN=1` + `scripts/cargo-tch test … msa_module_allclose_python_golden`. |

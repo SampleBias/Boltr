@@ -288,6 +288,12 @@ cargo test -- --nocapture
 
 # Run specific test
 cargo test test_name
+
+# Skip rustdoc doctests (library + integration tests only) — useful when /tmp is full
+cargo test --lib --tests
+
+# Example: run boltr-io tests without doctests
+cargo test -p boltr-io --lib --tests
 ```
 
 ### Code Quality
@@ -410,6 +416,32 @@ cargo update
 # Check Rust toolchain
 rustup update
 ```
+
+### Disk quota / `QuotaExceeded` during `cargo test` (often doctests)
+
+`rustdoc` writes argument files to **`$TMPDIR`** (often `/tmp`). If that volume hits a user or disk quota (Linux error **122**), you may see:
+
+`failed to write arguments to temporary file: QuotaExceeded`
+
+**Fixes:**
+
+1. **Free space** on the volume holding `TMPDIR` and the project `target/` directory (`cargo clean`, remove old `target` trees, clear package caches).
+2. **Point temp at a directory with headroom** (same filesystem as your checkout if that is where space exists):
+
+   ```bash
+   mkdir -p /path/with/space/tmp
+   TMPDIR=/path/with/space/tmp cargo test -p boltr-io
+   ```
+
+3. **Skip doctests** while iterating (unit + integration tests still run):
+
+   ```bash
+   cargo test -p boltr-io --lib --tests
+   ```
+
+4. **`boltr-io` disables library doctests** (`[lib] doctest = false` in its `Cargo.toml`) so `cargo test -p boltr-io` does not invoke `rustdoc` on that crate—avoiding temp-file quota failures. The former `BoltzInput` doc example is covered by `tests/yaml_parse.rs`.
+
+5. **CLI integration tests** (`boltr-cli/tests/*_cli.rs`) use `target/boltr-cli-test-tmp/` (see `tests/common.rs`) instead of `/tmp` so file writes stay on the project volume when `/tmp` is quota-limited.
 
 ## Contact & Support
 

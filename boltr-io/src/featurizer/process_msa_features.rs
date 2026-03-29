@@ -69,6 +69,9 @@ pub struct MsaFeatureTensors {
     pub deletion_mean: Array1<f32>,
     pub profile: Array2<f32>,
     pub msa_mask: Array2<i64>,
+    /// Second `process_msa_features` pass on affinity-cropped tokens (`profile_affinity` / `deletion_mean_affinity` in Boltz `InputEmbedder` when `affinity=True`).
+    pub profile_affinity: Option<Array2<f32>>,
+    pub deletion_mean_affinity: Option<Array1<f32>>,
 }
 
 impl MsaFeatureTensors {
@@ -83,6 +86,12 @@ impl MsaFeatureTensors {
         b.insert_f32("deletion_mean", self.deletion_mean.clone().into_dyn());
         b.insert_f32("profile", self.profile.clone().into_dyn());
         b.insert_i64("msa_mask", self.msa_mask.clone().into_dyn());
+        if let Some(ref p) = self.profile_affinity {
+            b.insert_f32("profile_affinity", p.clone().into_dyn());
+        }
+        if let Some(ref d) = self.deletion_mean_affinity {
+            b.insert_f32("deletion_mean_affinity", d.clone().into_dyn());
+        }
         b
     }
 }
@@ -174,5 +183,7 @@ pub fn process_msa_features(
         deletion_mean,
         profile,
         msa_mask,
+        profile_affinity: None,
+        deletion_mean_affinity: None,
     }
 }

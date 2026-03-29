@@ -40,12 +40,13 @@ pub mod model;
 
 #[cfg(feature = "tch-backend")]
 pub use boltz2::{
-    AtomDiffusion, AtomDiffusionConfig, AtomEncoderPlaceholder, BFactorModule, Boltz2Model,
-    ContactConditioning, ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput,
-    DiffusionModule, DiffusionSampleOutput, DistogramModule, InputEmbedder, MsaFeatures, MsaModule,
-    RelPosFeatures, RelativePositionEncoder, TemplateFeatures, TemplateModule, TemplateV2Module,
+    AffinityHead, AffinityModule, AtomDiffusion, AtomDiffusionConfig, AtomEncoderPlaceholder,
+    BFactorModule, Boltz2Model, ConfidenceModule, ConfidenceV2, ContactConditioning,
+    ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput, DiffusionModule,
+    DiffusionSampleOutput, DistogramModule, InputEmbedder, MsaFeatures, MsaModule, RelPosFeatures,
+    RelativePositionEncoder, TemplateFeatures, TemplateModule, TemplateV2Module,
     BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM,
-    CONTACT_CONDITIONING_CHANNELS,
+    CONTACT_CONDITIONING_CHANNELS, zeros_atom_attention_out,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{

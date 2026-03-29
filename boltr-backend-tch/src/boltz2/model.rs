@@ -335,6 +335,23 @@ impl Boltz2Model {
             .forward_with_atom_repr(atom_attn_out, res_type, profile, deletion_mean)
     }
 
+    /// Same as [`Self::forward_input_embedder`] but with `profile_affinity` / `deletion_mean_affinity`
+    /// tensors (Boltz `InputEmbedder.forward(..., affinity=True)` in `trunkv2.py`).
+    pub fn forward_input_embedder_affinity(
+        &self,
+        atom_attn_out: &Tensor,
+        res_type: &Tensor,
+        profile_affinity: &Tensor,
+        deletion_mean_affinity: &Tensor,
+    ) -> Tensor {
+        self.forward_input_embedder(
+            atom_attn_out,
+            res_type,
+            profile_affinity,
+            deletion_mean_affinity,
+        )
+    }
+
     /// Pairwise contact bias `[B, N, N, token_z]` (Python `contact_conditioning(feats)`).
     pub fn forward_contact_conditioning(&self, feats: &ContactFeatures<'_>) -> Tensor {
         self.contact_conditioning.forward(feats)

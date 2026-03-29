@@ -186,6 +186,28 @@
       "rank": 2,
       "shape": "[T, N]",
       "dtype": "float32"
+    },
+    "template_force": {
+      "rank": 1,
+      "shape": "[T]",
+      "dtype": "float32"
+    },
+    "template_force_threshold": {
+      "rank": 1,
+      "shape": "[T]",
+      "dtype": "float32"
+    }
+  },
+  "process_msa_features_affinity_embedder": {
+    "profile_affinity": {
+      "rank": 2,
+      "shape": "[N, num_tokens]",
+      "dtype": "float32"
+    },
+    "deletion_mean_affinity": {
+      "rank": 1,
+      "shape": "[N]",
+      "dtype": "float32"
     }
   },
   "atom_features_ala_golden_keys": [
@@ -240,7 +262,9 @@
     "deletion_mean",
     "profile",
     "template_restype",
-    "template_mask"
+    "template_mask",
+    "template_force",
+    "template_force_threshold"
   ],
   "residue_constraints_keys": [
     "rdkit_bounds_index",

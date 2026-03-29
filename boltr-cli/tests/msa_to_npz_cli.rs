@@ -1,3 +1,5 @@
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -24,7 +26,7 @@ fn boltr_bin() -> PathBuf {
 
 #[test]
 fn msa_to_npz_writes_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir_in(common::test_temp_root()).unwrap();
     let a3m = dir.path().join("tiny.a3m");
     fs::write(&a3m, ">q\nACDEF\n").unwrap();
     let npz = dir.path().join("tiny.npz");
