@@ -1,5 +1,32 @@
 # Boltr — Rust-native Boltz2 inference
 
+```text
+___
+          _____                   _______                   _____        _____                    _____          
+         /\    \                 /::\    \                 /\    \      /\    \                  /\    \         
+        /::\    \               /::::\    \               /::\____\    /::\    \                /::\    \        
+       /::::\    \             /::::::\    \             /:::/    /    \:::\    \              /::::\    \       
+      /::::::\    \           /::::::::\    \           /:::/    /      \:::\    \            /::::::\    \      
+     /:::/\:::\    \         /:::/~~\:::\    \         /:::/    /        \:::\    \          /:::/\:::\    \     
+    /:::/__\:::\    \       /:::/    \:::\    \       /:::/    /          \:::\    \        /:::/__\:::\    \    
+   /::::\   \:::\    \     /:::/    / \:::\    \     /:::/    /           /::::\    \      /::::\   \:::\    \   
+  /::::::\   \:::\    \   /:::/____/   \:::\____\   /:::/    /           /::::::\    \    /::::::\   \:::\    \  
+ /:::/\:::\   \:::\ ___\ |:::|    |     |:::|    | /:::/    /           /:::/\:::\    \  /:::/\:::\   \:::\____\ 
+/:::/__\:::\   \:::|    ||:::|____|     |:::|    |/:::/____/           /:::/  \:::\____\/:::/  \:::\   \:::|    |
+\:::\   \:::\  /:::|____| \:::\    \   /:::/    / \:::\    \          /:::/    \::/    /\::/   |::::\  /:::|____|
+ \:::\   \:::\/:::/    /   \:::\    \ /:::/    /   \:::\    \        /:::/    / \/____/  \/____|:::::\/:::/    / 
+  \:::\   \::::::/    /     \:::\    /:::/    /     \:::\    \      /:::/    /                 |:::::::::/    /  
+   \:::\   \::::/    /       \:::\__/:::/    /       \:::\    \    /:::/    /                  |::|\::::/    /   
+    \:::\  /:::/    /         \::::::::/    /         \:::\    \   \::/    /                   |::| \::/____/    
+     \:::\/:::/    /           \::::::/    /           \:::\    \   \/____/                    |::|  ~|          
+      \::::::/    /             \::::/    /             \:::\    \                             |::|   |          
+       \::::/    /               \::/____/               \:::\____\                            \::|   |          
+        \::/____/                 ~~                      \::/    /                             \:|   |          
+         ~~                                                \/____/                               \|___|          
+                                                                                                                 
+___
+```
+
 Boltr is a **Rust** reimplementation of **Boltz-2** (and shared Boltz architecture pieces) for biomolecular structure and affinity-related inference. The goal is **numerical parity** with PyTorch Boltz on the **non–cuEquivariance** path (`use_kernels=False`): same tensor contracts, LibTorch-backed modules via **`tch-rs`**, and a small set of **Python golden exporters** for regression.
 
 The original Boltz models are described in the [Boltz-1](https://doi.org/10.1101/2024.11.19.624167) and [Boltz-2](https://doi.org/10.1101/2025.06.14.659707) papers. This repository tracks **Boltr-specific** implementation status in [`TODO.md`](TODO.md).
