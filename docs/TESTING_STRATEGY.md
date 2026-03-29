@@ -291,4 +291,4 @@ scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
 ---
 
 *Last updated: 2026-03-29*
-*See also: [TODO.md §7](../TODO.md), [TENSOR_CONTRACT.md §6.5](TENSOR_CONTRACT.md)*
+*See also: [TODO.md §7](../TODO.md), [TENSOR_CONTRACT.md §6.5](TENSOR_CONTRACT.md), [NUMERICAL_TOLERANCES.md](NUMERICAL_TOLERANCES.md)*

@@ -43,9 +43,15 @@ python3 scripts/dump_token_features_ala_golden.py
 
 CI compares the checked-in safetensors to live Rust `process_token_features`; after regenerating from Python, run `cargo test -p boltr-io --lib token_features_ala` and fix any Rust drift.
 
-Optional: extend [`scripts/dump_collate_golden.py`](../../../scripts/dump_collate_golden.py) to dump a full merged `collate()` dict from `Boltz2InferenceDataModule`.
+**Full Python collate batch (optional, upstream Boltz):** [`scripts/dump_full_collate_golden.py`](../../../scripts/dump_full_collate_golden.py) saves the post-`collate()` dict from `Boltz2InferenceDataModule` to safetensors (requires a full `boltz` install with `boltz.data`, not model-only `boltz-reference`). Use for cross-checks when Rust collate is compared against Python end-to-end.
 
-**Backend wiring:** [`boltr-backend-tch/tests/collate_predict_trunk.rs`](../../../boltr-backend-tch/tests/collate_predict_trunk.rs) loads this file and runs `Boltz2Model::predict_step_trunk` with `MsaFeatures` (default `cargo test -p boltr-backend-tch --features tch-backend` when LibTorch is available).
+**Post-collate parity (Rust):** [`post_collate_golden.rs`](../../post_collate_golden.rs) compares live `collate_inference_batches` output to `trunk_smoke_collate.safetensors` with atol=`1e-6`, rtol=`1e-5` (see [NUMERICAL_TOLERANCES.md](../../../docs/NUMERICAL_TOLERANCES.md)).
+
+**Backend wiring:** [`boltr-backend-tch/tests/collate_predict_trunk.rs`](../../../boltr-backend-tch/tests/collate_predict_trunk.rs) loads this file and runs `Boltz2Model::predict_step_trunk` with `MsaFeatures`. Prefer [`scripts/cargo-tch`](../../../scripts/cargo-tch) for LibTorch:
+
+```bash
+scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --test collate_predict_trunk
+```
 
 ## Reference
 

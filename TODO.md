@@ -4,7 +4,7 @@ Rust port of **Boltz2** inference (`boltz-reference/`) using **`tch-rs` + LibTor
 
 **Parity target:** PyTorch **fallback** path (`use_kernels=False`). Prefer **golden tensors** vs Python on fixed fixtures before marking work complete.
 
-**Also read:** [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
+**Also read:** [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
 
 ---
 
@@ -246,11 +246,11 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Details |
 |--------|------|---------|
-| [~] | Golden fixture layout | [boltr-io/tests/fixtures/](boltr-io/tests/fixtures/) — expand README / coverage. |
-| [~] | Python export scripts | Checkpoint, pairformer, MSA module; **TBD:** full collate batch dumps. |
-| [~] | Numerical tolerances | [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) §6.5 |
-| [~] | Regression harness | [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh) — well-structured shell script with prerequisites checks, tolerance config, and Python comparison; gated behind `BOLTR_REGRESSION=1`. |
-| [~] | Backend unit tests | [scripts/cargo-tch](scripts/cargo-tch) for LibTorch path; [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). |
+| [x] | Golden fixture layout | [boltr-io/tests/fixtures/README.md](boltr-io/tests/fixtures/README.md), [load_input_smoke/README.md](boltr-io/tests/fixtures/load_input_smoke/README.md); [boltr-backend-tch/tests/fixtures/README.md](boltr-backend-tch/tests/fixtures/README.md). |
+| [~] | Python export scripts | Indexed in [scripts/README.md](scripts/README.md). Checkpoint / pairformer / MSA goldens documented; **TBD:** routine CI for `dump_full_collate_golden.py` (needs full upstream Boltz). |
+| [x] | Numerical tolerances | [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md) (registry); [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) §6.5 summary. |
+| [x] | Regression harness | [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh) + [scripts/regression_compare_outputs.py](scripts/regression_compare_outputs.py); prerequisites, `BOLTR_REGRESSION_TOL_FILE`, [scripts/regression_tol.env.example](scripts/regression_tol.env.example); gated `BOLTR_REGRESSION=1`. |
+| [x] | Backend unit tests | [scripts/cargo-tch](scripts/cargo-tch) documents `--test collate_predict_trunk` and goldens; [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). CI: [boltr-io-test.yml](.github/workflows/boltr-io-test.yml) for `boltr-io`. |
 
 ---
 

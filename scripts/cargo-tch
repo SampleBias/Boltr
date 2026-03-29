@@ -4,7 +4,12 @@
 # run plain `cargo` without `source .venv/bin/activate`.
 #
 # Usage (from repo root):
-#   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
+#   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib
+#   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --test collate_predict_trunk
+#   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --test msa_module_allclose_python_golden
+#
+# LibTorch must match the `tch` crate (see DEVELOPMENT.md). Integration tests live under
+# `boltr-backend-tch/tests/*.rs` (e.g. collate golden → trunk predict_step).
 #
 # Requires: bash scripts/bootstrap_dev_venv.sh (once)
 

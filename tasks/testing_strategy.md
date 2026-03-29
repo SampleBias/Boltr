@@ -32,24 +32,24 @@ From TODO.md §7: Expand golden fixture coverage, document tolerances, document 
 ## Subtasks
 
 ### 7.1 Fixture layout — top-level index README
-- [ ] 7.1.1 Write `boltr-io/tests/fixtures/README.md` — index every subdirectory, files, purpose, regeneration commands
-- [ ] 7.1.2 Write `boltr-io/tests/fixtures/load_input_smoke/README.md`
-- [ ] 7.1.3 Update `boltr-io/tests/fixtures/collate_golden/README.md` to be current
-- [ ] 7.1.4 Write `boltr-backend-tch/tests/fixtures/README.md` — index all backend fixture subdirectories
+- [x] 7.1.1 Write `boltr-io/tests/fixtures/README.md` — index every subdirectory, files, purpose, regeneration commands
+- [x] 7.1.2 Write `boltr-io/tests/fixtures/load_input_smoke/README.md`
+- [x] 7.1.3 Update `boltr-io/tests/fixtures/collate_golden/README.md` to be current
+- [x] 7.1.4 Write `boltr-backend-tch/tests/fixtures/README.md` — index all backend fixture subdirectories
 
 ### 7.2 Numerical tolerances document
-- [ ] 7.2.1 Write `docs/NUMERICAL_TOLERANCES.md` — central registry of rtol/atol per test category
-- [ ] 7.2.2 Audit and normalize tolerance constants across test files
+- [x] 7.2.1 Write `docs/NUMERICAL_TOLERANCES.md` — central registry of rtol/atol per test category
+- [ ] 7.2.2 Audit and normalize tolerance constants across test files (registry documents current values; optional tighten)
 
 ### 7.3 Python export scripts — documentation
-- [ ] 7.3.1 Write `scripts/README.md` — index every script, prerequisites, usage
+- [x] 7.3.1 Write `scripts/README.md` — index every script, prerequisites, usage
 
 ### 7.4 Regression harness
-- [ ] 7.4.1 Replace placeholder `scripts/regression_compare_predict.sh` with a documented stub that explains prerequisites and exit codes
+- [x] 7.4.1 `scripts/regression_compare_predict.sh` + `regression_compare_outputs.py`; prerequisites, exit codes, optional tol file
 
 ### 7.5 CI coverage
-- [ ] 7.5.1 Add `cargo-test-boltr-io.yml` workflow (push/PR on boltr-io paths)
-- [ ] 7.5.2 Update `libtorch-backend-smoke.yml` to also run integration tests
+- [x] 7.5.1 Add `boltr-io-test.yml` workflow (push/PR on boltr-io paths)
+- [ ] 7.5.2 Update `libtorch-backend-smoke.yml` to also run integration tests (manual smoke still; avoids doubling LibTorch CI cost)
 
 ### 7.6 Update TODO.md §7 status
-- [ ] 7.6.1 Mark completed items in TODO.md
+- [x] 7.6.1 Mark completed items in TODO.md

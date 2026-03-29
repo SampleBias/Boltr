@@ -1,0 +1,27 @@
+# boltr-io unit + integration tests (no LibTorch / tch).
+name: boltr-io tests
+
+on:
+  push:
+    paths:
+      - "boltr-io/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/boltr-io-test.yml"
+  pull_request:
+    paths:
+      - "boltr-io/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/boltr-io-test.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run boltr-io tests
+        run: cargo test -p boltr-io

@@ -10,6 +10,15 @@ Activity log for the Boltr project. See [docs/PROJECT_README.md](docs/PROJECT_RE
 *- Commands executed*
 *- Any important notes or decisions*
 
+## 2026-03-29 — §7 testing strategy (registry + harness + CI)
+
+- Added [docs/NUMERICAL_TOLERANCES.md](NUMERICAL_TOLERANCES.md) (central rtol/atol registry) and linked it from [TENSOR_CONTRACT.md](TENSOR_CONTRACT.md) §6.5.
+- Added fixture index READMEs: [boltr-io/tests/fixtures/README.md](../boltr-io/tests/fixtures/README.md), [load_input_smoke/README.md](../boltr-io/tests/fixtures/load_input_smoke/README.md), [boltr-backend-tch/tests/fixtures/README.md](../boltr-backend-tch/tests/fixtures/README.md); expanded [collate_golden/README.md](../boltr-io/tests/fixtures/collate_golden/README.md).
+- Added [scripts/README.md](../scripts/README.md) (all helper scripts); extracted [scripts/regression_compare_outputs.py](../scripts/regression_compare_outputs.py) from the regression shell script; added [scripts/regression_tol.env.example](../scripts/regression_tol.env.example) and `BOLTR_REGRESSION_TOL_FILE` / `BOLTR_PAE_*` env support in [scripts/regression_compare_predict.sh](../scripts/regression_compare_predict.sh).
+- Documented LibTorch test invocations in [scripts/cargo-tch](../scripts/cargo-tch).
+- CI: [.github/workflows/boltr-io-test.yml](../.github/workflows/boltr-io-test.yml) runs `cargo test -p boltr-io` on `boltr-io/**` changes.
+- Updated [TODO.md §7](../TODO.md) and [tasks/testing_strategy.md](../tasks/testing_strategy.md). Did **not** change `boltr-cli` §6 predict code.
+
 ## 2026-03-28 16:15 - Project Initialization
 - Created project structure files (tasks/todo.md, docs/activity.md, docs/PROJECT_README.md)
 - Initialized todo.md with project template
@@ -66,3 +75,12 @@ Completed:
    - Neural network forward passes: rtol=1e-4, atol=1e-5
    - Exact/structural: no tolerance needed
    - Sampling/stochastic: looser tolerances
+
+
+## 2026-03-29 11:16 - Session Started
+- Project structure files verified
+- Resumed work on existing project
+- Todo.md updated with new session section
+- PROJECT_README.md context checked
+- Ready for continued development
+

@@ -62,21 +62,32 @@ Lightning checkpoints store a nested `state_dict`. For Rust, export with [`scrip
 
 Python optional `[cuda]` extra installs **cuequivariance** kernels for faster triangle ops. LibTorch via `tch-rs` does not load those; Boltr targets the **same math** as the PyTorch fallback path (`use_kernels=False`). GPU acceleration uses **CUDA LibTorch** for standard torch ops.
 
-## Numerical tolerances (Phase 7)
+## 6. Golden tests, tolerances, and regression
 
-Document per-test `rtol` / `atol` as goldens land ([TODO.md](../TODO.md) §7 Testing strategy):
+### 6.1 Checked-in artifacts
 
-| Class | Typical policy |
-|-------|------------------|
-| Embeddings / linear outputs | `rtol ≈ 1e-5`, `atol ≈ 1e-6` (see `token_features_golden.rs`) |
-| Pairformer / MSA module (opt-in goldens) | match export script + same dtype (F32); tighten if CPU/CUDA diverge |
-| Sampling / diffusion | looser; compare distributions or fixed-seed step parity |
-| Collated batch dict | per-key in `#[test]` once Rust `collate` matches Python |
+See **Checked-in contract artifacts (Phase 1)** under [Featurizer output keys](#featurizer-output-keys) above for paths to manifests, safetensors, and regeneration commands.
 
-Add a **regression harness** (`boltz predict` vs `boltr predict`) when the CLI pipeline is complete (placeholder: [`scripts/regression_compare_predict.sh`](../scripts/regression_compare_predict.sh)).
-
-### Collate + MSA (Rust)
+### 6.2 Collate + MSA (Rust)
 
 - **Inference collate:** [`collate_inference_batches`](../boltr-io/src/collate_pad.rs) + [`pad_to_max_f32`](../boltr-io/src/collate_pad.rs) mirror Python [`pad_to_max`](../../boltz-reference/src/boltz/data/pad.py) / [`inferencev2.collate`](../../boltz-reference/src/boltz/data/module/inferencev2.py) for tensor keys; excluded keys are collected per-example in [`InferenceCollateResult::excluded`](../boltr-io/src/collate_pad.rs).
 - **MSA:** [`construct_paired_msa`](../boltr-io/src/featurizer/msa_pairing.rs) + [`process_msa_features`](../boltr-io/src/featurizer/process_msa_features.rs); integration via [`msa_features_from_inference_input`](../boltr-io/src/inference_dataset.rs). Optional Python golden stub: [`scripts/dump_msa_features_golden.py`](../scripts/dump_msa_features_golden.py).
 - **Atom features:** [`process_atom_features`](../boltr-io/src/featurizer/process_atom_features.rs) module placeholder (RDKit-dependent); golden-first when implementing.
+
+### 6.5 Numerical tolerances
+
+**Authoritative registry:** [NUMERICAL_TOLERANCES.md](NUMERICAL_TOLERANCES.md) lists every `rtol` / `atol` for featurizer tests, post-collate parity, backend module goldens, and the optional end-to-end regression script.
+
+Summary:
+
+| Class | Typical policy |
+|-------|------------------|
+| Token / MSA featurizer goldens | `rtol ≈ 1e-5`, `atol ≈ 1e-6` |
+| Atom features | `rtol ≈ 1e-4`, `atol ≈ 1e-5` |
+| Pairformer / MSA module / trunk init / input embedder (opt-in) | `rtol = 1e-4`, `atol = 1e-5` in `boltr-backend-tch` tests |
+| Post-collate trunk smoke | atol `1e-6`, rtol `1e-5` ([`post_collate_golden.rs`](../boltr-io/tests/post_collate_golden.rs)) |
+| Full `boltz predict` vs `boltr predict` | env defaults in [`scripts/regression_tol.env.example`](../scripts/regression_tol.env.example) (much looser than layer goldens) |
+
+### 6.6 Regression harness (optional)
+
+When both CLIs are available, set `BOLTR_REGRESSION=1` and run [`scripts/regression_compare_predict.sh`](../scripts/regression_compare_predict.sh). Prerequisites and tolerance overrides are documented in that script and in [scripts/README.md](../scripts/README.md). The comparator logic lives in [`scripts/regression_compare_outputs.py`](../scripts/regression_compare_outputs.py).
