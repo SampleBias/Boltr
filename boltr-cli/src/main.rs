@@ -20,7 +20,7 @@ mod predict_tch;
 
 /// Boltz model / asset cache directory resolution.
 ///
-/// Priority: `--cache` flag > `BOLTZ_CACHE` env var > XDG default (`~/.cache/boltr`).
+/// Priority: `--cache-dir` flag > `BOLTZ_CACHE` env var > XDG default (`~/.cache/boltr`).
 fn resolve_cache_dir(cli_cache: Option<&Path>) -> PathBuf {
     if let Some(p) = cli_cache {
         return p.to_path_buf();
@@ -65,15 +65,6 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Compute device: cpu, cuda, or cuda:N (requires `--features tch` and LibTorch for GPU).
-    #[arg(long, default_value = "cpu")]
-    device: String,
-
-    /// Model / asset cache directory.
-    /// Falls back to `BOLTZ_CACHE` env var, then `~/.cache/boltr`.
-    #[arg(long)]
-    cache_dir: Option<PathBuf>,
-
     /// Verbosity level (-v, -vv, -qqq, etc.).
     #[command(flatten)]
     verbose: clap_verbosity_flag::Verbosity,
@@ -85,6 +76,19 @@ enum Commands {
     Predict {
         /// Input path: a `.yaml`/`.fasta` file, or a directory (processes all `.yaml`/`.fasta` inside).
         input: String,
+
+        /// Output directory (default: `./output`).
+        #[arg(short, long, default_value = "./output")]
+        output: String,
+
+        /// Compute device: cpu, cuda, or cuda:N (requires `--features tch` and LibTorch for GPU).
+        #[arg(long, default_value = "cpu")]
+        device: String,
+
+        /// Model / asset cache directory.
+        /// Falls back to `BOLTZ_CACHE` env var, then `~/.cache/boltr`.
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
 
         // ---- Boltz-compatible flags ----
         /// Use MSA server for sequence alignment (ColabFold-compatible API).
@@ -184,8 +188,12 @@ enum Commands {
     /// Download model weights and static assets.
     Download {
         /// Model version: `boltz2` or `boltz1`.
-        #[arg(short, long, default_value = "boltz2")]
+        #[arg(long, default_value = "boltz2")]
         version: String,
+
+        /// Cache directory (default: `BOLTZ_CACHE` env or `~/.cache/boltr`).
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
     },
 
     /// Structure benchmark evaluation (not implemented; see boltz-reference docs).
@@ -258,10 +266,13 @@ async fn main() -> Result<()> {
         // predict
         // =======================================================================
         Commands::Predict {
-            ref input,
+            input,
+            output,
+            device,
+            cache_dir,
             use_msa_server,
-            ref msa_server_url,
-            ref msa_pairing_strategy,
+            msa_server_url,
+            msa_pairing_strategy,
             affinity,
             use_potentials,
             recycling_steps,
@@ -272,8 +283,8 @@ async fn main() -> Result<()> {
             output_format,
             max_msa_seqs,
             num_samples,
-            ref checkpoint,
-            ref affinity_checkpoint,
+            checkpoint,
+            affinity_checkpoint,
             affinity_mw_correction,
             sampling_steps_affinity,
             diffusion_samples_affinity,
@@ -283,18 +294,18 @@ async fn main() -> Result<()> {
             write_full_pde,
             spike_only,
         } => {
-            let cache = resolve_cache_dir(cli.cache_dir.as_deref());
-            let out_dir = Path::new(&cli.output);
-            let device_str = std::env::var("BOLTR_DEVICE").unwrap_or_else(|_| cli.device.clone());
+            let cache = resolve_cache_dir(cache_dir.as_deref());
+            let out_dir = Path::new(&output).to_path_buf();
+            let device_str = std::env::var("BOLTR_DEVICE").unwrap_or(device);
 
             predict_flow(PredictFlowArgs {
-                input: input.clone(),
+                input,
                 cache,
-                out_dir: out_dir.to_path_buf(),
+                out_dir,
                 device: device_str,
                 use_msa_server,
-                msa_server_url: msa_server_url.clone(),
-                msa_pairing_strategy: msa_pairing_strategy.clone(),
+                msa_server_url,
+                msa_pairing_strategy,
                 affinity,
                 use_potentials,
                 recycling_steps,
@@ -305,8 +316,8 @@ async fn main() -> Result<()> {
                 output_format,
                 max_msa_seqs,
                 num_samples,
-                checkpoint: checkpoint.clone(),
-                affinity_checkpoint: affinity_checkpoint.clone(),
+                checkpoint,
+                affinity_checkpoint,
                 affinity_mw_correction,
                 sampling_steps_affinity,
                 diffusion_samples_affinity,
@@ -322,8 +333,8 @@ async fn main() -> Result<()> {
         // =======================================================================
         // download
         // =======================================================================
-        Commands::Download { version } => {
-            let cache = resolve_cache_dir(cli.cache_dir.as_deref());
+        Commands::Download { version, cache_dir } => {
+            let cache = resolve_cache_dir(cache_dir.as_deref());
             tokio::fs::create_dir_all(&cache).await?;
             tracing::info!(dir = %cache.display(), "downloading into cache");
             let paths = boltr_io::download_model_assets(&version, &cache).await?;
@@ -421,7 +432,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         device,
         use_msa_server,
         ref msa_server_url,
-        ref msa_pairing_strategy,
+        msa_pairing_strategy: _,
         affinity,
         use_potentials,
         recycling_steps,
@@ -442,7 +453,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         write_full_pae,
         write_full_pde,
         spike_only,
-    } = &args;
+    } = args;
 
     // 1. Parse input (YAML / FASTA / directory)
     let input_path = Path::new(&input);
@@ -452,11 +463,11 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         "parsed input YAML"
     );
 
-    if *affinity {
+    if affinity {
         tracing::info!("--affinity: affinity inference path active");
     }
-    if *use_potentials {
-        if *affinity {
+    if use_potentials {
+        if affinity {
             tracing::warn!(
                 "--use-potentials with --affinity: Boltz disables steering on affinity path; \
                  potentials will not be applied"
@@ -470,7 +481,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     tokio::fs::create_dir_all(&out_dir).await?;
 
     // 3. Optional MSA server fetch
-    if *use_msa_server {
+    if use_msa_server {
         let need = parsed.protein_sequences_for_msa();
         if !need.is_empty() {
             let proc = boltr_io::MsaProcessor::new(msa_server_url.clone());
@@ -500,13 +511,13 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     let summary = boltr_io::PredictionRunSummary::from_input(
         input.as_str(),
         &parsed,
-        *use_msa_server,
+        use_msa_server,
         device.as_str(),
-        *num_samples,
+        num_samples,
         backend_note,
-        *affinity,
-        *use_potentials,
-        *spike_only,
+        affinity,
+        use_potentials,
+        spike_only,
         boltr_predict_args_path.clone(),
     );
     let summary_path = out_dir.join("boltr_run_summary.json");
@@ -519,34 +530,34 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         use boltr_backend_tch::PredictArgsCliOverrides;
 
         let overrides = PredictArgsCliOverrides {
-            recycling_steps: *recycling_steps,
-            sampling_steps: *sampling_steps,
-            diffusion_samples: diffusion_samples.or(Some(*num_samples as i64)),
-            max_parallel_samples: *max_parallel_samples,
+            recycling_steps,
+            sampling_steps,
+            diffusion_samples: diffusion_samples.or(Some(num_samples as i64)),
+            max_parallel_samples,
         };
 
         predict_tch::run_predict_tch(predict_tch::PredictTchArgs {
             input_path: input_path.to_path_buf(),
-            cache: cache.clone(),
-            out_dir: out_dir.clone(),
-            device: device.clone(),
-            affinity: *affinity,
-            use_potentials: *use_potentials,
+            cache,
+            out_dir,
+            device,
+            affinity,
+            use_potentials,
             overrides,
-            step_scale: *step_scale,
-            output_format: *output_format,
-            max_msa_seqs: *max_msa_seqs,
-            num_samples: *num_samples,
-            checkpoint: checkpoint.clone(),
-            affinity_checkpoint: affinity_checkpoint.clone(),
-            affinity_mw_correction: *affinity_mw_correction,
-            sampling_steps_affinity: *sampling_steps_affinity,
-            diffusion_samples_affinity: *diffusion_samples_affinity,
-            preprocessing_threads: *preprocessing_threads,
-            override_flag: *override_flag,
-            write_full_pae: *write_full_pae,
-            write_full_pde: *write_full_pde,
-            spike_only: *spike_only,
+            step_scale,
+            output_format,
+            max_msa_seqs,
+            num_samples,
+            checkpoint,
+            affinity_checkpoint,
+            affinity_mw_correction,
+            sampling_steps_affinity,
+            diffusion_samples_affinity,
+            preprocessing_threads,
+            override_flag,
+            write_full_pae,
+            write_full_pde,
+            spike_only,
             parsed: &parsed,
         })
         .await?;
@@ -555,6 +566,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     #[cfg(not(feature = "tch"))]
     {
         let _ = (
+            &cache,
             recycling_steps,
             sampling_steps,
             diffusion_samples,
@@ -573,7 +585,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             write_full_pde,
             &parsed,
         );
-        if *spike_only {
+        if spike_only {
             tracing::warn!(
                 "rebuild with `cargo build -p boltr-cli --features tch` for model execution"
             );

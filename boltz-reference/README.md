@@ -1,3 +1,7 @@
+**Boltr repository:** This folder is a **vendored, trimmed** snapshot of upstream Boltz **model** sources for parity and golden-tensor work. It does **not** ship `boltz.data`, the full training/eval scripts, or the upstream `main.py` CLI—see the Boltr repo’s [`docs/PYTHON_REMOVAL.md`](../docs/PYTHON_REMOVAL.md) and [root `README.md`](../README.md). For a complete install, use [jwohlwend/boltz](https://github.com/jwohlwend/boltz) on PyPI or GitHub.
+
+---
+
 <div align="center">
   <div>&nbsp;</div>
   <img src="docs/boltz2_title.png" width="300"/>

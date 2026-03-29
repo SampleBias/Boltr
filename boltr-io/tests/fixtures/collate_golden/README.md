@@ -1,5 +1,7 @@
 # Collated batch golden (tensor contract)
 
+**Status:** Trunk smoke + manifest keys are tracked in [`TODO.md`](../../../TODO.md) §2b / §4.5; post-collate parity in [`post_collate_golden.rs`](../../post_collate_golden.rs).
+
 This directory holds **machine-readable** artifacts for the Boltz2 inference batch that
 `Boltz2Featurizer.process` + `collate()` produce in Python (`data/module/inferencev2.py`,
 `data/feature/featurizerv2.py`).

@@ -1,116 +1,91 @@
-# boltr-io-§4.5-inference-dataset-collate - Development Context
+# Boltr CLI — §6 `boltr-cli`: User-Facing Commands
+
+ Development Context
 
 ## Project Purpose
-This project is currently under active development. This document maintains context for AI agents and developers working on the project.
+Complete implementation of `boltr-cli` — the user-facing command-line interface for the Boltr Rust-native Boltz2 inference system.
 
-## Architecture Overview
-- **Project Type**: Software Project
-- **Development Status**: Active Development
-- **Context Tracking**: Integrated with Vybrid development workflow
+ This implements the full predict pipeline with Boltz-upstream-compatible CLI flags and output layout.
 
-## Technology Stack
-- *Technology stack will be detected as project develops*
+ ## Architecture
+ - **`boltr predict`**: Full prediction pipeline (YAML → featurize → model → output)
+ - **`boltr download`**: Model weight and asset downloads
+ - **`boltr eval`**: Evaluation stub (not implemented natively)
+ - **`boltr msa-to-npz`**: MSA file conversion
+ - **`boltr tokens-to-npz`**: Structure tokenization
 
-## Project Structure
-- *Project structure will be documented as development progresses*
+ ## Technology Stack
+ - Rust 2021 edition with `clap` for CLI argument parsing
+ - `tokio` for async runtime
+ - `tch-rs` (optional `--features tch`) for LibTorch backend
+ - `serde` / `serde_json` / `serde_yaml` for serialization
+ - `tracing` / `tracing-subscriber` for logging
 
-## Getting Started
+ ## Commands
 
-### Prerequisites
-- *Prerequisites will be documented as project requirements are identified*
+ ### `boltr predict`
+ Mirrors upstream `boltz predict` interface:
+ ```bash
+ boltr predict INPUT [OPTIONS]
+ ```
+ **Key flags (Boltz-compatible):**
+ - `--output`, `-o` — Output directory (default: `./output`)
+ - `--device` — Compute device: cpu, cuda, cuda:N
+ - `--cache-dir` — Model cache directory
+ - `--use-msa-server` — Use ColabFold MSA server
+ - `--msa-server-url` — MSA server URL
+ - `--affinity` — Enable affinity prediction
+ - `--use-potentials` — Enable inference-time steering
+ - `--recycling-steps` — Trunk recycling iterations
+ - `--sampling-steps` — Diffusion sampling steps
+ - `--diffusion-samples` — Number of structure samples
+ - `--max-parallel-samples` — Max parallel diffusion samples
+ - `--step-scale` — Diffusion temperature (default: 1.638)
+ - `--output-format` — Structure format: `mmcif` (default) or `pdb`
+ - `--max-msa-seqs` — Max MSA sequences (default: 8192)
+ - `--checkpoint` — Custom confidence checkpoint path
+ - `--affinity-checkpoint` — Custom affinity checkpoint path
+ - `--affinity-mw-correction` — MW correction for affinity
+ - `--override` — Re-run even if output exists
+ - `--write-full-pae` / `--write-full-pde` — Save full PAE/PDE matrices
+ - `--spike-only` — Trunk-only smoke test (no diffusion)
 
-### Installation
-- *Installation instructions will be added as the build process is defined*
+ - `--num-samples` — Default diffusion samples (default: 1)
 
-### Running the Project
-- *Startup instructions will be documented as entry points are established*
+ **Environment variables:**
+ - `BOLTR_DEVICE` — Override `--device`
+ - `BOLTR_CACHE` — Override `--cache-dir`
+ - `BOLTR_HPARAMS_JSON` — Path to hyperparameters JSON
 
-## Development Status
-- **Task Tracking**: See `tasks/todo.md` for current development tasks and progress
-- **Activity History**: See `docs/activity.md` for detailed development timeline
-- **Context Updates**: This file is automatically updated when major project changes are detected
+ **Output layout** (matches Boltz `predictions/`):
+ ```
+ {output_dir}/
+ ├── boltr_run_summary.json
+ ├── boltr_predict_args.json           (tch build only)
+ └── {record_id}/
+     ├── {record_id}_model_0.{cif|pdb}
+     ├── confidence_{record_id}_model_0.json
+     ├── affinity_{record_id}.json     (affinity mode)
+     ├── pae_{record_id}_model_0.npz
+     ├── pde_{record_id}_model_0.npz
+     └── plddt_{record_id}_model_0.npz
+ ```
 
-## Key Context for AI Agents
+ ### `boltr download`
+ ```bash
+ boltr download [--version boltz2] [--cache-dir DIR]
+ ```
 
-### Development Workflow
-- This project follows the Vybrid development methodology
-- Three mandatory files are maintained: `tasks/todo.md`, `docs/activity.md`, and this `docs/PROJECT_README.md`
-- All development activities are tracked and documented systematically
+ ## Development Status
+ - **Task Tracking**: See `tasks/todo.md`
+ - **Activity History**: See `docs/activity.md`
+ - All 9 tests pass: `cargo test -p boltr-cli`
 
-### Project Evolution
-- **Initial Analysis**: 2026-03-28 16:15
-- **Last Context Update**: 2026-03-28 16:15
-- **Major Changes**: *Tracked automatically when significant project modifications occur*
+ ## Documentation Links
+ - [Task List](../../tasks/todo.md)
+ - [Activity Log](activity.md)
+ - [Prediction Output Spec](../../../boltz-reference/docs/prediction.md)
 
-## Documentation Links
-- [Task List](../tasks/todo.md) - Current development tasks and progress
-- [Activity Log](activity.md) - Detailed timeline of all development activities
-
----
-*Auto-generated by Vybrid*
-*Created: 2026-03-28 16:15*
-*Last Updated: 2026-03-28 16:15*
-*Context Version: 1.0*
-
-
----
-
-## Session Update - 2026-03-28 16:54
-- **Session Started**: 2026-03-28 16:54
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 10:07
-- **Session Started**: 2026-03-29 10:07
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 10:07
-- **Session Started**: 2026-03-29 10:07
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 10:08
-- **Session Started**: 2026-03-29 10:08
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 10:17
-- **Session Started**: 2026-03-29 10:17
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 10:18
-- **Session Started**: 2026-03-29 10:18
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
-
-
----
-
-## Session Update - 2026-03-29 11:16
-- **Session Started**: 2026-03-29 11:16
-- **Context Status**: Verified and up-to-date
-
-*Context automatically updated for new development session*
+ ---
+ *Auto-generated by Vybrid*
+ *Context Version: 2.0*

@@ -1,5 +1,7 @@
 # Test fixtures (`boltr-io`)
 
+**Status:** Actively maintained; regeneration commands are kept in sync with [`post_collate_golden.rs`](../post_collate_golden.rs) and [`TODO.md`](../../../TODO.md) §2b / §4.
+
 Layout of **`tests/fixtures/`** for parsing, featurizer, and collate tests. Paths are relative to this directory.
 
 ## Layout

@@ -2,6 +2,8 @@
 
 Python utilities for checkpoint export, golden tensors, and layout checks. **Rust** is the shipped inference path; these scripts support parity work and fixture regeneration.
 
+**Project checklist:** implementation status and parity gates are tracked in **[`TODO.md`](../TODO.md)** (master) and summarized in the **[root `README.md`](../README.md#project-status-high-level-checklist)**.
+
 ## Requirements
 
 | Script group | Typical `pip install` |

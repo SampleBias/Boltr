@@ -1,8 +1,10 @@
 # Development Guide
 
+See also the repository **[`README.md`](README.md)** (overview, checklist, doc index).
+
 ## Prerequisites
 
-- Rust 1.93 or later
+- **Rust** stable toolchain (workspace uses **edition 2021**; see root `Cargo.toml`)
 - Git
 
 ## Initial Setup

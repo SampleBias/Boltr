@@ -1,5 +1,7 @@
 # Backend test fixtures (`boltr-backend-tch`)
 
+**Status:** See **[`TODO.md`](../../../TODO.md) §5** for backend graph completion; this folder holds **pinned weights** and **opt-in Python goldens** (env `BOLTR_RUN_*_GOLDEN=1`).
+
 Safetensors / JSON used by **LibTorch** (`tch`) tests. Run tests via [`scripts/cargo-tch`](../../../scripts/cargo-tch) so `torch-sys` resolves Python’s LibTorch.
 
 ## Subdirectories

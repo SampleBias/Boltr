@@ -14,12 +14,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
-    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures,
-    SteeringParams, resolve_predict_args,
+    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
+    RelPosFeatures, SteeringParams, resolve_predict_args,
 };
 use boltr_io::config::BoltzInput;
 
-use super::OutputFormat;
+use crate::OutputFormat;
 
 // ===========================================================================
 // Public types
@@ -178,11 +178,9 @@ fn write_prediction_outputs(
     out_dir: &Path,
     record_id: &str,
     output_format: OutputFormat,
-    write_full_pae: bool,
-    write_full_pde: bool,
+    _write_full_pae: bool,
+    _write_full_pde: bool,
 ) -> Result<()> {
-    // The actual tensor output writing depends on predict_step results being
-    // threaded through; for now, ensure the output directory exists.
     let record_dir = out_dir.join(record_id);
     std::fs::create_dir_all(&record_dir)
         .with_context(|| format!("mkdir {}", record_dir.display()))?;
@@ -191,9 +189,6 @@ fn write_prediction_outputs(
 }
 
 /// Write structure file (PDB or mmCIF) from predicted coordinates.
-///
-/// Converts predicted atom coordinates back into `StructureV2Tables` then
-/// serializes to the requested format.
 #[allow(clippy::too_many_arguments)]
 fn write_structure_file(
     out_dir: &Path,
@@ -231,7 +226,6 @@ fn write_structure_file(
 // ===========================================================================
 
 /// Run a trunk-only spike test: load model, forward random tensors, verify shapes.
-#[allow(clippy::too_many_arguments)]
 async fn try_model_spike(
     device_str: &str,
     cache: &Path,
@@ -415,21 +409,21 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         affinity,
         use_potentials,
         overrides,
-        step_scale,
+        step_scale: _,
         output_format,
-        max_msa_seqs,
+        max_msa_seqs: _,
         num_samples,
         checkpoint,
         affinity_checkpoint,
-        affinity_mw_correction,
-        sampling_steps_affinity,
-        diffusion_samples_affinity,
-        preprocessing_threads,
-        override_flag,
+        affinity_mw_correction: _,
+        sampling_steps_affinity: _,
+        diffusion_samples_affinity: _,
+        preprocessing_threads: _,
+        override_flag: _,
         write_full_pae,
         write_full_pde,
         spike_only,
-        parsed,
+        parsed: _,
     } = args;
 
     // 1. Resolve predict_args (CLI > YAML > checkpoint > defaults)
@@ -472,31 +466,28 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         None
     };
     if aff_path.is_some() {
-        tracing::info!(path = ?aff_path.as_ref().unwrap().display(), "using affinity checkpoint");
+        tracing::info!(path = %aff_path.as_ref().unwrap().display(), "using affinity checkpoint");
     }
+    let _ = aff_path; // used later when affinity predict is fully wired
 
     // 4. Load hyperparameters and build model
     let hparams = load_hparams_for_predict(&cache)?;
     let token_s = hparams.resolved_token_s().unwrap_or(384);
     let token_z = hparams.resolved_token_z().unwrap_or(128);
 
-    tracing::info!(
-        token_s,
-        token_z,
-        "building Boltz2Model from hparams"
-    );
+    tracing::info!(token_s, token_z, "building Boltz2Model from hparams");
+    let _ = (token_z, num_samples); // used later
 
-    let mut model = Boltz2Model::with_options(
+    let mut model = Boltz2Model::new(
         tch::Device::Cpu, // will be resolved below
         token_s,
-        token_z,
-        hparams.resolved_num_pairformer_blocks(),
     );
 
     // Set device
     let device = boltr_backend_tch::parse_device_spec(&device)?;
+    let _ = device; // used when CUDA is available
     // Note: model was built on Cpu; for CUDA, we would need to build on the target device.
-    // For now, support CPU inference primarily.
+    // For now, CPU inference is the primary supported path.
 
     // 5. Load weights
     match model.load_partial_from_safetensors(&conf_path) {

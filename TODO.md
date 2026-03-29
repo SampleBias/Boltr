@@ -4,7 +4,7 @@ Rust port of **Boltz2** inference (`boltz-reference/`) using **`tch-rs` + LibTor
 
 **Parity target:** PyTorch **fallback** path (`use_kernels=False`). Prefer **golden tensors** vs Python on fixed fixtures before marking work complete.
 
-**Also read:** [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
+**Also read:** [README.md](README.md), [QUICKSTART.md](QUICKSTART.md), [DEVELOPMENT.md](DEVELOPMENT.md), [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md), [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md), [docs/PYTHON_REMOVAL.md](docs/PYTHON_REMOVAL.md), [docs/PAIRFORMER_IMPLEMENTATION.md](docs/PAIRFORMER_IMPLEMENTATION.md), [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
 
 ---
 
@@ -24,7 +24,7 @@ Update the mark in your PR when you complete a row (`[ ]` → `[~]` → `[x]` as
 
 | Topic | Rule |
 |--------|------|
-| Reference CLI | `boltz-reference/src/boltz/main.py` — URLs, preprocess, datamodules, writers. |
+| Reference CLI | Upstream Boltz `src/boltz/main.py` ([jwohlwend/boltz](https://github.com/jwohlwend/boltz)) — URLs, preprocess, datamodules, writers. Vendored `boltz-reference/` is model-only (no `main.py`). |
 | Checkpoint | `.ckpt` → [scripts/export_checkpoint_to_safetensors.py](scripts/export_checkpoint_to_safetensors.py); Rust loads `.safetensors` into `tch` (names match after strip-prefix). |
 | Triangle / pair ops | Match PyTorch fallback ([triangular_mult.py](boltz-reference/src/boltz/model/layers/triangular_mult.py), triangular_attention without cuequivariance). |
 | Mixed precision | Mirror Python `autocast("cuda", enabled=False)` islands; explicit F32 where Python disables autocast. |

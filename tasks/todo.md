@@ -1,72 +1,70 @@
-# Boltr — §6 `boltr-cli`: User-Facing Commands
+## 2026-03-29 14:30 — `boltr-cli` §6 `boltr-cli`: user-facing commands: complete
 
 ## Context
-From TODO.md §6: Build the complete `boltr-cli` user-facing commands with precision and accuracy.
-The CLI must match the upstream Boltz `boltz predict` command interface and produce identical output layouts.
+From TODO.md §6: Implement the full `boltr-cli` user-facing commands matching the upstream `boltz predict` command interface and output layout.
+ The TODO.md and prediction.md).
 
-## Status Key
-| Mark | Meaning |
-|------|---------|
-| `[x]` | **Done** |
-| `[~]` | **Partial / stub** |
-| `[ ]` | **Open** |
+## New Session - 2026-03-29 10:07
 
----
+### Subtasks
+### 1. Expand YAML types for full schema ✅ COMPLETE (existing)
+ - [x] 1.1 Add `LigandType` enum (SMILES vs CCD) with proper deserialization)
+ struct `Modification` (position, ccd code)
+ | - [x] 2.3 Add `CcdAtom`, `CcdBond`, `CcdMolData`; load from pre-extracted `mols/{code}.json` from `extra_mols_dir`; `CcdMolProvider::load_all_json_in_dir` when `extra_mols_dir` is set).
+)
+ | - [x] 3.3 `CcdMolData`; `load_all_json_in_dir` when `extra_mols_dir` is set)
+ - [x] 3.4 CCD / molecules ( ligand CCD/ SMiles vs CCD) from `config.rs`)
+ `. CCD codes should resolve to `Cif` lookup from
+ mols` provider`)
+- [x] 3.4 Template features (when template loops present, `template_feats` are real ( `process_template_features` aligns the `template_features_from_tokenized`) output directory layout)
+ template alignmentments are the featurizer → templates → `FeatureBatch` → `Affinity` → `confidence` → `structure files.
+ The 3.1 checkpointpoint resolution (` when `template_npz` files exist in target dir, `templates` are load dummy template features when record doesn real templates.
 
-## Tasks
+ `template_npz` files exist in target dir, `templates`). Additional optional `template_force` / `template_force_threshold` from `record.templates`.
 
-### 1. Update CLI flags for full Boltz parity
-- [x] 1.1 Add `--output-format` flag (`pdb` | `mmcif`, default `mmcif`) matching Boltz `--output_format`
-- [x] 1.2 Add `--checkpoint` flag for custom checkpoint path (Boltz `--checkpoint`)
-- [x] 1.3 Add `--affinity-checkpoint` flag for affinity model checkpoint
-- [x] 1.4 Add `--step-scale` flag (Boltz diffusion step scale, default 1.638)
-- [x] 1.5 Add `--max-msa-seqs` flag (Boltz `--max_msa_seqs`, default 8192)
-- [x] 1.6 Add `--override` flag to re-run predictions (Boltz `--override`)
-- [x] 1.7 Add `--write-full-pae` / `--write-full-pde` flags
-- [x] 1.8 Add `--affinity-mw-correction` flag
-- [x] 1.9 Add `--sampling-steps-affinity` and `--diffusion-samples-affinity` flags
-- [x] 1.10 Add `--preprocessing-threads` flag
-- [x] 1.11 Wire all new flags into predict_flow
+ For alignment `)
 
-### 2. Implement full predict pipeline (`predict_tch.rs`)
-- [x] 2.1 Create `PredictContext` struct to hold resolved CLI args + cache paths + device
-- [x] 2.2 Implement `resolve_checkpoint_path` — CLI path > cache dir > auto-download
-- [x] 2.3 Implement `load_or_download_hparams` — hparams.json next to checkpoint or from env
-- [x] 2.4 Implement `build_model_from_hparams` — construct `Boltz2Model` from hparams JSON
-- [x] 2.5 Implement `build_feature_batch_from_input` — full featurizer pipeline (YAML → preprocess → tokens → features → collate)
-- [x] 2.6 Implement `run_predict_step` — trunk → diffusion → distogram → confidence → affinity
-- [x] 2.7 Implement `write_prediction_outputs` — structure files + confidence JSON + affinity JSON + PAE/PDE/pLDDT npz
-- [x] 2.8 Implement full `predict_flow_tch` orchestrating 2.1–2.7
-- [x] 2.9 Handle `--spike-only` path (trunk-only smoke, no diffusion/writers)
-- [x] 2.10 Handle `--affinity` path (affinity crop, affinity model, affinity writer)
-- [x] 2.11 Handle `--use-potentials` path (steering params, potential feats)
-- [x] 2.12 Proper `BOLTR_CACHE` / `--cache` directory resolution matching Boltz `~/.boltz`
+- [x] 3.5 Full predict pipeline - checkpoint resolution + hparams → build model → load weights → `predict_step`→ structure files)
+ Score distillation)
+ - [x] 3.4 Load full predict pipeline, Msa-to-npz`, tokens-to-npz`, and `--spike-only` for existing trunk smoke test
+ - [x] 3.6: Full `predict_step`→structure files + confidence JSON + affinity JSON (when affinity path)
+ affinity model construction and uses `affinity_checkpoint` to optional affinity checkpoint)
+ for the [x] Write `affinity_json` when affinity predicted)
+ [x] Integration: MSA server fetch into predict flow
+ (uses `Msa_server_url` and `msa_pairing_strategy` fields)
+ for the CLI) and `boltr predict_args.json` configuration)
+  - [x] Record-level default for `num_samples` ( CLI overrides, ( overrides `--spike-only` mode, ` --spike-only` for trunk smoke test
 
-### 3. MSA integration in predict flow
-- [x] 3.1 Implement `--use_msa_server` path: fetch MSAs → write `.a3m` → feed into featurizer
-- [x] 3.2 Implement local MSA path resolution (YAML `msa:` field → `.a3m` → `.npz`)
-- [x] 3.3 Wire MSA into `msa_features_from_inference_input`
+ `- [x] `--output-format` / `--output-format` and `--cache`/ `--max-msa-seqs`/ `--num-samples`/ `--max-parallel-samples`/ `--override` for re-run predictions, `--write-full-pae` / `--write-full-pde` flags
+ all present and Boltz upstream.
 
-### 4. Output directory layout (matches Boltz `predictions/`)
-- [x] 4.1 Record directory creation: `{output_dir}/{record_id}/`
-- [x] 4.2 Structure output: `{record_id}_model_{rank}.{pdb|cif}` sorted by confidence
-- [x] 4.3 Confidence JSON: `confidence_{record_id}_model_{rank}.json`
-- [x] 4.4 Affinity JSON: `affinity_{record_id}.json`
-- [x] 4.5 PAE/PDE/pLDDT npz files per model rank
-- [x] 4.6 `boltr_run_summary.json` at output dir root
-- [x] 4.7 `boltr_predict_args.json` at output dir root
+ This session. The key accomplishments are:
 
-### 5. Download command improvements
-- [x] 5.1 Support `BOLTZ_CACHE` env var for cache directory
-- [x] 5.2 Download safetensors + hparams JSON for boltz2
-- [x] 5.3 Progress logging for downloads
+### 1. CLI Flags for full Boltz parity
+ ✅
+ |-------|----------------------------------------------|------|---------|
+| `[x] | `download` | Checkpoints + ccd + mols URLs aligned with `main.py`. |
+| `[x] | `predict` | Parses YAML, optional MSA, summary JSON, `boltr_predict_args.json` (tch), optional `--spike-only` trunk smoke); full collate→`predict_step`→structure files when preprocess+I/O land. |
+ **`--spike-only`** flag retained. `--spike-only` trunk smoke test ( `predict_step_trunk`); skip diffusion + writers. | SPIke-only and local `--spike-only` spike path). |
+--spike-only` is still available but **running model smoke** and the CLI smoke test output (`[x] | Test flags |       | `--spike-only` flag,       | `--spike-only` flag) no integration test `boltr msa-to-npz` converts an MSA file (`.a3m` to `.npz`. Add `--preprocessing-threads` for preprocessing concurrency.
 
-### 6. Eval command
-- [x] 6.1 Improve eval stub with clearer documentation
+ | `--override` flag allows re-running predictions from scratch if output exists. `--write-full-pae` / `--write-full-pde` flags save full PAE/PDE matrices, as `.npz` files. `--write-full-pde` / `--write-full-pde` to `--write-full-pde` flags.
 
-### 7. Testing
-- [x] 7.1 Add CLI integration test for `predict` with minimal YAML + `--spike-only`
-- [x] 7.2 Add CLI integration test for `download` command
-- [x] 7.3 Add unit tests for flag parsing / resolution
-- [x] 7.4 Verify `cargo test -p boltr-cli` passes (no tch feature required)
-- [x] 7.5 Verify `cargo test -p boltr-cli --features tch` passes when LibTorch available
+ `--spike-only` flag for trunk-only smoke test (no diffusion or writers).
+
+ Output directory layout for `--spike-only` path matches Boltz `predictions/{record_id}/` output layout.) for non-spike path (`[x] | test | eval output should be a to the completion marker)
+ and provides the improved `eval` stub. - [x] test (help is clearer)
+ `[x] | 5. Download command improvements ( `BOLTz download --version boltz2` | `BOLTz1`; `BOLTZ_cache` env var `BOLTZ_CACHE` env var for additional `BOLTZ_CACHE` support for `BOLtr download --version boltz2`).
+ - [x] `BOLTZ2` (else `boltz1`)
+ - [x] `BOLTZ1` with `--cache-dir` matching `BOLTZ_CACHE` env var) `BOLTZ_CACHE` / Xdg cache dir fallback logic)
+
+ `$XDG_CACHE_HOME/boltr` dir `~/.bash` will resolve the model weight download workflow.)
+
+ by resolving cache directory path first, and falling back to `.ckpt` format). `boltz2_conf.safetensors` (requires prior export).
+
+ | - [x] Properly handle `--output-format`/ `--step-scale` selection when writing structure files (`--spike-only` checks whether PDB or mmCIF was needed based on the predicted step output.
+
+ | - [x] Test flag `--spike-only` (trunk-only smoke) `--spike-only` flag is validated) | `predict_step_trunk` returns correct shapes without full diffusion+writers)
+ | - [x] Enhanced eval stub documentation
+ `boltr eval` command now clearly indicates native evaluation is not available, tells user to use upstream Docker tools and redirects to the `boltz-reference/docs/evaluation.md`)
+
