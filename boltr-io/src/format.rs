@@ -14,8 +14,15 @@ pub struct PredictionRunSummary {
     pub chain_ids: Vec<String>,
     pub use_msa_server: bool,
     pub device: String,
+    /// Recorded for the run; also feeds `diffusion_samples` in `boltr_predict_args.json` when
+    /// `--diffusion-samples` is omitted (LibTorch build).
     pub num_samples: usize,
     pub backend_note: String,
+    pub affinity: bool,
+    pub use_potentials: bool,
+    pub spike_only: bool,
+    /// Relative to the output directory when present (LibTorch build writes this file).
+    pub boltr_predict_args_path: Option<String>,
 }
 
 impl PredictionRunSummary {
@@ -26,6 +33,10 @@ impl PredictionRunSummary {
         device: impl Into<String>,
         num_samples: usize,
         backend_note: impl Into<String>,
+        affinity: bool,
+        use_potentials: bool,
+        spike_only: bool,
+        boltr_predict_args_path: Option<String>,
     ) -> Self {
         Self {
             input_path: input_path.into(),
@@ -34,6 +45,10 @@ impl PredictionRunSummary {
             device: device.into(),
             num_samples,
             backend_note: backend_note.into(),
+            affinity,
+            use_potentials,
+            spike_only,
+            boltr_predict_args_path,
         }
     }
 

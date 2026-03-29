@@ -30,7 +30,7 @@ struct Cli {
     #[arg(long)]
     cache_dir: Option<PathBuf>,
 
-    /// Number of inference samples
+    /// Run summary + default for `diffusion_samples` in `boltr_predict_args.json` when `--diffusion-samples` is omitted (LibTorch build). Use `--diffusion-samples` or YAML `predict_args` to override multiplicity explicitly.
     #[arg(long, default_value_t = 1)]
     num_samples: usize,
 
@@ -55,9 +55,9 @@ enum Commands {
         /// Inference-time physical potentials / steering (Boltz `--use_potentials`; disabled on affinity path)
         #[arg(long)]
         use_potentials: bool,
-        /// Boltz2 trunk recycling iterations; 0 means one pairformer pass per recycling step
-        #[arg(long, default_value_t = 0)]
-        recycling_steps: i64,
+        /// Override trunk recycling iterations. Omit to use YAML `predict_args` / checkpoint `boltz2_hparams.json` / defaults.
+        #[arg(long)]
+        recycling_steps: Option<i64>,
         /// Diffusion sampler steps (overrides YAML / checkpoint `predict_args`)
         #[arg(long)]
         sampling_steps: Option<i64>,
@@ -76,8 +76,11 @@ enum Commands {
         #[arg(short, long, default_value = "boltz2")]
         version: String,
     },
-    /// Run model evaluation (not yet implemented)
-    Eval { test_dir: String },
+    /// Structure benchmark evaluation (not implemented in Rust; see boltz-reference docs)
+    Eval {
+        /// Directory label (reserved for future use; evaluation uses upstream OpenStructure scripts)
+        test_dir: String,
+    },
     /// Convert an MSA file (`.a3m`, `.a3m.gz`, or Boltz `.csv`) to a Boltz `MSA` `.npz`
     MsaToNpz {
         /// Input path (format from extension: a3m / a3m.gz / csv)
@@ -168,8 +171,15 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Eval { test_dir } => {
-            tracing::info!("Running evaluation on: {}", test_dir);
-            anyhow::bail!("Evaluation not yet implemented");
+            tracing::info!(test_dir = %test_dir, "boltr eval is not implemented");
+            eprintln!(
+                "boltr eval: native evaluation is not implemented.\n\
+                 Boltz benchmark metrics (lDDT, DockQ, etc.) use OpenStructure via Docker; see:\n\
+                   - boltz-reference/docs/evaluation.md\n\
+                   - boltz-reference/scripts/eval/ (run_evals.py, aggregate_evals.py)\n\
+                 Prerequisites: Docker and a compatible OpenStructure image (see upstream docs)."
+            );
+            std::process::exit(2);
         }
         Commands::MsaToNpz {
             input,
@@ -272,7 +282,7 @@ async fn predict_flow(
     input: &str,
     affinity: bool,
     use_potentials: bool,
-    recycling_steps: i64,
+    recycling_steps: Option<i64>,
     sampling_steps: Option<i64>,
     diffusion_samples: Option<i64>,
     max_parallel_samples: Option<i64>,
@@ -326,6 +336,11 @@ async fn predict_flow(
 
     let device_str = std::env::var("BOLTR_DEVICE").unwrap_or_else(|_| cli.device.clone());
 
+    let boltr_predict_args_path = if cfg!(feature = "tch") {
+        Some("boltr_predict_args.json".to_string())
+    } else {
+        None
+    };
     let summary = boltr_io::PredictionRunSummary::from_input(
         input,
         &parsed,
@@ -333,6 +348,10 @@ async fn predict_flow(
         &device_str,
         cli.num_samples,
         predict_backend_note(),
+        affinity,
+        use_potentials,
+        spike_only,
+        boltr_predict_args_path,
     );
     let summary_path = out_dir.join("boltr_run_summary.json");
     summary.write_json(&summary_path)?;
@@ -343,23 +362,41 @@ async fn predict_flow(
         use boltr_backend_tch::PredictArgsCliOverrides;
         let cache = cli.cache_dir.clone().unwrap_or_else(default_cache_dir);
         let overrides = PredictArgsCliOverrides {
-            recycling_steps: Some(recycling_steps),
+            recycling_steps,
             sampling_steps,
-            diffusion_samples,
+            diffusion_samples: diffusion_samples.or(Some(cli.num_samples as i64)),
             max_parallel_samples,
         };
-        match predict_tch::write_resolved_predict_args(out_dir, &cache, input_path, overrides) {
-            Ok(args) => tracing::info!(?args, path = %out_dir.join("boltr_predict_args.json").display(), "wrote resolved predict_args"),
+        let resolved = predict_tch::write_resolved_predict_args(out_dir, &cache, input_path, overrides);
+        match &resolved {
+            Ok(args) => {
+                tracing::info!(?args, path = %out_dir.join("boltr_predict_args.json").display(), "wrote resolved predict_args");
+            }
             Err(e) => tracing::warn!(error = %e, "could not write boltr_predict_args.json"),
+        }
+        if spike_only {
+            let spike_recycling = match resolved {
+                Ok(args) => args.recycling_steps,
+                Err(_) => recycling_steps.unwrap_or(0),
+            };
+            try_model_spike(
+                cli,
+                &device_str,
+                out_dir,
+                spike_recycling,
+                use_potentials && !affinity,
+            )
+            .await?;
         }
     }
 
+    #[cfg(not(feature = "tch"))]
     if spike_only {
         try_model_spike(
             cli,
             &device_str,
             out_dir,
-            recycling_steps,
+            recycling_steps.unwrap_or(0),
             use_potentials && !affinity,
         )
         .await?;
