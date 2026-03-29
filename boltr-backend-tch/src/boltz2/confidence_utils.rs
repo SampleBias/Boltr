@@ -110,12 +110,16 @@ pub fn compute_ptms(
         .sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
     let ptm =
-        (tm_expected_value * &pair_mask_ptm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+        tm_expected_value
+            .multiply(&pair_mask_ptm)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
             / (pair_mask_ptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let ptm = ptm.max_dim(1, false).0;
 
     let iptm =
-        (tm_expected_value * &pair_mask_iptm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+        tm_expected_value
+            .multiply(&pair_mask_iptm)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
             / (pair_mask_iptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let iptm = iptm.max_dim(1, false).0;
 
@@ -138,11 +142,13 @@ pub fn compute_ptms(
         * (is_protein.unsqueeze(2) * is_protein.unsqueeze(1));
 
     let ligand_iptm =
-        ((tm_expected_value * &ligand_iptm_mask).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+        (tm_expected_value
+            .multiply(&ligand_iptm_mask)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
             / (ligand_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
             .max_dim(1, false)
             .0;
-    let protein_iptm = ((tm_expected_value * &protein_iptm_mask).sum_dim_intlist(
+    let protein_iptm = ((tm_expected_value.multiply(&protein_iptm_mask)).sum_dim_intlist(
         &[-1i64][..],
         false,
         Kind::Float,
@@ -171,7 +177,7 @@ pub fn compute_ptms(
                 * asym_r.unsqueeze(2).eq_tensor(&i1).to_kind(Kind::Float)
                 * asym_r.unsqueeze(1).eq_tensor(&i2).to_kind(Kind::Float)
                 * &pad_pair;
-            let v = ((tm_expected_value * &mask_pair_chain).sum_dim_intlist(
+            let v = ((tm_expected_value.multiply(&mask_pair_chain)).sum_dim_intlist(
                 &[-1i64][..],
                 false,
                 Kind::Float,

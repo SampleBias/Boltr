@@ -452,7 +452,17 @@ impl AtomDiffusion {
         max_parallel_samples: Option<i64>,
     ) -> DiffusionSampleOutput {
         match steering {
-            None | Some(s) if !s.uses_extended_sampler() => self.sample_fast(
+            None => self.sample_fast(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+            ),
+            Some(s) if !s.uses_extended_sampler() => self.sample_fast(
                 s_inputs,
                 s_trunk,
                 cond,
@@ -569,7 +579,8 @@ impl AtomDiffusion {
     ) -> DiffusionSampleOutput {
         let device = s_trunk.device();
         let num_steps = num_sampling_steps.unwrap_or(self.num_sampling_steps);
-        let feats = potential_feats.unwrap_or(&PotentialBatchFeats::default());
+        let default_potential_feats = PotentialBatchFeats::default();
+        let feats = potential_feats.unwrap_or(&default_potential_feats);
 
         let mut mult_eff = multiplicity;
         if steering.fk_steering {
@@ -580,7 +591,7 @@ impl AtomDiffusion {
         let potentials = get_potentials_boltz2(steering);
 
         let atom_mask = atom_pad_mask.repeat_interleave_self_int(mult_eff, Some(0), None);
-        let shape = [atom_mask.size()[0], atom_mask.size()[1], 3usize];
+        let shape = [atom_mask.size()[0], atom_mask.size()[1], 3i64];
 
         let sigmas = self.sample_schedule(num_steps, device);
 
@@ -608,19 +619,21 @@ impl AtomDiffusion {
 
             let (random_r, random_tr) = compute_random_augmentation(mult_eff, device, Kind::Float);
             let mut ac = atom_coords.shallow_clone();
-            ac = ac - ac.mean_dim(&[-2i64][..], true, Kind::Float);
+            let ac_mean = ac.mean_dim(&[-2i64][..], true, Kind::Float);
+            ac = ac - ac_mean;
             ac = Tensor::einsum("bmd,bds->bms", &[&ac, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
                 + &random_tr;
 
             if let Some(ref ad) = atom_coords_denoised {
-                let mut adn = ad - ad.mean_dim(&[-2i64][..], true, Kind::Float);
+                let ad_mean = ad.mean_dim(&[-2i64][..], true, Kind::Float);
+                let mut adn = ad.shallow_clone() - ad_mean;
                 adn = Tensor::einsum("bmd,bds->bms", &[&adn, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
                     + &random_tr;
                 atom_coords_denoised = Some(adn);
             }
 
             if let Some(ref mut sgu) = scaled_guidance_update {
-                *sgu = Tensor::einsum("bmd,bds->bms", &[sgu, &random_r], None::<Vec<i64>>).to_kind(Kind::Float);
+                *sgu = Tensor::einsum("bmd,bds->bms", &[&*sgu, &random_r], None::<Vec<i64>>).to_kind(Kind::Float);
             }
 
             atom_coords = ac;
@@ -657,17 +670,21 @@ impl AtomDiffusion {
                             let gw = p.guidance_weight(steering_t);
                             let gi = p.guidance_interval();
                             if gw > 0.0 && gd % gi == 0 {
-                                energy_gradient = energy_gradient
-                                    + gw * p.compute_gradient(&(acd + guidance_update), feats, steering_t);
+                                let pos = acd.shallow_clone() + guidance_update.shallow_clone();
+                                energy_gradient =
+                                    energy_gradient + gw * p.compute_gradient(&pos, feats, steering_t);
                             }
                         }
                         guidance_update = guidance_update - energy_gradient;
                     }
-                    acd = acd + guidance_update;
                     if let Some(ref mut sgu) = scaled_guidance_update {
-                        *sgu =
-                            guidance_update * -1.0 * self.step_scale * (sigma_t - t_hat) / t_hat;
+                        *sgu = guidance_update.shallow_clone()
+                            * -1.0
+                            * self.step_scale
+                            * (sigma_t - t_hat)
+                            / t_hat;
                     }
+                    acd = acd + guidance_update;
                 }
             }
 

@@ -23,12 +23,13 @@ serde_yaml.workspace = true
 ndarray.workspace = true
 boltr-io = { path = "../boltr-io" }
 boltr-backend-tch = { path = "../boltr-backend-tch", optional = true }
+tch = { version = "0.16", optional = true }
 dirs.workspace = true
 
 [features]
 # Enable `tch` for LibTorch-backed inference (requires LIBTORCH or LIBTORCH_USE_PYTORCH=1).
 default = []
-tch = ["boltr-backend-tch/tch-backend"]
+tch = ["boltr-backend-tch/tch-backend", "dep:tch"]
 
 [dev-dependencies]
 tempfile = "3"

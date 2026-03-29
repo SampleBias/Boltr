@@ -855,7 +855,17 @@ impl Boltz2Model {
         max_parallel_samples: Option<i64>,
     ) -> DiffusionSampleOutput {
         match steering {
-            None | Some(s) if !s.uses_extended_sampler() => self.structure_module.sample(
+            None => self.structure_module.sample(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+            ),
+            Some(s) if !s.uses_extended_sampler() => self.structure_module.sample(
                 s_inputs,
                 s_trunk,
                 cond,

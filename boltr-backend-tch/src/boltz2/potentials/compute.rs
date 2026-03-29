@@ -40,9 +40,9 @@ fn scatter_mean_chain(coords: &Tensor, chain_id: &Tensor, atom_pad_mask: &Tensor
     let mut cnt = Tensor::zeros(&[b, max_c], (kind, device));
     let w = pad.unsqueeze(-1).to_kind(kind);
     let idx = chain_id.clamp(0, max_c - 1).unsqueeze(-1).expand(&[b, m, 3], true);
-    sum = sum.scatter_reduce(-2, &idx, &(coords * w), "sum", false);
+    sum = sum.scatter_reduce(-2, &idx, &(coords * w), "sum");
     let idx1 = chain_id.clamp(0, max_c - 1);
-    cnt = cnt.scatter_reduce(-1, &idx1, &pad.to_kind(kind), "sum", false);
+    cnt = cnt.scatter_reduce(-1, &idx1, &pad.to_kind(kind), "sum");
     sum / (cnt.unsqueeze(-1) + 1e-8)
 }
 
@@ -51,7 +51,7 @@ fn pair_dist(coords: &Tensor, pair_index: &Tensor) -> Tensor {
     let i1 = pair_index.select(0, 1);
     let a = coords.index_select(-2, &i0);
     let b = coords.index_select(-2, &i1);
-    (a - b).norm_dim_intlist(&[-1i64][..], false, false, false)
+    (a - b).norm_scalaropt_dim(2, -1, false)
 }
 
 fn hinge_lower(d: &Tensor, lower: &Tensor, k: &Tensor) -> Tensor {
@@ -238,14 +238,14 @@ fn connections_grad(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f6
     let a = coords.index_select(-2, &i0);
     let b = coords.index_select(-2, &i1);
     let diff = &(a - b);
-    let dist = diff.norm_dim_intlist(&[-1i64][..], false, false, false);
+    let dist = diff.norm_scalaropt_dim(2, -1, false);
     let upper = Tensor::from_slice(&[buffer]).to_device(coords.device()).expand_as(&dist);
     let pos = dist.gt_tensor(&upper);
     let r_hat = diff / (dist.unsqueeze(-1) + 1e-8);
     let g = r_hat * pos.unsqueeze(-1).to_kind(Kind::Float);
     let mut out = Tensor::zeros_like(coords);
-    out = out.scatter_reduce(-2, &i0.unsqueeze(-1).expand_as(&g), &g, "sum", false);
-    out = out.scatter_reduce(-2, &i1.unsqueeze(-1).expand_as(&g), &-g, "sum", false);
+    out = out.scatter_reduce(-2, &i0.unsqueeze(-1).expand_as(&g), &g, "sum");
+    out = out.scatter_reduce(-2, &i1.unsqueeze(-1).expand_as(&g), &-g, "sum");
     out
 }
 
@@ -282,20 +282,44 @@ fn pose_busters_energy(
     let am = angle_mask.select(0, 0).to_kind(Kind::Bool);
     let min_ba = bond_buffer.min(angle_buffer);
 
-    lb = lb.where_self(&(bm * !am.shallow_clone()), &(lb * (1.0 - bond_buffer)));
-    ub = ub.where_self(&(bm * !am.shallow_clone()), &(ub * (1.0 + bond_buffer)));
-    lb = lb.where_self(&(!bm.shallow_clone() * am.shallow_clone()), &(lb * (1.0 - angle_buffer)));
-    ub = ub.where_self(&(!bm.shallow_clone() * am.shallow_clone()), &(ub * (1.0 + angle_buffer)));
-    lb = lb.where_self(&(bm * am), &(lb * (1.0 - min_ba)));
-    ub = ub.where_self(&(bm * am), &(ub * (1.0 + min_ba)));
-    lb = lb.where_self(&(!bm * !am), &(lb * (1.0 - clash_buffer)));
-    ub = ub.where_self(&(!bm * !am), &Tensor::full_like(&ub, f64::INFINITY));
+    lb = lb.where_self(
+        &bm.multiply(&am.shallow_clone().logical_not()),
+        &lb.shallow_clone().g_mul_scalar(1.0 - bond_buffer),
+    );
+    ub = ub.where_self(
+        &bm.multiply(&am.shallow_clone().logical_not()),
+        &ub.shallow_clone().g_mul_scalar(1.0 + bond_buffer),
+    );
+    lb = lb.where_self(
+        &bm.logical_not().multiply(&am.shallow_clone()),
+        &lb.shallow_clone().g_mul_scalar(1.0 - angle_buffer),
+    );
+    ub = ub.where_self(
+        &bm.logical_not().multiply(&am.shallow_clone()),
+        &ub.shallow_clone().g_mul_scalar(1.0 + angle_buffer),
+    );
+    lb = lb.where_self(
+        &bm.multiply(&am),
+        &lb.shallow_clone().g_mul_scalar(1.0 - min_ba),
+    );
+    ub = ub.where_self(
+        &bm.shallow_clone().multiply(&am.shallow_clone()),
+        &ub.shallow_clone().g_mul_scalar(1.0 + min_ba),
+    );
+    lb = lb.where_self(
+        &bm.logical_not().multiply(&am.logical_not()),
+        &lb.shallow_clone().g_mul_scalar(1.0 - clash_buffer),
+    );
+    ub = ub.where_self(
+        &bm.shallow_clone().logical_not().multiply(&am.logical_not()),
+        &Tensor::full_like(&ub, f64::INFINITY),
+    );
 
     let vdw = vdw_radii_tensor(coords.device(), coords.kind());
     let atom_vdw = ref_element.select(0, 0).to_kind(Kind::Float).matmul(&vdw.unsqueeze(-1)).squeeze_dim(-1);
     let cut = 0.35
         + (atom_vdw.index_select(0, &pi.select(0, 0)) + atom_vdw.index_select(0, &pi.select(0, 1))) * 0.5;
-    lb = lb.where_self(&!bm, &lb.maximum(&cut));
+    lb = lb.where_self(&bm.logical_not(), &lb.maximum(&cut));
     ub = ub.where_self(&bm, &ub.minimum(&cut));
 
     let k = Tensor::ones_like(&lb);
@@ -317,8 +341,8 @@ fn dihedral_phi(coords: &Tensor, index: &Tensor) -> Tensor {
     let r_kl = coords.index_select(-2, &k) - coords.index_select(-2, &l);
     let n_ijk = r_ij.cross(&r_kj, -1);
     let n_jkl = r_kj.cross(&r_kl, -1);
-    let n_ijk_norm = n_ijk.norm_dim_intlist(&[-1i64][..], false, false, false);
-    let n_jkl_norm = n_jkl.norm_dim_intlist(&[-1i64][..], false, false, false);
+    let n_ijk_norm = n_ijk.norm_scalaropt_dim(2, -1, false);
+    let n_jkl_norm = n_jkl.norm_scalaropt_dim(2, -1, false);
     let cross_n = r_kj.cross(&n_ijk.cross(&n_jkl, -1), -1);
     let sign_phi = (r_kj.unsqueeze(-2).matmul(&cross_n.unsqueeze(-1)))
         .squeeze_dim(-1)
@@ -349,8 +373,8 @@ fn chiral_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f64) 
     let mut ub = Tensor::zeros_like(&phi);
     lb = lb.where_self(&o, &Tensor::full_like(&lb, buffer));
     ub = ub.where_self(&o, &Tensor::full_like(&ub, f64::INFINITY));
-    ub = ub.where_self(&!o, &Tensor::full_like(&ub, -buffer));
-    lb = lb.where_self(&!o, &Tensor::full_like(&lb, f64::NEG_INFINITY));
+    ub = ub.where_self(&o.logical_not(), &Tensor::full_like(&ub, -buffer));
+    lb = lb.where_self(&o.logical_not(), &Tensor::full_like(&lb, f64::NEG_INFINITY));
     let k = Tensor::ones_like(&phi);
     hinge_two_sided(&phi, &lb, &ub, &k)
 }
@@ -376,8 +400,8 @@ fn stereo_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f64) 
     let mut ub = Tensor::zeros_like(&phi);
     lb = lb.where_self(&o, &(Tensor::full_like(&phi, std::f64::consts::PI) - buffer));
     ub = ub.where_self(&o, &Tensor::full_like(&phi, f64::INFINITY));
-    lb = lb.where_self(&!o, &Tensor::full_like(&phi, f64::NEG_INFINITY));
-    ub = ub.where_self(&!o, &Tensor::full_like(&phi, buffer));
+    lb = lb.where_self(&o.logical_not(), &Tensor::full_like(&phi, f64::NEG_INFINITY));
+    ub = ub.where_self(&o.logical_not(), &Tensor::full_like(&phi, buffer));
     let k = Tensor::ones_like(&phi);
     hinge_two_sided(&phi, &lb, &ub, &k)
 }
@@ -434,7 +458,7 @@ fn contact_energy(p: &Potential, coords: &Tensor, feats: &PotentialBatchFeats<'_
     let ul = union_lambda.compute(steering_t);
     let neg_exp = (-ul * &base).exp();
     let uidx = union_index.select(0, 0);
-    let z = neg_exp.scatter_reduce(-1, &uidx.expand_as(&neg_exp), &Tensor::zeros_like(&neg_exp), "sum", false);
+    let z = neg_exp.scatter_reduce(-1, &uidx.expand_as(&neg_exp), &Tensor::zeros_like(&neg_exp), "sum");
     let z_u = z.gather(-1, &uidx, false);
     let sm = &neg_exp / (z_u + 1e-8);
     (base * sm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)

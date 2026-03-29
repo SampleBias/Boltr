@@ -166,7 +166,7 @@ impl ConfidenceModule {
         };
 
         let x_pred_repr = token_to_rep_atom.bmm(&x_pred.to_kind(Kind::Float));
-        let d = Tensor::cdist(&x_pred_repr, &x_pred_repr, 2.0);
+        let d = Tensor::cdist(&x_pred_repr, &x_pred_repr, 2.0, None::<i64>);
         let distogram = d
             .unsqueeze(-1)
             .gt_tensor(&self.boundaries)
@@ -307,9 +307,10 @@ impl ConfidenceHeads {
         let token_pair_mask = &token_pad_pair_mask * &prob_contact;
 
         let plddt = compute_aggregated_metric(&plddt_logits, 1.0);
-        let complex_plddt =
-            (plddt * &token_pad_mask_m).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
-                / token_pad_mask_m.sum_dim_intlist(&[-1i64][..], false, Kind::Float);
+        let complex_plddt = plddt
+            .multiply(&token_pad_mask_m)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            / token_pad_mask_m.sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
         let is_contact = d.less_tensor(&Tensor::from(8.0)).to_kind(Kind::Float);
         let is_different_chain = asym_id
@@ -337,9 +338,11 @@ impl ConfidenceHeads {
         let iplddt_weight = is_ligand_token * ligand_weight
             + &token_interface_mask * interface_weight
             + token_non_interface_mask * non_interface_weight;
-        let complex_iplddt =
-            (plddt * &token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float)
-                / (token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float);
+        let complex_iplddt = plddt
+            .multiply(&token_pad_mask_m)
+            .multiply(&iplddt_weight)
+            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            / (token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
         let pae = compute_aggregated_metric(&pae_logits, 32.0);
 
@@ -349,13 +352,15 @@ impl ConfidenceHeads {
                 .unsqueeze(2)
                 .ne_tensor(&asym_m.unsqueeze(1))
                 .to_kind(Kind::Float);
-        let complex_pde =
-            (pde * &token_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
-                / token_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float);
-        let complex_ipde =
-            (pde * &token_interface_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
-                / (token_interface_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
-                    + 1e-5);
+        let complex_pde = pde
+            .multiply(&token_pair_mask)
+            .sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+            / token_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float);
+        let complex_ipde = pde
+            .multiply(&token_interface_pair_mask)
+            .sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+            / (token_interface_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+                + 1e-5);
 
         let (ptm, iptm, ligand_iptm, protein_iptm, pair_chains_iptm) = compute_ptms(
             &pae_logits,

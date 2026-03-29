@@ -12,6 +12,8 @@ use clap::Parser;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[cfg(feature = "tch")]
+mod collate_predict_bridge;
+#[cfg(feature = "tch")]
 mod predict_tch;
 
 // ---------------------------------------------------------------------------
@@ -548,8 +550,8 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             output_format,
             max_msa_seqs,
             num_samples,
-            checkpoint,
-            affinity_checkpoint,
+            checkpoint: checkpoint.clone(),
+            affinity_checkpoint: affinity_checkpoint.clone(),
             affinity_mw_correction,
             sampling_steps_affinity,
             diffusion_samples_affinity,

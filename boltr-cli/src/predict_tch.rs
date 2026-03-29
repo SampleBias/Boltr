@@ -17,7 +17,7 @@ use boltr_backend_tch::{
     Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
     RelPosFeatures, SteeringParams, resolve_predict_args,
 };
-use tch::Tensor;
+use tch::{self, Kind, Tensor};
 use boltr_io::config::BoltzInput;
 use boltr_io::{
     collate_inference_batches, load_input, parse_manifest_path,
@@ -25,8 +25,6 @@ use boltr_io::{
 };
 
 use crate::OutputFormat;
-
-mod collate_predict_bridge;
 
 fn first_sample_coords_2d(coords: &Tensor) -> Tensor {
     let mut t = coords.shallow_clone();
@@ -97,7 +95,7 @@ fn try_predict_from_preprocess(
     let coll = collate_inference_batches(std::slice::from_ref(&fb), 0.0, 0, 0)
         .map_err(|e| anyhow::anyhow!("collate_inference_batches: {e}"))?;
 
-    let out = collate_predict_bridge::predict_step_from_collate(
+    let out = crate::collate_predict_bridge::predict_step_from_collate(
         model,
         &coll,
         Some(resolved.recycling_steps),
@@ -315,7 +313,7 @@ fn write_structure_file(
     let path = match output_format {
         OutputFormat::Pdb => {
             let p = record_dir.join(format!("{record_id}_model_{model_rank}.pdb"));
-            let bytes = boltr_io::structure_v2_to_pdb(structure);
+            let bytes = boltr_io::structure_v2_to_pdb(structure, None);
             std::fs::write(&p, &bytes)
                 .with_context(|| format!("write {}", p.display()))?;
             p
@@ -371,7 +369,7 @@ async fn try_model_spike(
     // Try loading from hparams if available
     let token_s = load_hparams_for_predict(cache)
         .ok()
-        .and_then(|h| h.resolved_token_s())
+        .map(|h| h.resolved_token_s())
         .unwrap_or(384);
 
     let mut model = Boltz2Model::new(device, token_s);
@@ -422,14 +420,14 @@ async fn try_model_spike(
     let token_z = model.token_z();
 
     // --- forward_s_init probe ---
-    let probe = tch::Tensor::randn(&[2, token_s], (tch::Kind::Float, device));
+    let probe = Tensor::randn(&[2, token_s], (Kind::Float, device));
     let _y = model.forward_s_init(&probe);
 
     // --- forward_trunk spike ---
     let b = 2_i64;
     let n = 16_i64;
-    let s_in = tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
-    let token_pad = tch::Tensor::ones(&[b, n], (tch::Kind::Float, device));
+    let s_in = Tensor::randn(&[b, n, token_s], (Kind::Float, device));
+    let token_pad = Tensor::ones(&[b, n], (Kind::Float, device));
     let (s_out, z_out) = model
         .forward_trunk(&s_in, &token_pad, Some(recycling_steps), None, None)
         .map_err(|e| anyhow::anyhow!("forward_trunk spike: {e}"))?;
@@ -443,14 +441,14 @@ async fn try_model_spike(
     );
 
     // --- predict_step_trunk spike ---
-    let asym_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
-    let residue_index = tch::Tensor::arange(n, (tch::Kind::Int64, device))
+    let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+    let residue_index = Tensor::arange(n, (Kind::Int64, device))
         .view_(&[1, n])
         .expand(&[b, n], false);
-    let entity_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+    let entity_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
     let token_index = residue_index.shallow_clone();
-    let sym_id = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
-    let cyclic_period = tch::Tensor::zeros(&[b, n], (tch::Kind::Int64, device));
+    let sym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+    let cyclic_period = Tensor::zeros(&[b, n], (Kind::Int64, device));
     let rel = RelPosFeatures {
         asym_id: &asym_id,
         residue_index: &residue_index,
@@ -583,8 +581,8 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
 
     // 4. Load hyperparameters and build model on target device
     let hparams = load_hparams_for_predict(&cache)?;
-    let token_s = hparams.resolved_token_s().unwrap_or(384);
-    let token_z = hparams.resolved_token_z().unwrap_or(128);
+    let token_s = hparams.resolved_token_s();
+    let token_z = hparams.resolved_token_z();
     let num_blocks = hparams.resolved_num_pairformer_blocks().unwrap_or(4);
 
     let device = boltr_backend_tch::parse_device_spec(&device)?;

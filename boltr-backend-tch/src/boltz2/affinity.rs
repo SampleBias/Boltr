@@ -35,9 +35,9 @@ pub fn apply_affinity_mw_correction(affinity_pred_value: &Tensor, affinity_mw: &
     } else {
         mw_pow
     };
-    affinity_pred_value.mul_scalar(AFFINITY_MW_MODEL_COEF)
-        + mw_pow.mul_scalar(AFFINITY_MW_COEF)
-        + Tensor::ones_like(affinity_pred_value).mul_scalar(AFFINITY_MW_BIAS)
+    affinity_pred_value.g_mul_scalar(AFFINITY_MW_MODEL_COEF)
+        + mw_pow.g_mul_scalar(AFFINITY_MW_COEF)
+        + Tensor::ones_like(affinity_pred_value).g_mul_scalar(AFFINITY_MW_BIAS)
 }
 
 // ---------------------------------------------------------------------------
@@ -389,7 +389,7 @@ impl AffinityModule {
         };
 
         let x_pred_repr = token_to_rep_atom.bmm(&x_pred.to_kind(Kind::Float));
-        let d = Tensor::cdist(&x_pred_repr, &x_pred_repr, 2.0);
+        let d = Tensor::cdist(&x_pred_repr, &x_pred_repr, 2.0, None::<i64>);
         let distogram = d
             .unsqueeze(-1)
             .gt_tensor(&self.boundaries)
@@ -397,7 +397,8 @@ impl AffinityModule {
             .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
             .to_kind(Kind::Int64);
         let distogram = self.dist_bin_pairwise_embed.forward(&distogram);
-        z = z + self.pairwise_conditioner.forward(&z, &distogram);
+        let z_pc = z.shallow_clone();
+        z = z + self.pairwise_conditioner.forward(&z_pc, &distogram);
 
         let pad_token_mask = token_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
         let mol_b = mol_type.repeat_interleave_self_int(multiplicity, Some(0), None);

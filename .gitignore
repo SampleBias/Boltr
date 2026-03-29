@@ -1,3 +1,6 @@
+# Local LibTorch (DEVELOPMENT.md Path A); large — do not commit.
+third_party/libtorch/
+
 # Rust
 /target/
 **/*.rs.bk

@@ -5,7 +5,7 @@
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
     Boltz2Model, ContactFeatures, InputEmbedderFeats, MsaFeatures, PredictStepFeats, PredictStepOutput,
-    RelPosFeatures,
+    RelPosFeatures, SteeringParams,
 };
 use boltr_io::{FeatureBatch, FeatureTensor, InferenceCollateResult};
 use ndarray::ArrayD;
@@ -15,7 +15,7 @@ fn f32_to_tensor(a: &ArrayD<f32>, device: Device) -> Tensor {
     let shape: Vec<i64> = a.shape().iter().map(|&d| d as i64).collect();
     let data: Vec<f32> = a.iter().cloned().collect();
     Tensor::from_slice(&data)
-        .view(&shape)
+        .view(&*shape)
         .to_device(device)
 }
 
@@ -23,7 +23,7 @@ fn i64_to_tensor(a: &ArrayD<i64>, device: Device) -> Tensor {
     let shape: Vec<i64> = a.shape().iter().map(|&d| d as i64).collect();
     let data: Vec<i64> = a.iter().cloned().collect();
     Tensor::from_slice(&data)
-        .view(&shape)
+        .view(&*shape)
         .to_device(device)
 }
 

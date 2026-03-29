@@ -15,10 +15,10 @@ pub fn compute_random_augmentation(multiplicity: i64, device: Device, kind: Kind
 
 fn random_quaternions(n: i64, device: Device, kind: Kind) -> Tensor {
     let o = Tensor::randn(&[n, 4], (kind, device));
-    let s = (o * o).sum_dim_intlist(&[1i64][..], false, kind);
+    let s = o.multiply(&o).sum_dim_intlist(&[1i64][..], false, kind);
     let sgn = o.select(1, 0).sign();
     let sqrt_s = s.sqrt();
-    o * (sgn / sqrt_s).unsqueeze(-1)
+    o.multiply(&(sgn / sqrt_s).unsqueeze(-1))
 }
 
 fn quaternion_to_matrix(quaternions: &Tensor) -> Tensor {
@@ -26,30 +26,33 @@ fn quaternion_to_matrix(quaternions: &Tensor) -> Tensor {
     let i = quaternions.select(1, 1);
     let j = quaternions.select(1, 2);
     let k = quaternions.select(1, 3);
-    let two_s = 2.0 / (quaternions * quaternions).sum_dim_intlist(&[1i64][..], false, quaternions.kind());
+    let two_s = 2.0
+        / quaternions
+            .multiply(quaternions)
+            .sum_dim_intlist(&[1i64][..], false, quaternions.kind());
     let one = Tensor::ones_like(&two_s);
 
     let row0 = Tensor::stack(
         &[
-            &one - &two_s * (j * j + k * k),
-            &two_s * (i * j - k * r),
-            &two_s * (i * k + j * r),
+            &(&one - &(&two_s * &(j.multiply(&j) + k.multiply(&k)))),
+            &(&two_s * &(i.multiply(&j) - k.multiply(&r))),
+            &(&two_s * &(i.multiply(&k) + j.multiply(&r))),
         ],
         -1,
     );
     let row1 = Tensor::stack(
         &[
-            &two_s * (i * j + k * r),
-            &one - &two_s * (i * i + k * k),
-            &two_s * (j * k - i * r),
+            &(&two_s * &(i.multiply(&j) + k.multiply(&r))),
+            &(&one - &(&two_s * &(i.multiply(&i) + k.multiply(&k)))),
+            &(&two_s * &(j.multiply(&k) - i.multiply(&r))),
         ],
         -1,
     );
     let row2 = Tensor::stack(
         &[
-            &two_s * (i * k - j * r),
-            &two_s * (j * k + i * r),
-            &one - &two_s * (i * i + j * j),
+            &(&two_s * &(i.multiply(&k) - j.multiply(&r))),
+            &(&two_s * &(j.multiply(&k) + i.multiply(&r))),
+            &(&one - &(&two_s * &(i.multiply(&i) + j.multiply(&j)))),
         ],
         -1,
     );
