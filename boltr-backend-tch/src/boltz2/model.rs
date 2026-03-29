@@ -10,6 +10,9 @@ use anyhow::Result;
 use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore};
 use tch::{Device, Kind, Tensor};
 
+use super::affinity::{
+    apply_affinity_mw_correction, AffinityModule, AffinityModuleConfig, AffinityOutput,
+};
 use super::confidence::{ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput};
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
 use super::diffusion::{AtomDiffusion, AtomDiffusionConfig, DiffusionSampleOutput};
@@ -25,6 +28,25 @@ use super::template_module::TemplateFeatures;
 use super::trunk::TrunkV2;
 use crate::boltz_hparams::Boltz2Hparams;
 use crate::checkpoint::load_tensor_from_safetensors;
+
+/// Crop `z` for the affinity path (`boltz2.py`: `z_affinity = z * cross_pair_mask[..., None]`).
+fn z_trunk_affinity_crop(
+    z: &Tensor,
+    token_pad_mask: &Tensor,
+    mol_type: &Tensor,
+    affinity_token_mask: &Tensor,
+) -> Tensor {
+    let pad = token_pad_mask.to_kind(Kind::Float);
+    let rec_mask = mol_type
+        .eq_tensor(&Tensor::zeros_like(mol_type))
+        .to_kind(Kind::Float)
+        * &pad;
+    let lig_mask = affinity_token_mask.to_kind(Kind::Float) * &pad;
+    let cross = lig_mask.unsqueeze(2) * rec_mask.unsqueeze(1)
+        + rec_mask.unsqueeze(2) * lig_mask.unsqueeze(1)
+        + lig_mask.unsqueeze(2) * lig_mask.unsqueeze(1);
+    z * cross.unsqueeze(3)
+}
 
 /// `len(const.bond_types) + 1` in Boltz (`boltz-reference/.../const.py`).
 pub const BOND_TYPE_EMBEDDING_NUM: i64 = 7;
@@ -137,6 +159,9 @@ pub struct Boltz2Model {
     bfactor_module: Option<BFactorModule>,
     /// Optional confidence stack (`confidence_module` in Lightning) — `boltz.model.modules.confidencev2`.
     confidence_module: Option<ConfidenceModule>,
+    /// Optional affinity stack (`affinity_module` in Lightning).
+    affinity_module: Option<AffinityModule>,
+    affinity_mw_correction: bool,
     token_s: i64,
     token_z: i64,
     atom_s: i64,
@@ -184,6 +209,10 @@ pub struct PredictStepFeats<'a> {
     pub atom_to_token: &'a Tensor,
     /// Optional extras for [`AtomEncoder`] when flags request name chars / backbone / residue broadcast.
     pub atom_encoder_batch: Option<&'a AtomEncoderBatchFeats<'a>>,
+    /// Required when [`Boltz2Model::affinity_module`] is `Some` (Boltz `affinity_token_mask`).
+    pub affinity_token_mask: Option<&'a Tensor>,
+    /// Optional MW calibration input (`affinity_mw` in Boltz feats) when `affinity_mw_correction` is enabled.
+    pub affinity_mw: Option<&'a Tensor>,
 }
 
 /// Trunk + structure + distogram + optional confidence (Python `Boltz2.forward` predict path).
@@ -193,6 +222,7 @@ pub struct PredictStepOutput {
     pub diffusion: DiffusionSampleOutput,
     pub pdistogram: Tensor,
     pub confidence: Option<ConfidenceOutput>,
+    pub affinity: Option<AffinityOutput>,
 }
 
 impl Default for Boltz2DiffusionArgs {
@@ -225,6 +255,24 @@ impl Boltz2Model {
     /// Build from exported Lightning `hyper_parameters` JSON ([`Boltz2Hparams`]).
     pub fn from_hparams_json(device: Device, json_bytes: &[u8]) -> Result<Self> {
         let h = Boltz2Hparams::from_json_slice(json_bytes)?;
+        let confidence = if h.confidence_prediction == Some(false) {
+            None
+        } else {
+            let mut c = ConfidenceModuleConfig::default();
+            if let Some(nb) = h.resolved_num_pairformer_blocks() {
+                c.pairformer_num_blocks = nb;
+            }
+            Some(c)
+        };
+        let affinity = if h.affinity_prediction == Some(true) {
+            Some(AffinityModuleConfig::from_affinity_model_args(
+                h.affinity_model_args.as_ref(),
+                h.resolved_token_s(),
+            ))
+        } else {
+            None
+        };
+        let affinity_mw_correction = h.affinity_mw_correction.unwrap_or(false);
         Self::with_all_options(
             device,
             h.resolved_token_s(),
@@ -233,7 +281,9 @@ impl Boltz2Model {
             h.resolved_bond_type_feature(),
             Boltz2DiffusionArgs::default(),
             AtomDiffusionConfig::default(),
-            None,
+            confidence,
+            affinity,
+            affinity_mw_correction,
         )
     }
 
@@ -269,6 +319,8 @@ impl Boltz2Model {
             Boltz2DiffusionArgs::default(),
             AtomDiffusionConfig::default(),
             None,
+            None,
+            false,
         )
         .expect("default diffusion args should not fail")
     }
@@ -284,6 +336,8 @@ impl Boltz2Model {
         diff_args: Boltz2DiffusionArgs,
         diff_config: AtomDiffusionConfig,
         confidence: Option<ConfidenceModuleConfig>,
+        affinity: Option<AffinityModuleConfig>,
+        affinity_mw_correction: bool,
     ) -> Result<Self> {
         let var_store = VarStore::new(device);
         let root = var_store.root();
@@ -398,6 +452,16 @@ impl Boltz2Model {
             )
         });
 
+        let affinity_module = affinity.map(|cfg| {
+            AffinityModule::new(
+                root.sub("affinity_module"),
+                device,
+                token_s,
+                token_z,
+                &cfg,
+            )
+        });
+
         Ok(Self {
             device,
             var_store,
@@ -412,6 +476,8 @@ impl Boltz2Model {
             distogram_module,
             bfactor_module,
             confidence_module,
+            affinity_module,
+            affinity_mw_correction,
             token_s,
             token_z,
             atom_s: diff_args.atom_s,
@@ -613,12 +679,13 @@ impl Boltz2Model {
     pub fn forward_trunk(
         &self,
         s_inputs: &Tensor,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
         self.trunk
-            .forward(s_inputs, recycling_steps, msa_feats, template_feats)
+            .forward(s_inputs, token_pad_mask, recycling_steps, msa_feats, template_feats)
     }
 
     /// Relative position bias `[B, N, N, token_z]` from tokenizer/featurizer index tensors.
@@ -631,6 +698,7 @@ impl Boltz2Model {
         &self,
         s_inputs: &Tensor,
         rel: &RelPosFeatures<'_>,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -641,6 +709,7 @@ impl Boltz2Model {
             None,
             None,
             None,
+            token_pad_mask,
             recycling_steps,
             msa_feats,
             template_feats,
@@ -656,6 +725,7 @@ impl Boltz2Model {
         token_bonds: Option<&Tensor>,
         type_bonds: Option<&Tensor>,
         contact: Option<&ContactFeatures<'_>>,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -670,8 +740,14 @@ impl Boltz2Model {
             None => Tensor::zeros(&[b, n, n, self.token_z], (Kind::Float, self.device)),
         };
         let z_init = z_pair + z_rel + z_bonds + z_contact;
-        self.trunk
-            .forward_from_init(&s_init, &z_init, recycling_steps, msa_feats, template_feats)
+        self.trunk.forward_from_init(
+            &s_init,
+            &z_init,
+            token_pad_mask,
+            recycling_steps,
+            msa_feats,
+            template_feats,
+        )
     }
 
     pub fn diffusion_conditioning(&self) -> &DiffusionConditioning {
@@ -692,6 +768,14 @@ impl Boltz2Model {
 
     pub fn confidence_module(&self) -> Option<&ConfidenceModule> {
         self.confidence_module.as_ref()
+    }
+
+    pub fn affinity_module(&self) -> Option<&AffinityModule> {
+        self.affinity_module.as_ref()
+    }
+
+    pub fn affinity_mw_correction(&self) -> bool {
+        self.affinity_mw_correction
     }
 
     pub fn atom_s(&self) -> i64 {
@@ -794,6 +878,9 @@ impl Boltz2Model {
 
     /// Full predict path: trunk → diffusion conditioning → sample → distogram → optional confidence.
     /// Aligns with `Boltz2.forward` when `run_trunk_and_structure` and `confidence_prediction` are set.
+    ///
+    /// When [`Self::affinity_module`] is `Some`, pass `embedder_for_affinity` and set
+    /// [`PredictStepFeats::affinity_token_mask`].
     #[allow(clippy::too_many_arguments)]
     pub fn predict_step(
         &self,
@@ -811,6 +898,8 @@ impl Boltz2Model {
         steering: Option<SteeringParams>,
         potential_extra: Option<&PotentialBatchFeats<'_>>,
         max_parallel_samples: Option<i64>,
+        embedder_for_affinity: Option<&InputEmbedderFeats<'_>>,
+        use_kernels: bool,
     ) -> Result<PredictStepOutput> {
         let (s_trunk, z_trunk) = self.forward_trunk_with_z_init_terms(
             s_inputs,
@@ -818,6 +907,7 @@ impl Boltz2Model {
             token_bonds,
             type_bonds,
             contact,
+            feats.token_pad_mask,
             recycling_steps,
             msa_feats,
             template_feats,
@@ -871,12 +961,60 @@ impl Boltz2Model {
                 multiplicity,
             )
         });
+
+        let affinity = if let Some(am) = self.affinity_module.as_ref() {
+            let aff_tok = feats.affinity_token_mask.ok_or_else(|| {
+                anyhow::anyhow!("affinity_token_mask required when model has affinity_module")
+            })?;
+            let embedder = embedder_for_affinity.ok_or_else(|| {
+                anyhow::anyhow!("embedder_for_affinity required when model has affinity_module")
+            })?;
+            let s_aff = self.input_embedder.forward(embedder, true);
+            let z_crop = z_trunk_affinity_crop(
+                &z_trunk,
+                feats.token_pad_mask,
+                feats.mol_type,
+                aff_tok,
+            );
+            let best_idx = confidence.as_ref().map_or(0_i64, |co| {
+                let t = &co.iptm;
+                if t.dim() == 0 || t.numel() <= 1 {
+                    0_i64
+                } else {
+                    t.argmax(0, false).int64_value(&[0])
+                }
+            });
+            let coords = &diffusion.sample_atom_coords;
+            let x_pred = coords.narrow(0, best_idx, 1);
+            let mut out_aff = am.forward(
+                &s_aff,
+                &z_crop,
+                &x_pred,
+                feats.token_pad_mask,
+                feats.mol_type,
+                aff_tok,
+                feats.token_to_rep_atom,
+                1,
+                use_kernels,
+            );
+            if self.affinity_mw_correction {
+                if let Some(mw) = feats.affinity_mw {
+                    out_aff.affinity_pred_value =
+                        apply_affinity_mw_correction(&out_aff.affinity_pred_value, mw);
+                }
+            }
+            Some(out_aff)
+        } else {
+            None
+        };
+
         Ok(PredictStepOutput {
             s_trunk,
             z_trunk,
             diffusion,
             pdistogram,
             confidence,
+            affinity,
         })
     }
 
@@ -889,6 +1027,7 @@ impl Boltz2Model {
         token_bonds: Option<&Tensor>,
         type_bonds: Option<&Tensor>,
         contact: Option<&ContactFeatures<'_>>,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -899,6 +1038,7 @@ impl Boltz2Model {
             token_bonds,
             type_bonds,
             contact,
+            token_pad_mask,
             recycling_steps,
             msa_feats,
             template_feats,
@@ -929,6 +1069,7 @@ impl Boltz2Model {
         token_bonds: Option<&Tensor>,
         type_bonds: Option<&Tensor>,
         contact: Option<&ContactFeatures<'_>>,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -940,6 +1081,7 @@ impl Boltz2Model {
             token_bonds,
             type_bonds,
             contact,
+            token_pad_mask,
             recycling_steps,
             msa_feats,
             template_feats,
@@ -1000,7 +1142,8 @@ mod tests {
         let n = 8_i64;
         let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
         let s_in = Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
-        let (s, z) = m.forward_trunk(&s_in, Some(0), None, None).unwrap();
+        let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
+        let (s, z) = m.forward_trunk(&s_in, &pad, Some(0), None, None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -1031,8 +1174,9 @@ mod tests {
             sym_id: &sym_id,
             cyclic_period: &cyclic_period,
         };
+        let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
         let (s, z) = m
-            .forward_trunk_with_rel_pos(&s_in, &rel, Some(0), None, None)
+            .forward_trunk_with_rel_pos(&s_in, &rel, &pad, Some(0), None, None)
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
@@ -1067,6 +1211,7 @@ mod tests {
         };
         let token_bonds = Tensor::randn(&[b, n, n, 1], (tch::Kind::Float, device));
         let type_bonds = Tensor::zeros(&[b, n, n], (tch::Kind::Int64, device));
+        let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
         let (s, z) = m
             .forward_trunk_with_z_init_terms(
                 &s_in,
@@ -1074,6 +1219,7 @@ mod tests {
                 Some(&token_bonds),
                 Some(&type_bonds),
                 None,
+                &pad,
                 Some(0),
                 None,
                 None,
@@ -1103,7 +1249,8 @@ mod tests {
         );
         let del = Tensor::randn(&[b, n], (tch::Kind::Float, device));
         let s_inputs = m.forward_input_embedder(&a, &res, &prof, &del);
-        let (s, z) = m.forward_trunk(&s_inputs, Some(0), None, None).unwrap();
+        let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
+        let (s, z) = m.forward_trunk(&s_inputs, &pad, Some(0), None, None).unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }
@@ -1143,6 +1290,7 @@ mod tests {
             contact_conditioning: &cc,
             contact_threshold: &ct,
         };
+        let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
         let (s, z) = m
             .forward_trunk_with_z_init_terms(
                 &s_in,
@@ -1150,6 +1298,7 @@ mod tests {
                 None,
                 None,
                 Some(&contact),
+                &pad,
                 Some(0),
                 None,
                 None,
@@ -1220,6 +1369,8 @@ mod tests {
             Boltz2DiffusionArgs::default(),
             AtomDiffusionConfig::default(),
             Some(crate::boltz2::confidence::ConfidenceModuleConfig::default()),
+            None,
+            false,
         )
         .expect("with_all_options");
         assert!(m.confidence_module().is_some());

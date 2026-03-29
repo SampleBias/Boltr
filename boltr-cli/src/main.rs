@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
+
+#[cfg(feature = "tch")]
+mod predict_tch;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
@@ -31,10 +34,6 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     num_samples: usize,
 
-    /// Boltz2 trunk recycling iterations (forward_trunk); 0 means one pairformer pass per step
-    #[arg(long, default_value_t = 0)]
-    recycling_steps: i64,
-
     /// Output directory
     #[arg(short, long, default_value = "./output")]
     output: String,
@@ -56,6 +55,20 @@ enum Commands {
         /// Inference-time physical potentials / steering (Boltz `--use_potentials`; disabled on affinity path)
         #[arg(long)]
         use_potentials: bool,
+        /// Boltz2 trunk recycling iterations; 0 means one pairformer pass per recycling step
+        #[arg(long, default_value_t = 0)]
+        recycling_steps: i64,
+        /// Diffusion sampler steps (overrides YAML / checkpoint `predict_args`)
+        #[arg(long)]
+        sampling_steps: Option<i64>,
+        /// Structure samples (`multiplicity` / `diffusion_samples`)
+        #[arg(long)]
+        diffusion_samples: Option<i64>,
+        #[arg(long)]
+        max_parallel_samples: Option<i64>,
+        /// Only run trunk/weight smoke (`forward_trunk` / `predict_step_trunk`); skip full `predict_step` extras
+        #[arg(long)]
+        spike_only: bool,
     },
     /// Download model weights and static assets
     Download {
@@ -126,8 +139,24 @@ async fn main() -> Result<()> {
             ref input,
             affinity,
             use_potentials,
+            recycling_steps,
+            sampling_steps,
+            diffusion_samples,
+            max_parallel_samples,
+            spike_only,
         } => {
-            predict_flow(&cli, input, affinity, use_potentials).await?;
+            predict_flow(
+                &cli,
+                input,
+                affinity,
+                use_potentials,
+                recycling_steps,
+                sampling_steps,
+                diffusion_samples,
+                max_parallel_samples,
+                spike_only,
+            )
+            .await?;
         }
         Commands::Download { version } => {
             let cache = cli.cache_dir.unwrap_or_else(default_cache_dir);
@@ -238,7 +267,17 @@ fn default_msa_npz_path(input: &Path) -> PathBuf {
     parent.join(format!("{}.npz", base.to_string_lossy()))
 }
 
-async fn predict_flow(cli: &Cli, input: &str, affinity: bool, use_potentials: bool) -> Result<()> {
+async fn predict_flow(
+    cli: &Cli,
+    input: &str,
+    affinity: bool,
+    use_potentials: bool,
+    recycling_steps: i64,
+    sampling_steps: Option<i64>,
+    diffusion_samples: Option<i64>,
+    max_parallel_samples: Option<i64>,
+    spike_only: bool,
+) -> Result<()> {
     let input_path = std::path::Path::new(input);
     let parsed = boltr_io::parse_input_path(input_path)?;
     if affinity {
@@ -263,6 +302,11 @@ async fn predict_flow(cli: &Cli, input: &str, affinity: bool, use_potentials: bo
 
     let out_dir = std::path::Path::new(&cli.output);
     tokio::fs::create_dir_all(out_dir).await?;
+
+    #[cfg(not(feature = "tch"))]
+    {
+        let _ = (sampling_steps, diffusion_samples, max_parallel_samples);
+    }
 
     if cli.use_msa_server {
         let need = parsed.protein_sequences_for_msa();
@@ -294,14 +338,32 @@ async fn predict_flow(cli: &Cli, input: &str, affinity: bool, use_potentials: bo
     summary.write_json(&summary_path)?;
     tracing::info!(path = %summary_path.display(), "wrote run summary");
 
-    try_model_spike(
-        cli,
-        &device_str,
-        out_dir,
-        cli.recycling_steps,
-        use_potentials && !affinity,
-    )
-    .await?;
+    #[cfg(feature = "tch")]
+    {
+        use boltr_backend_tch::PredictArgsCliOverrides;
+        let cache = cli.cache_dir.clone().unwrap_or_else(default_cache_dir);
+        let overrides = PredictArgsCliOverrides {
+            recycling_steps: Some(recycling_steps),
+            sampling_steps,
+            diffusion_samples,
+            max_parallel_samples,
+        };
+        match predict_tch::write_resolved_predict_args(out_dir, &cache, input_path, overrides) {
+            Ok(args) => tracing::info!(?args, path = %out_dir.join("boltr_predict_args.json").display(), "wrote resolved predict_args"),
+            Err(e) => tracing::warn!(error = %e, "could not write boltr_predict_args.json"),
+        }
+    }
+
+    if spike_only {
+        try_model_spike(
+            cli,
+            &device_str,
+            out_dir,
+            recycling_steps,
+            use_potentials && !affinity,
+        )
+        .await?;
+    }
 
     Ok(())
 }
@@ -309,7 +371,7 @@ async fn predict_flow(cli: &Cli, input: &str, affinity: bool, use_potentials: bo
 fn predict_backend_note() -> &'static str {
     #[cfg(feature = "tch")]
     {
-        "tch backend linked; full Boltz2 forward requires remaining trunk/diffusion port"
+        "tch backend linked; boltr_predict_args.json + optional --spike-only trunk smoke"
     }
     #[cfg(not(feature = "tch"))]
     {
@@ -396,8 +458,9 @@ async fn try_model_spike(
         let b = 2_i64;
         let n = 16_i64;
         let s_in = tch::Tensor::randn(&[b, n, token_s], (tch::Kind::Float, device));
+        let token_pad = tch::Tensor::ones(&[b, n], (tch::Kind::Float, device));
         let (s_out, z_out) = model
-            .forward_trunk(&s_in, Some(recycling_steps), None)
+            .forward_trunk(&s_in, &token_pad, Some(recycling_steps), None)
             .map_err(|e| anyhow::anyhow!("forward_trunk spike: {e}"))?;
         let s_sz = s_out.size();
         let z_sz = z_out.size();
@@ -425,7 +488,16 @@ async fn try_model_spike(
             cyclic_period: &cyclic_period,
         };
         let (s_ps, z_ps) = model
-            .predict_step_trunk(&s_in, &rel, None, None, None, Some(recycling_steps), None)
+            .predict_step_trunk(
+                &s_in,
+                &rel,
+                None,
+                None,
+                None,
+                &token_pad,
+                Some(recycling_steps),
+                None,
+            )
             .map_err(|e| anyhow::anyhow!("predict_step_trunk spike: {e}"))?;
         tracing::info!(
             s_predict = ?s_ps.size(),

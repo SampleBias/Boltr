@@ -308,6 +308,7 @@ impl TrunkV2 {
     pub fn forward(
         &self,
         s_inputs: &Tensor,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -319,8 +320,8 @@ impl TrunkV2 {
         // Initialize from input embeddings
         let (s_init, z_init) = self.initialize(s_inputs);
 
-        // Compute masks
-        let mask = Tensor::ones(&[batch_size, num_tokens], (tch::Kind::Float, self.device));
+        // Python: `mask = feats["token_pad_mask"].float()`, `pair_mask = mask[:,:,None]*mask[:,None,:]`
+        let mask = token_pad_mask.to_kind(tch::Kind::Float);
         let pair_mask = mask.unsqueeze(1) * mask.unsqueeze(2); // [B, N, N]
 
         // Initialize recycled embeddings as zeros
@@ -360,6 +361,7 @@ impl TrunkV2 {
         &self,
         s_init: &Tensor,
         z_init: &Tensor,
+        token_pad_mask: &Tensor,
         recycling_steps: Option<i64>,
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
@@ -368,7 +370,7 @@ impl TrunkV2 {
         let batch_size = s_init.size()[0];
         let num_tokens = s_init.size()[1];
 
-        let mask = Tensor::ones(&[batch_size, num_tokens], (tch::Kind::Float, self.device));
+        let mask = token_pad_mask.to_kind(tch::Kind::Float);
         let pair_mask = mask.unsqueeze(1) * mask.unsqueeze(2);
 
         let mut s = Tensor::zeros(
@@ -553,7 +555,10 @@ mod tests {
             (tch::Kind::Float, device),
         );
 
-        let (s_out, z_out) = trunk.forward(&s_inputs, Some(1), None, None).unwrap();
+        let mask = Tensor::ones(&[batch_size, num_tokens], (tch::Kind::Float, device));
+        let (s_out, z_out) = trunk
+            .forward(&s_inputs, &mask, Some(1), None, None)
+            .unwrap();
 
         assert_eq!(s_out.size(), vec![batch_size, num_tokens, token_s]);
         assert_eq!(

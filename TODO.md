@@ -225,8 +225,9 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Deliverables |
 |--------|------|--------------|
 | [x] | Trunk-only predict | [predict_step_trunk](boltr-backend-tch/src/boltz2/model.rs) — recycling + trunk + optional MSA; template stub. |
-| [~] | Full `predict_step` | **`predict_step`** — trunk + diffusion + distogram + optional confidence ([`PredictStepOutput`](boltr-backend-tch/src/boltz2/model.rs)). Still missing: affinity, writers, recycling parity vs `predict_args`. |
-| [ ] | Recycling loop parity | Match `predict_args` step counts. |
+| [x] | Full `predict_step` | [`predict_step`](boltr-backend-tch/src/boltz2/model.rs) — trunk + diffusion + distogram + optional confidence + optional affinity ([`PredictStepOutput`](boltr-backend-tch/src/boltz2/model.rs)); trunk uses `token_pad_mask` ([`TrunkV2`](boltr-backend-tch/src/boltz2/trunk.rs)). |
+| [x] | `predict_args` / recycling parity | [`Boltz2PredictArgs`](boltr-backend-tch/src/predict_args.rs), [`resolve_predict_args`](boltr-backend-tch/src/predict_args.rs) (CLI → YAML → checkpoint → defaults). |
+| [~] | CLI → writers | `boltr predict` writes `boltr_predict_args.json` (tch); `--spike-only` for trunk smoke. PDB/mmCIF/npz from predicted coords still need preprocess → tensor → writer bridge. |
 
 ---
 
@@ -235,8 +236,8 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Details |
 |--------|------|---------|
 | [x] | `download` | Checkpoints + ccd + mols URLs aligned with `main.py`. |
-| [~] | `predict` | Parses YAML, optional MSA, summary JSON; **TBD:** full pipeline when §4–5 complete. |
-| [~] | Flags parity | Recycling, sampling steps, diffusion samples, **potentials (`--use-potentials`)**, affinity-only, output format. |
+| [~] | `predict` | Parses YAML, optional MSA, summary JSON, **`boltr_predict_args.json`** (tch), optional **`--spike-only`** trunk smoke; full collate→`predict_step`→structure files when preprocess+I/O land. |
+| [~] | Flags parity | **`--recycling-steps`**, **`--sampling-steps`**, **`--diffusion-samples`**, **`--max-parallel-samples`**, **`--spike-only`**; potentials (`--use-potentials`), affinity. |
 | [ ] | `eval` | Optional; [boltz-reference/docs/evaluation.md](boltz-reference/docs/evaluation.md). |
 
 ---

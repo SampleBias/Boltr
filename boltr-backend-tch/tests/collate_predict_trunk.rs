@@ -73,7 +73,16 @@ fn collate_smoke_predict_step_trunk_runs_with_msa() {
     };
 
     let (s_out, z_out) = model
-        .predict_step_trunk(&s_inputs, &rel, None, None, None, Some(0), Some(&feats))
+        .predict_step_trunk(
+            &s_inputs,
+            &rel,
+            None,
+            None,
+            None,
+            &token_pad_mask,
+            Some(0),
+            Some(&feats),
+        )
         .expect("predict_step_trunk");
 
     assert_eq!(s_out.size(), vec![b, n, token_s]);

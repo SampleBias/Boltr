@@ -52,6 +52,13 @@ pub struct Boltz2Hparams {
     pub predict_args: Option<serde_json::Value>,
     #[serde(default)]
     pub steering_args: Option<serde_json::Value>,
+    /// Top-level Lightning flag (sizing affinity head in checkpoint).
+    #[serde(default)]
+    pub confidence_prediction: Option<bool>,
+    #[serde(default)]
+    pub affinity_prediction: Option<bool>,
+    #[serde(default)]
+    pub affinity_mw_correction: Option<bool>,
     /// Remaining Lightning `hyper_parameters` keys (flags, optimizers, etc.).
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
@@ -150,12 +157,8 @@ mod tests {
 
     #[test]
     fn preserves_unknown_top_level_in_other() {
-        let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4, "confidence_prediction": true, "ema": true}"#;
+        let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4, "ema": true}"#;
         let h = Boltz2Hparams::from_json_slice(j).unwrap();
-        assert_eq!(
-            h.other.get("confidence_prediction"),
-            Some(&serde_json::json!(true))
-        );
         assert_eq!(h.other.get("ema"), Some(&serde_json::json!(true)));
     }
 

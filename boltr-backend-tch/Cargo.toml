@@ -35,6 +35,10 @@ required-features = ["tch-backend"]
 name = "collate_predict_trunk"
 required-features = ["tch-backend"]
 
+[[test]]
+name = "predict_step_smoke"
+required-features = ["tch-backend"]
+
 [[bin]]
 name = "gen_boltz2_smoke_safetensors"
 path = "src/bin/gen_boltz2_smoke_safetensors.rs"

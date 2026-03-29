@@ -5,9 +5,13 @@
 // implementing the neural network architecture and tensor operations.
 
 pub mod boltz_hparams;
+pub mod predict_args;
 pub mod inference_keys;
 
 pub use boltz_hparams::Boltz2Hparams;
+pub use predict_args::{
+    merge_predict_args_from_json, resolve_predict_args, Boltz2PredictArgs, PredictArgsCliOverrides,
+};
 pub use inference_keys::{
     partition_safetensors_keys_for_inference, BOLTZ2_INFERENCE_TOP_LEVEL_KEYS,
 };

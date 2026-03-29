@@ -13,6 +13,21 @@ This document tracks the data path Rust must mirror for parity with `boltz-refer
 4. **Collate** stacks / pads batch dimensions (see `collate()` in the same module).
 5. **`Boltz2.forward` / `predict_step`** consumes those tensors on the configured device (Boltz2 uses mixed bf16 on GPU with many `autocast("cuda", enabled=False)` islands; match dtype policy when porting).
 
+## `predict_args` (inference steps)
+
+Checkpoint `hyper_parameters["predict_args"]` is a JSON object (optional). Rust uses [`Boltz2PredictArgs`](../../boltr-backend-tch/src/predict_args.rs) with keys:
+
+| Key | Role |
+|-----|------|
+| `recycling_steps` | Trunk loop count (`0..=recycling_steps` in Rust). |
+| `num_sampling_steps` or `sampling_steps` | Diffusion sampler steps; `None` defers to [`AtomDiffusionConfig::num_sampling_steps`](../../boltr-backend-tch/src/boltz2/diffusion.rs). |
+| `diffusion_samples` | Passed as `multiplicity` to the atom diffusion sampler. |
+| `max_parallel_samples` | Optional cap for diffusion (steering / extended sampler). |
+
+**Precedence:** CLI flags (`boltr predict`) override YAML top-level `predict_args:` (if present), which overrides checkpoint JSON, which fills gaps from defaults (`recycling_steps=0`, `num_sampling_steps=None`, `diffusion_samples=1`, `max_parallel_samples=None`). See [`resolve_predict_args`](../../boltr-backend-tch/src/predict_args.rs).
+
+Optional checkpoint flags: `confidence_prediction`, `affinity_prediction`, `affinity_mw_correction` (see [`Boltz2Hparams`](../../boltr-backend-tch/src/boltz_hparams.rs)); used by [`Boltz2Model::from_hparams_json`](../../boltr-backend-tch/src/boltz2/model.rs).
+
 ## Featurizer output keys
 
 `Boltz2Featurizer.process` merges several maps. The union includes (non-exhaustive; see [`featurizerv2.py`](../boltz-reference/src/boltz/data/feature/featurizerv2.py) around the final `return { **token_features, **atom_features, ... }`):
