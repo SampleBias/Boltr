@@ -127,15 +127,17 @@ System Python refuses `pip install torch` (PEP 668). Use [`scripts/bootstrap_dev
 
 #### Golden export scripts (`ModuleNotFoundError: No module named 'torch'`)
 
-Scripts such as [`scripts/export_msa_module_golden.py`](scripts/export_msa_module_golden.py) and [`scripts/export_pairformer_golden.py`](scripts/export_pairformer_golden.py) need **`torch`** and **`safetensors`**. With the repo venv:
+Scripts such as [`scripts/export_msa_module_golden.py`](scripts/export_msa_module_golden.py), [`scripts/export_pairformer_golden.py`](scripts/export_pairformer_golden.py), [`scripts/export_trunk_init_golden.py`](scripts/export_trunk_init_golden.py), and [`scripts/export_input_embedder_golden.py`](scripts/export_input_embedder_golden.py) need **`torch`** and **`safetensors`**. With the repo venv:
 
 ```bash
 source .venv/bin/activate   # after bootstrap_dev_venv.sh
 PYTHONPATH=boltz-reference/src python3 scripts/export_msa_module_golden.py
 PYTHONPATH=boltz-reference/src python3 scripts/export_pairformer_golden.py
+PYTHONPATH=boltz-reference/src python3 scripts/export_trunk_init_golden.py
+PYTHONPATH=boltz-reference/src python3 scripts/export_input_embedder_golden.py
 ```
 
-Opt-in numeric tests (LibTorch): `BOLTR_RUN_MSA_GOLDEN=1` / `BOLTR_RUN_PAIRFORMER_GOLDEN=1` with `scripts/cargo-tch test -p boltr-backend-tch --features tch-backend` (see fixture READMEs under `tests/fixtures/`).
+Opt-in numeric tests (LibTorch): `BOLTR_RUN_MSA_GOLDEN=1` / `BOLTR_RUN_PAIRFORMER_GOLDEN=1` / `BOLTR_RUN_TRUNK_INIT_GOLDEN=1` / `BOLTR_RUN_INPUT_EMBEDDER_GOLDEN=1` with `scripts/cargo-tch test -p boltr-backend-tch --features tch-backend` (see fixture READMEs under `tests/fixtures/`).
 
 #### Troubleshooting: `this tch version expects PyTorch 2.3.0, got …`
 
