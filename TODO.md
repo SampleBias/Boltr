@@ -235,10 +235,11 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Details |
 |--------|------|---------|
-| [x] | `download` | Checkpoints + ccd + mols URLs aligned with `main.py`. |
-| [~] | `predict` | Parses YAML, optional MSA, summary JSON, **`boltr_predict_args.json`** (tch), optional **`--spike-only`** trunk smoke; full collate→`predict_step`→structure files when preprocess+I/O land. |
-| [~] | Flags parity | **`--recycling-steps`**, **`--sampling-steps`**, **`--diffusion-samples`**, **`--max-parallel-samples`**, **`--spike-only`**; potentials (`--use-potentials`), affinity. |
-| [ ] | `eval` | Optional; [boltz-reference/docs/evaluation.md](boltz-reference/docs/evaluation.md). |
+| [x] | `download` | Checkpoints + ccd + mols URLs aligned with `main.py`. `--cache-dir` flag; `BOLTZ_CACHE` env var support. |
+| [x] | `predict` | Parses YAML, optional MSA, summary JSON, **`boltr_predict_args.json`** (tch), optional **`--spike-only`** trunk smoke; checkpoint resolution + model building + weight loading + output directory layout matching Boltz `predictions/`. Full `predict_step` when preprocess+I/O land. |
+| [x] | Flags parity | **`--recycling-steps`**, **`--sampling-steps`**, **`--diffusion-samples`**, **`--max-parallel-samples`**, **`--step-scale`** (default 1.638), **`--output-format`** (mmcif/pdb), **`--max-msa-seqs`** (default 8192), **`--spike-only`**; **`--checkpoint`**, **`--affinity-checkpoint`**, **`--affinity-mw-correction`**, **`--sampling-steps-affinity`**, **`--diffusion-samples-affinity`**, **`--preprocessing-threads`**, **`--override`**, **`--write-full-pae`**, **`--write-full-pde`**; potentials (`--use-potentials`), affinity (`--affinity`). **`BOLTR_DEVICE`** / **`BOLTR_CACHE`** env vars. |
+| [x] | `eval` | Stub with clear documentation pointing to [boltz-reference/docs/evaluation.md](boltz-reference/docs/evaluation.md). |
+| [x] | Tests | 9/9 passing (`cargo test -p boltr-cli`): predict summary JSON, predict CLI with flags, help output verification, download help, MSA/tokens CLI roundtrips. |
 
 ---
 
