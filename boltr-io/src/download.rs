@@ -1,4 +1,4 @@
-//! Download checkpoints and static assets (URLs aligned with `boltz-reference/src/boltz/main.py`).
+//! Download checkpoints and static assets (URLs aligned with upstream Boltz `src/boltz/main.py`).
 
 use std::path::{Path, PathBuf};
 

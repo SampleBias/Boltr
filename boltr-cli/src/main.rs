@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
                 "boltr eval: native evaluation is not implemented.\n\
                  Boltz benchmark metrics (lDDT, DockQ, etc.) use OpenStructure via Docker; see:\n\
                    - boltz-reference/docs/evaluation.md\n\
-                   - boltz-reference/scripts/eval/ (run_evals.py, aggregate_evals.py)\n\
+                   - upstream jwohlwend/boltz (scripts/eval: run_evals.py, aggregate_evals.py)\n\
                  Prerequisites: Docker and a compatible OpenStructure image (see upstream docs)."
             );
             std::process::exit(2);

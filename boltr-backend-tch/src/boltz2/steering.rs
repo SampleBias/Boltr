@@ -1,8 +1,8 @@
 //! Inference-time steering / potentials configuration (Boltz `BoltzSteeringParams`).
 //!
-//! Reference: `boltz-reference/src/boltz/main.py` (`BoltzSteeringParams`, `predict` / `--use_potentials`).
+//! Reference: upstream Boltz `src/boltz/main.py` (`BoltzSteeringParams`, `predict` / `--use_potentials`).
 
-/// Mirrors Python `BoltzSteeringParams` in `boltz-reference/src/boltz/main.py`.
+/// Mirrors Python `BoltzSteeringParams` in upstream Boltz `src/boltz/main.py`.
 #[derive(Debug, Clone, Copy)]
 pub struct SteeringParams {
     pub fk_steering: bool,
