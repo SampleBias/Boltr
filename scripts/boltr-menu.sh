@@ -50,9 +50,12 @@ Quick commands (from repo root, after build)
   ./target/release/boltr predict --help
   ./target/release/boltr predict input.yaml -o ./output --device cpu
 
-GPU / LibTorch (Path A)
-  source scripts/env_libtorch_cuda.sh    # if you use third_party/libtorch (CUDA)
-  export LIBTORCH_CXX11_ABI=0              # required for standard PyTorch cu118 zips
+GPU / LibTorch (Path A — no Python torch required)
+  Unpack LibTorch 2.3.x+cu118 into third_party/libtorch (see DEVELOPMENT.md), then:
+  source scripts/env_libtorch_cuda.sh
+  cargo build --release -p boltr-cli --features tch
+  # env script sets LIBTORCH, LD_LIBRARY_PATH, LIBTORCH_CXX11_ABI=0
+  # Option [2] may still warn about pip/torch — ignore for Path A if LIBTORCH is set.
 
 Python / venv (Path B)
   bash scripts/bootstrap_dev_venv.sh

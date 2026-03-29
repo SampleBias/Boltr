@@ -46,7 +46,7 @@ unset LIBTORCH_USE_PYTORCH
 cargo test -p boltr-backend-tch --features tch-backend
 ```
 
-For GPU, use a **2.3.x** CUDA LibTorch from [PyTorch previous versions](https://pytorch.org/get-started/previous-versions/) (same minor as above), not an unrelated release.
+For GPU, use a **2.3.x** CUDA LibTorch from [PyTorch previous versions](https://pytorch.org/get-started/previous-versions/) (same minor as above), not an unrelated release. After unpacking to `third_party/libtorch`, you can `source scripts/env_libtorch_cuda.sh` (sets `LIBTORCH`, `LD_LIBRARY_PATH`, `LIBTORCH_CXX11_ABI=0`, unsets `LIBTORCH_USE_PYTORCH`).
 
 #### Path B — `LIBTORCH_USE_PYTORCH=1` (reuse PyTorch’s LibTorch)
 

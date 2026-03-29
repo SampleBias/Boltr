@@ -66,7 +66,21 @@ cargo build --release -p boltr-cli
 # Binary: target/release/boltr
 ```
 
-LibTorch / `tch` backend (from repo root):
+LibTorch / `tch` backend (from repo root) — pick **one**:
+
+**Path A — standalone LibTorch** (no `pip` / `torch` on system Python; typical for minimal Arch):
+
+1. Unpack **LibTorch 2.3.x** into `third_party/libtorch` ([`DEVELOPMENT.md`](DEVELOPMENT.md): CPU zip, or CUDA cu118/cu121 from [PyTorch previous versions](https://pytorch.org/get-started/previous-versions/)). For CUDA, the repo expects `third_party/libtorch/lib/libtorch_cuda.so` (gitignored).
+2. In every shell where you run `cargo`:
+
+```bash
+source scripts/env_libtorch_cuda.sh
+cargo build --release -p boltr-cli --features tch
+```
+
+`env_libtorch_cuda.sh` sets `LIBTORCH`, `LD_LIBRARY_PATH`, `LIBTORCH_CXX11_ABI=0` (required for official non–cxx11-abi CUDA zips), and unsets `LIBTORCH_USE_PYTORCH`. Override the tree with `BOLTR_LIBTORCH=/path/to/libtorch`.
+
+**Path B — PyTorch venv** (`torch-sys` uses Python’s LibTorch):
 
 ```bash
 bash scripts/bootstrap_dev_venv.sh    # once: .venv + torch for torch-sys
