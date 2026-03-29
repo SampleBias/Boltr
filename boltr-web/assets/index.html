@@ -73,9 +73,46 @@
       font-size: 12px;
       width: min(100%, 28rem);
     }
+    pre.banner {
+      margin: 0 0 1.25rem;
+      padding: 0.5rem 0;
+      background: transparent;
+      border: none;
+      color: var(--fg);
+      font-size: clamp(8px, 1.35vw, 11px);
+      line-height: 1.02;
+      letter-spacing: 0;
+      overflow-x: auto;
+      max-width: 100%;
+      -webkit-overflow-scrolling: touch;
+    }
   </style>
 </head>
 <body>
+  <pre class="banner" aria-label="Boltr ASCII banner">___
+          _____                   _______                   _____        _____                    _____          
+         /\    \                 /::\    \                 /\    \      /\    \                  /\    \         
+        /::\    \               /::::\    \               /::\____\    /::\    \                /::\    \        
+       /::::\    \             /::::::\    \             /:::/    /    \:::\    \              /::::\    \       
+      /::::::\    \           /::::::::\    \           /:::/    /      \:::\    \            /::::::\    \      
+     /:::/\:::\    \         /:::/~~\:::\    \         /:::/    /        \:::\    \          /:::/\:::\    \     
+    /:::/__\:::\    \       /:::/    \:::\    \       /:::/    /          \:::\    \        /:::/__\:::\    \    
+   /::::\   \:::\    \     /:::/    / \:::\    \     /:::/    /           /::::\    \      /::::\   \:::\    \   
+  /::::::\   \:::\    \   /:::/____/   \:::\____\   /:::/    /           /::::::\    \    /::::::\   \:::\    \  
+ /:::/\:::\   \:::\ ___\ |:::|    |     |:::|    | /:::/    /           /:::/\:::\    \  /:::/\:::\   \:::\____\ 
+/:::/__\:::\   \:::|    ||:::|____|     |:::|    |/:::/____/           /:::/  \:::\____\/:::/  \:::\   \:::|    |
+\:::\   \:::\  /:::|____| \:::\    \   /:::/    / \:::\    \          /:::/    \::/    /\::/   |::::\  /:::|____|
+ \:::\   \:::\/:::/    /   \:::\    \ /:::/    /   \:::\    \        /:::/    / \/____/  \/____|:::::\/:::/    / 
+  \:::\   \::::::/    /     \:::\    /:::/    /     \:::\    \      /:::/    /                 |:::::::::/    /  
+   \:::\   \::::/    /       \:::\__/:::/    /       \:::\    \    /:::/    /                  |::|\::::/    /   
+    \:::\  /:::/    /         \::::::::/    /         \:::\    \   \::/    /                   |::| \::/____/    
+     \:::\/:::/    /           \::::::/    /           \:::\    \   \/____/                    |::|  ~|          
+      \::::::/    /             \::::/    /             \:::\    \                             |::|   |          
+       \::::/    /               \::/____/               \:::\____\                            \::|   |          
+        \::/____/                 ~~                      \::/    /                             \:|   |          
+         ~~                                                \/____/                               \|___|          
+                                                                                                                 
+___</pre>
   <h1>Boltr — prediction prerequisites</h1>
   <p class="notes">Black / white / grey UI. Status reflects your cache and optional <code>BOLTZ_CACHE</code>. Upload a Boltz YAML to validate parse, cache, and (if present) <code>manifest.json</code> + preprocess <code>.npz</code>. For MSA/template path checks, set <strong>Job directory</strong> to the absolute folder that already contains the YAML and sidecar files on this machine — the server reads from disk there instead of only the uploaded bytes.</p>
 
