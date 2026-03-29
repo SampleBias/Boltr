@@ -61,6 +61,8 @@ impl Default for OutputFormat {
 
 #[derive(Parser, Debug)]
 #[command(name = "boltr")]
+#[command(before_help = include_str!("cli_banner.txt"))]
+#[command(before_long_help = include_str!("cli_banner.txt"))]
 #[command(about = "Boltr — Rust-native Boltz2 structure prediction", long_about = None)]
 #[command(version)]
 struct Cli {
