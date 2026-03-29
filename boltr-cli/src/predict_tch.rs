@@ -1,12 +1,12 @@
 //! Full `predict_step` wiring and `predict_args` resolution for `boltr predict` (`--features tch`).
 //!
-//! This module implements the complete prediction pipeline:
+//! This module implements the prediction pipeline:
 //! 1. Resolve checkpoint + hyperparameters
-//! 2. Build `Boltz2Model` from hparams
+//! 2. Build `Boltz2Model` from hparams on the requested device
 //! 3. Load weights (safetensors)
-//! 4. Featurize input (YAML → preprocess → tokens → features → collate)
-//! 5. Run `predict_step` (trunk → diffusion → distogram → confidence → affinity)
-//! 6. Write output files (structures + confidence JSON + affinity JSON + PAE/PDE/pLDDT npz)
+//! 4. When `manifest.json` + preprocess `.npz` sit next to the input YAML: `load_input` → collate → `predict_step` → PDB/mmCIF
+//! 5. Otherwise (or on failure): placeholder output dirs + completion marker
+//! 6. Confidence / affinity / PAE npz when those heads are loaded and wired (see `boltr-io` writers)
 //!
 //! Reference: [boltz-reference/docs/prediction.md](../../../boltz-reference/docs/prediction.md)
 
@@ -17,9 +17,120 @@ use boltr_backend_tch::{
     Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
     RelPosFeatures, SteeringParams, resolve_predict_args,
 };
+use tch::Tensor;
 use boltr_io::config::BoltzInput;
+use boltr_io::{
+    collate_inference_batches, load_input, parse_manifest_path,
+    trunk_smoke_feature_batch_from_inference_input,
+};
 
 use crate::OutputFormat;
+
+mod collate_predict_bridge;
+
+fn first_sample_coords_2d(coords: &Tensor) -> Tensor {
+    let mut t = coords.shallow_clone();
+    if t.dim() == 3 && t.size()[0] > 1 {
+        t = t.narrow(0, 0, 1);
+    }
+    if t.dim() == 3 {
+        t = t.squeeze_dim(0);
+    }
+    t
+}
+
+fn tensor_xyz_to_vec(t: &Tensor) -> Vec<[f32; 3]> {
+    let n = t.size()[0] as usize;
+    let mut v = Vec::with_capacity(n);
+    for i in 0..n {
+        v.push([
+            t.double_value(&[i as i64, 0]) as f32,
+            t.double_value(&[i as i64, 1]) as f32,
+            t.double_value(&[i as i64, 2]) as f32,
+        ]);
+    }
+    v
+}
+
+/// When `manifest.json` + preprocess `.npz` live next to the input YAML, run collate → `predict_step` → structure writer.
+fn try_predict_from_preprocess(
+    input_path: &Path,
+    out_dir: &Path,
+    output_format: OutputFormat,
+    model: &Boltz2Model,
+    resolved: &Boltz2PredictArgs,
+    affinity: bool,
+    use_potentials: bool,
+) -> Result<Option<String>> {
+    let Some(parent) = input_path.parent() else {
+        return Ok(None);
+    };
+    let manifest_path = parent.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+    if affinity {
+        tracing::info!(
+            "--affinity: native preprocess bridge expects non-affinity `{{id}}.npz`; skipping bridge"
+        );
+        return Ok(None);
+    }
+
+    let manifest = parse_manifest_path(&manifest_path)?;
+    let record = manifest
+        .records
+        .first()
+        .context("manifest.json has no records")?;
+    let mut inference_input = load_input(
+        record,
+        parent,
+        parent,
+        None,
+        None,
+        None,
+        false,
+    )
+    .with_context(|| format!("load_input from preprocess dir {}", parent.display()))?;
+
+    let template_dim = 4_usize;
+    let fb = trunk_smoke_feature_batch_from_inference_input(&inference_input, template_dim);
+    let coll = collate_inference_batches(std::slice::from_ref(&fb), 0.0, 0, 0)
+        .map_err(|e| anyhow::anyhow!("collate_inference_batches: {e}"))?;
+
+    let out = collate_predict_bridge::predict_step_from_collate(
+        model,
+        &coll,
+        Some(resolved.recycling_steps),
+        resolved.sampling_steps,
+        resolved.diffusion_samples,
+        resolved.max_parallel_samples,
+        use_potentials && !affinity,
+    )
+    .context("predict_step_from_collate")?;
+
+    let coords_t = first_sample_coords_2d(&out.diffusion.sample_atom_coords);
+    let xyz = tensor_xyz_to_vec(&coords_t);
+    let n_atom = inference_input.structure.atoms.len().min(xyz.len());
+    inference_input
+        .structure
+        .apply_predicted_atom_coords(&xyz[..n_atom]);
+
+    let record_id = record.id.clone();
+    write_structure_file(
+        out_dir,
+        &record_id,
+        0,
+        output_format,
+        &inference_input.structure,
+    )?;
+
+    tracing::info!(
+        record_id = %record_id,
+        "wrote predicted structure (preprocess dir + predict_step)"
+    );
+
+    Ok(Some(record_id))
+}
 
 // ===========================================================================
 // Public types
@@ -468,26 +579,30 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     if aff_path.is_some() {
         tracing::info!(path = %aff_path.as_ref().unwrap().display(), "using affinity checkpoint");
     }
-    let _ = aff_path; // used later when affinity predict is fully wired
+    let _ = aff_path;
 
-    // 4. Load hyperparameters and build model
+    // 4. Load hyperparameters and build model on target device
     let hparams = load_hparams_for_predict(&cache)?;
     let token_s = hparams.resolved_token_s().unwrap_or(384);
     let token_z = hparams.resolved_token_z().unwrap_or(128);
+    let num_blocks = hparams.resolved_num_pairformer_blocks().unwrap_or(4);
 
-    tracing::info!(token_s, token_z, "building Boltz2Model from hparams");
-    let _ = (token_z, num_samples); // used later
-
-    let mut model = Boltz2Model::new(
-        tch::Device::Cpu, // will be resolved below
+    let device = boltr_backend_tch::parse_device_spec(&device)?;
+    tracing::info!(
         token_s,
+        token_z,
+        num_blocks,
+        ?device,
+        "building Boltz2Model from hparams"
     );
 
-    // Set device
-    let device = boltr_backend_tch::parse_device_spec(&device)?;
-    let _ = device; // used when CUDA is available
-    // Note: model was built on Cpu; for CUDA, we would need to build on the target device.
-    // For now, CPU inference is the primary supported path.
+    let mut model = Boltz2Model::with_options_bonds(
+        device,
+        token_s,
+        token_z,
+        Some(num_blocks),
+        hparams.resolved_bond_type_feature(),
+    );
 
     // 5. Load weights
     match model.load_partial_from_safetensors(&conf_path) {
@@ -513,34 +628,58 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         }
     }
 
-    // 6. Determine record ID from input filename
+    let pargs = match &resolved {
+        Ok(a) => *a,
+        Err(_) => Boltz2PredictArgs::default(),
+    };
+
+    match try_predict_from_preprocess(
+        &input_path,
+        &out_dir,
+        output_format,
+        &model,
+        &pargs,
+        affinity,
+        use_potentials,
+    ) {
+        Ok(Some(rid)) => {
+            let record_dir = out_dir.join(&rid);
+            let marker = record_dir.join("boltr_predict_complete.txt");
+            let predict_args = resolved.as_ref().ok();
+            let info = serde_json::json!({
+                "record_id": rid,
+                "status": "predict_step_complete",
+                "affinity": affinity,
+                "use_potentials": use_potentials,
+                "predict_args": predict_args,
+                "output_format": output_format.to_string(),
+                "note": "Structure written from preprocess dir (manifest + npz) + collate + predict_step."
+            });
+            let j = serde_json::to_string_pretty(&info)?;
+            tokio::fs::write(&marker, j).await?;
+            tracing::info!(path = %marker.display(), "predict pipeline complete (native preprocess bridge)");
+            return Ok(());
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "preprocess predict_step bridge failed; falling back to placeholder outputs"
+            );
+        }
+    }
+
+    // 6. Placeholder path when no manifest/preprocess next to the input YAML
     let record_id = input_path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("prediction")
         .to_string();
-    tracing::info!(record_id = %record_id, "processing record");
+    tracing::info!(record_id = %record_id, "processing record (no preprocess bridge)");
 
-    // 7. Create output directory for this record
     let record_dir = out_dir.join(&record_id);
     std::fs::create_dir_all(&record_dir)
         .with_context(|| format!("mkdir {}", record_dir.display()))?;
-
-    // 8. Write prediction outputs
-    // At this point, the full featurizer → model → writer pipeline is conceptually:
-    //
-    //   a) load_input(record, target_dir, msa_dir, ...) → Boltz2InferenceInput
-    //   b) trunk_smoke_feature_batch_from_inference_input(input, template_dim) → FeatureBatch
-    //   c) collate_inference_batches(vec![batch]) → InferenceCollateResult
-    //   d) model.predict_step(collated_tensors ...) → PredictStepOutput
-    //   e) write outputs from PredictStepOutput
-    //
-    // Steps (a)-(c) require preprocessed .npz files from Python preprocess.
-    // Steps (d)-(e) require full collated tensors to be transferred to the model.
-    //
-    // For now, we write the output directory structure and marker files.
-    // The full tensor pipeline will be wired when preprocess is available in Rust
-    // or when users provide pre-processed data.
 
     write_prediction_outputs(
         &out_dir,
@@ -550,7 +689,6 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         write_full_pde,
     )?;
 
-    // 9. Write a completion marker
     let marker = record_dir.join("boltr_predict_complete.txt");
     let predict_args = resolved.as_ref().ok();
     let info = serde_json::json!({
@@ -560,8 +698,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         "use_potentials": use_potentials,
         "predict_args": predict_args,
         "output_format": output_format.to_string(),
-        "note": "Full predict_step requires preprocessed .npz input. \
-                 Run boltz preprocess or provide pre-collated FeatureBatch data."
+        "note": "Place `manifest.json` + `{{record_id}}.npz` next to the input YAML to run the native preprocess → predict_step → structure writer bridge, or use --spike-only for trunk smoke."
     });
     let j = serde_json::to_string_pretty(&info)?;
     tokio::fs::write(&marker, j).await?;

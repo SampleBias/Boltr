@@ -107,4 +107,20 @@ impl StructureV2Tables {
         let u = usize::try_from(o).ok()?;
         self.coords.get(u).copied()
     }
+
+    /// Apply first `xyz.len()` predicted positions to atom rows (PDB/mmCIF use [`AtomV2Row::coords`])
+    /// and the matching slice of the flat `coords` table for the first ensemble.
+    pub fn apply_predicted_atom_coords(&mut self, xyz: &[[f32; 3]]) {
+        let n = xyz.len().min(self.atoms.len());
+        for i in 0..n {
+            self.atoms[i].coords = xyz[i];
+        }
+        let base = self.ensemble_base_offset(0) as usize;
+        for i in 0..n {
+            let j = base + i;
+            if j < self.coords.len() {
+                self.coords[j] = xyz[i];
+            }
+        }
+    }
 }

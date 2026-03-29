@@ -795,6 +795,15 @@ templates:
     assert_eq!(input.summary_chain_ids(), vec!["A", "B"]);
 }
 
+#[test]
+fn yaml_roundtrip_minimal_protein_only() {
+    let input = parse_fixture("minimal_protein_only.yaml");
+    let yaml = serde_yaml::to_string(&input).expect("serialize BoltzInput");
+    let parsed: BoltzInput = serde_yaml::from_str(&yaml).expect("roundtrip parse");
+    assert_eq!(parsed.version, input.version);
+    assert_eq!(parsed.summary_chain_ids(), input.summary_chain_ids());
+}
+
 // ─── Existing fixture test preserved ──────────────────────────────────────────
 
 #[test]

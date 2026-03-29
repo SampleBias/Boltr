@@ -26,7 +26,7 @@ LibTorch tests: use [`cargo-tch`](cargo-tch) so `torch-sys` finds Python’s tor
 | [`export_trunk_init_golden.py`](export_trunk_init_golden.py) | Trunk init (`rel_pos`, `s_init`) golden |
 | [`export_input_embedder_golden.py`](export_input_embedder_golden.py) | Input embedder forward golden |
 | [`dump_collate_golden.py`](dump_collate_golden.py) | Synthetic trunk smoke collate (torch + safetensors) |
-| [`dump_full_collate_golden.py`](dump_full_collate_golden.py) | Full **`Boltz2InferenceDataModule.collate()`** → safetensors (requires full Boltz) |
+| [`dump_full_collate_golden.py`](dump_full_collate_golden.py) | Full **`Boltz2InferenceDataModule.collate()`** → safetensors (requires full Boltz). Optional manual CI reminder: [`dump-full-collate-golden.yml`](../.github/workflows/dump-full-collate-golden.yml) |
 | [`dump_collate_two_example_golden.py`](dump_collate_two_example_golden.py) | Two-example MSA collate parity |
 | [`dump_atom_features_golden.py`](dump_atom_features_golden.py) | `process_atom_features` golden |
 | [`dump_msa_features_golden.py`](dump_msa_features_golden.py) | `process_msa_features` golden |

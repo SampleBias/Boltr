@@ -1,0 +1,17 @@
+# Optional: regenerate full Python collate goldens (requires full upstream Boltz, not boltz-reference).
+name: dump full collate golden (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  note:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Document manual step
+        run: |
+          echo "This workflow is a placeholder: run scripts/dump_full_collate_golden.py locally"
+          echo "with a full Boltz checkout (boltz.data on PYTHONPATH). See scripts/README.md."
+          echo "Rust-native collate parity is covered by boltr-io post_collate_golden + CI."
+          exit 0

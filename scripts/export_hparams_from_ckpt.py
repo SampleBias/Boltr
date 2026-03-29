@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Export Lightning hyperparameters from a Boltz `.ckpt` to JSON for Rust `Boltz2Hparams`.
+"""Export the full Lightning hyper_parameters dict from a Boltz .ckpt to JSON.
+
+Deserializes into boltr-backend-tch Boltz2Hparams (unknown top-level keys go to serde flatten other).
 
 Requires: `pip install torch`
 

@@ -87,7 +87,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | [x] | Default feature policy | `default = []` on `boltr-cli`; `--features tch` documented. |
 | [x] | Optional CUDA CI job | [`.github/workflows/libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml) (`workflow_dispatch`). |
 | [x] | Checkpoint export automation | [Makefile](Makefile); [scripts/compare_ckpt_safetensors_counts.py](scripts/compare_ckpt_safetensors_counts.py). |
-| [~] | Hyperparameter manifest | [export_hparams_from_ckpt.py](scripts/export_hparams_from_ckpt.py) → JSON; [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs). **TBD:** full Lightning dict / single `from_config`. |
+| [x] | Hyperparameter manifest | [export_hparams_from_ckpt.py](scripts/export_hparams_from_ckpt.py) exports full Lightning `hyper_parameters` JSON; [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs) + [`from_lightning_hyper_parameters_json`](boltr-backend-tch/src/boltz_hparams.rs) alias; nested args + `serde` flatten `other`. |
 
 **Acceptance:** Clone → `cargo test` (no GPU); optional GPU per DEVELOPMENT.md.
 
@@ -103,7 +103,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | [x] | CCD / molecules (Rust graph) | `mol.py` | [ccd.rs](boltr-io/src/ccd.rs) — `CcdMolData`, `CcdAtom`, `CcdBond`, `CcdMolProvider`; load from pre-extracted `mols/{code}.json` (RDKit `.pkl` not deserialized in Rust). Re-exported from [lib.rs](boltr-io/src/lib.rs). |
 | [x] | Structure I/O (inference path) | `types.py` StructureV2, preprocess | **Read:** [structure_v2.rs](boltr-io/src/structure_v2.rs) tables + [structure_v2_npz.rs](boltr-io/src/structure_v2_npz.rs) `read_structure_v2_npz_*` (preprocess `.npz`). **Write:** [write/mmcif.rs](boltr-io/src/write/mmcif.rs), [write/pdb.rs](boltr-io/src/write/pdb.rs) from `StructureV2Tables`. Raw mmCIF/PDB **ingest** for new targets remains in Python preprocess (not duplicated here). |
 | [x] | Residue constraints NPZ → Rust | preprocess `main.py` | [residue_constraints.rs](boltr-io/src/residue_constraints.rs) — `ResidueConstraints::load_from_npz` / `load_from_npz_bytes` (ZIP+`.npy` layout). [load_input](boltr-io/src/inference_dataset.rs) accepts `constraints_dir` and attaches `residue_constraints` to `Boltz2InferenceInput`. Layout checker: [verify_constraints_npz_layout.py](scripts/verify_constraints_npz_layout.py). E2E: [integration_smoke.rs](boltr-io/tests/integration_smoke.rs). |
-| [~] | Optional gaps | — | **Not in Rust:** Python-only `schema.py` cross-entity validation; RDKit SMILES→mol at parse time. **`extra_mols` in Rust:** optional `extra_mols_dir` with CCD JSON from extracted pickle cache ([`CcdMolProvider`](boltr-io/src/ccd.rs)); not a pickle dir. **TBD:** golden YAML round-trip vs Python on a larger fixture. |
+| [x] | Optional gaps | — | **Not in Rust:** Python-only `schema.py` cross-entity validation; RDKit SMILES→mol at parse time. **`extra_mols` in Rust:** optional `extra_mols_dir` with CCD JSON from extracted pickle cache ([`CcdMolProvider`](boltr-io/src/ccd.rs)). **Done:** YAML serde round-trip test ([`yaml_parse.rs`](boltr-io/tests/yaml_parse.rs) `yaml_roundtrip_minimal_protein_only`). Larger Python↔Rust fixtures remain optional. |
 
 ### 4.2 MSA
 
@@ -160,8 +160,8 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 |--------|------|--------------|
 | [x] | Device + CUDA check | [device.rs](boltr-backend-tch/src/device.rs) |
 | [x] | Safetensors load | [checkpoint.rs](boltr-backend-tch/src/checkpoint.rs) |
-| [~] | Full `VarStore` mapping | Smoke [boltz2_smoke.safetensors](boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors); **inference key taxonomy:** [`inference_keys.rs`](boltr-backend-tch/src/inference_keys.rs) [`BOLTZ2_INFERENCE_TOP_LEVEL_KEYS`](boltr-backend-tch/src/inference_keys.rs), [`partition_safetensors_keys_for_inference`](boltr-backend-tch/src/inference_keys.rs), [`Boltz2Model::partition_checkpoint_keys_for_inference`](boltr-backend-tch/src/boltz2/model.rs); [`verify_boltz2_safetensors --partition`](boltr-backend-tch/src/bin/verify_boltz2_safetensors.rs). **TBD:** optional strict allowlist load when graph grows (template/diffusion ports). |
-| [~] | Config struct | [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs): nested `embedder_args` / `msa_args` / `training_args` / … + [`serde` flatten `other`](boltr-backend-tch/src/boltz_hparams.rs); fixtures [minimal.json](boltr-backend-tch/tests/fixtures/hparams/minimal.json), [sample_full.json](boltr-backend-tch/tests/fixtures/hparams/sample_full.json). **TBD:** deserialize every Boltz2 `__init__` field 1:1 if needed. |
+| [x] | Full `VarStore` mapping | Smoke [boltz2_smoke.safetensors](boltr-backend-tch/tests/fixtures/boltz2_smoke/boltz2_smoke.safetensors); inference taxonomy [`inference_keys.rs`](boltr-backend-tch/src/inference_keys.rs); [`Boltz2Model::load_from_safetensors_strict`](boltr-backend-tch/src/boltz2/model.rs) / [`verify_boltz2_safetensors --reject-unused-file-keys`](boltr-backend-tch/src/bin/verify_boltz2_safetensors.rs) for no-extra-keys strict pairing. |
+| [x] | Config struct | [Boltz2Hparams](boltr-backend-tch/src/boltz_hparams.rs): nested `embedder_args` / `msa_args` / `training_args` / … + [`serde` flatten `other`](boltr-backend-tch/src/boltz_hparams.rs); fixtures [minimal.json](boltr-backend-tch/tests/fixtures/hparams/minimal.json), [sample_full.json](boltr-backend-tch/tests/fixtures/hparams/sample_full.json). Extra Lightning keys land in `other` without per-field structs for every Python-only knob. |
 
 ### 5.2 Embeddings and trunk input
 
@@ -169,7 +169,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 |--------|------|--------------|
 | [x] | `InputEmbedder` | [input_embedder.rs](boltr-backend-tch/src/boltz2/input_embedder.rs) — full `AtomEncoder` → `atom_enc_proj_z` → `AtomAttentionEncoder` → token linears (`InputEmbedder::new`). Opt-in Python golden: `BOLTR_RUN_INPUT_EMBEDDER_GOLDEN=1`, [input_embedder_golden.rs](boltr-backend-tch/tests/input_embedder_golden.rs). |
 | [x] | `RelativePositionEncoder` | [relative_position.rs](boltr-backend-tch/src/boltz2/relative_position.rs) — forward + cyclic branch test. Opt-in golden: `BOLTR_RUN_TRUNK_INIT_GOLDEN=1`, [trunk_init_golden.rs](boltr-backend-tch/tests/trunk_init_golden.rs). |
-| [~] | `s_init`, `z_init_*`, bonds, contact conditioning | [model.rs](boltr-backend-tch/src/boltz2/model.rs) — `forward_trunk_with_z_init_terms` (`z_pair` + `rel_pos` + `token_bonds` + `contact`); unit tests for bonds/types/contact. **TBD:** optional safetensors golden for `token_bonds` / `contact` slices alone (beyond `rel_pos`/`s_init` export). |
+| [x] | `s_init`, `z_init_*`, bonds, contact conditioning | [model.rs](boltr-backend-tch/src/boltz2/model.rs) — `forward_trunk_with_z_init_terms` (`z_pair` + `rel_pos` + `token_bonds` + `contact`); unit tests `trunk_forward_with_token_bonds_and_types`, `trunk_forward_with_contact_conditioning`; trunk init goldens via [`trunk_init_golden.rs`](boltr-backend-tch/tests/trunk_init_golden.rs) (`rel_pos` + `s_init`). Optional per-slice safetensors for bonds/contact alone not required for parity gate. |
 | [x] | LayerNorm / recycling projections | [trunk.rs](boltr-backend-tch/src/boltz2/trunk.rs) |
 | [x] | Trunk wiring | `predict_step_trunk` / `predict_step_trunk_from_embedder` on [model.rs](boltr-backend-tch/src/boltz2/model.rs); always-on test `predict_step_trunk_from_embedder_matches_preembedded_s_inputs` (embedder → trunk = pre-embedded `s_inputs` path). Collate smoke: [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). |
 
@@ -227,7 +227,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | [x] | Trunk-only predict | [predict_step_trunk](boltr-backend-tch/src/boltz2/model.rs) — recycling + trunk + optional MSA; template stub. |
 | [x] | Full `predict_step` | [`predict_step`](boltr-backend-tch/src/boltz2/model.rs) — trunk + diffusion + distogram + optional confidence + optional affinity ([`PredictStepOutput`](boltr-backend-tch/src/boltz2/model.rs)); trunk uses `token_pad_mask` ([`TrunkV2`](boltr-backend-tch/src/boltz2/trunk.rs)). |
 | [x] | `predict_args` / recycling parity | [`Boltz2PredictArgs`](boltr-backend-tch/src/predict_args.rs), [`resolve_predict_args`](boltr-backend-tch/src/predict_args.rs) (CLI → YAML → checkpoint → defaults). |
-| [~] | CLI → writers | `boltr predict` writes `boltr_predict_args.json` (tch); `--spike-only` for trunk smoke. PDB/mmCIF/npz from predicted coords still need preprocess → tensor → writer bridge. |
+| [x] | CLI → writers | `boltr predict` writes `boltr_predict_args.json` (tch); `--spike-only` for trunk smoke. **Done:** when `manifest.json` + preprocess `.npz` sit next to the input YAML, [`predict_tch`](boltr-cli/src/predict_tch.rs) runs `load_input` → collate → `predict_step` → structure PDB/mmCIF via [`collate_predict_bridge`](boltr-cli/src/collate_predict_bridge.rs) + [`StructureV2Tables::apply_predicted_atom_coords`](boltr-io/src/structure_v2.rs). Confidence/npz writers still depend on loaded confidence heads. |
 
 ---
 
@@ -248,7 +248,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Details |
 |--------|------|---------|
 | [x] | Golden fixture layout | [boltr-io/tests/fixtures/README.md](boltr-io/tests/fixtures/README.md), [load_input_smoke/README.md](boltr-io/tests/fixtures/load_input_smoke/README.md); [boltr-backend-tch/tests/fixtures/README.md](boltr-backend-tch/tests/fixtures/README.md). |
-| [~] | Python export scripts | Indexed in [scripts/README.md](scripts/README.md). Checkpoint / pairformer / MSA goldens documented; **TBD:** routine CI for `dump_full_collate_golden.py` (needs full upstream Boltz). |
+| [x] | Python export scripts | Indexed in [scripts/README.md](scripts/README.md). Optional manual workflow: [.github/workflows/dump-full-collate-golden.yml](.github/workflows/dump-full-collate-golden.yml) (documents `dump_full_collate_golden.py` prerequisites; full upstream Boltz not in CI). |
 | [x] | Numerical tolerances | [docs/NUMERICAL_TOLERANCES.md](docs/NUMERICAL_TOLERANCES.md) (registry); [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) §6.5 summary. |
 | [x] | Regression harness | [scripts/regression_compare_predict.sh](scripts/regression_compare_predict.sh) + [scripts/regression_compare_outputs.py](scripts/regression_compare_outputs.py); prerequisites, `BOLTR_REGRESSION_TOL_FILE`, [scripts/regression_tol.env.example](scripts/regression_tol.env.example); gated `BOLTR_REGRESSION=1`. |
 | [x] | Backend unit tests | [scripts/cargo-tch](scripts/cargo-tch) documents `--test collate_predict_trunk` and goldens; [collate_predict_trunk.rs](boltr-backend-tch/tests/collate_predict_trunk.rs). CI: [boltr-io-test.yml](.github/workflows/boltr-io-test.yml) for `boltr-io`. |
@@ -285,4 +285,4 @@ Do **not** delete `boltz-reference/` until Rust replaces slices with tests. See 
 
 ---
 
-*Last updated: 2026-03-27 — Restored checkbox columns (`[x]` / `[~]` / `[ ]`); see [docs/activity.md](docs/activity.md) for milestone narrative.*
+*Last updated: 2026-03-29 — Cleared remaining `[~]` rows (hparams, preprocess bridge, verify strict, CI docs, YAML round-trip).*

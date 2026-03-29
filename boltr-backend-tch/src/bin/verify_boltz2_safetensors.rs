@@ -23,6 +23,7 @@ Options:
   --blocks N            pairformer depth (default 4)
   --bond-type-feature   match checkpoints with bond_type_feature=true
   --partition           print inference vs other key counts (see BOLTZ2_INFERENCE_TOP_LEVEL_KEYS)
+  --reject-unused-file-keys   exit 1 if the file has tensors not mapped into this VarStore (strict load)
 "
     );
     std::process::exit(2);
@@ -35,6 +36,7 @@ fn main() {
     let mut blocks: Option<i64> = None;
     let mut bond_type = false;
     let mut partition = false;
+    let mut reject_unused = false;
     let mut path: Option<PathBuf> = None;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -72,6 +74,10 @@ fn main() {
             }
             "--partition" => {
                 partition = true;
+                i += 1;
+            }
+            "--reject-unused-file-keys" => {
+                reject_unused = true;
                 i += 1;
             }
             s if s.starts_with('-') => {
@@ -154,6 +160,13 @@ fn main() {
             "\nFAIL: {} VarStore keys absent from {}; fix Path segments / export --strip-prefix (see DEVELOPMENT.md).",
             missing.len(),
             path.display()
+        );
+        std::process::exit(1);
+    }
+    if reject_unused && !extra.is_empty() {
+        eprintln!(
+            "\nFAIL: {} safetensors keys are not used by this VarStore (see --reject-unused-file-keys / Boltz2Model::load_from_safetensors_strict).",
+            extra.len()
         );
         std::process::exit(1);
     }

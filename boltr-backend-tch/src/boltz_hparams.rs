@@ -81,6 +81,12 @@ impl Boltz2Hparams {
         Ok(serde_json::from_value(v)?)
     }
 
+    /// Alias for [`Self::from_json_slice`]: loads the full Lightning `hyper_parameters` object
+    /// written by [`scripts/export_hparams_from_ckpt.py`](../../scripts/export_hparams_from_ckpt.py).
+    pub fn from_lightning_hyper_parameters_json(bytes: &[u8]) -> Result<Self> {
+        Self::from_json_slice(bytes)
+    }
+
     #[must_use]
     pub fn resolved_token_s(&self) -> i64 {
         self.token_s
@@ -180,5 +186,13 @@ mod tests {
         assert_eq!(h.resolved_token_s(), 384);
         assert!(h.embedder_args.is_some());
         assert!(h.other.contains_key("use_templates"));
+    }
+
+    #[test]
+    fn from_lightning_alias_matches_from_json_slice() {
+        let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4}"#;
+        let a = Boltz2Hparams::from_json_slice(j).unwrap();
+        let b = Boltz2Hparams::from_lightning_hyper_parameters_json(j).unwrap();
+        assert_eq!(a.resolved_token_s(), b.resolved_token_s());
     }
 }
