@@ -55,74 +55,68 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
 
     if ckpt.is_file() && !sf.is_file() {
         notes.push(
-            "Found boltz2_conf.ckpt but not boltz2_conf.safetensors — export with scripts/export_checkpoint_to_safetensors.py before native predict."
+            "Have .ckpt but not .safetensors — run scripts/export_checkpoint_to_safetensors.py for native predict."
                 .to_string(),
         );
     }
 
     if !cache.is_dir() {
-        notes.push(format!(
-            "Cache directory does not exist yet: {}",
-            cache.display()
-        ));
+        notes.push(format!("Cache folder missing: {}", cache.display()));
     }
 
     let files = vec![
         FileCheck {
-            label: "Structure checkpoint (safetensors)".to_string(),
+            label: "boltz2_conf.safetensors".to_string(),
             path: sf.display().to_string(),
             present: sf.is_file(),
             required: true,
             note: None,
         },
         FileCheck {
-            label: "Structure checkpoint (ckpt, upstream download)".to_string(),
+            label: "boltz2_conf.ckpt".to_string(),
             path: ckpt.display().to_string(),
             present: ckpt.is_file(),
             required: false,
-            note: Some("Not loaded directly by Boltr; export to .safetensors first.".to_string()),
+            note: Some("Export to .safetensors for Rust load.".to_string()),
         },
         FileCheck {
-            label: "Boltz2 hparams JSON".to_string(),
+            label: "boltz2_hparams.json".to_string(),
             path: hparams.display().to_string(),
             present: hparams.is_file(),
             required: false,
-            note: Some("Optional; defaults apply if missing.".to_string()),
+            note: Some("Optional.".to_string()),
         },
         FileCheck {
-            label: "CCD pickle (ligands / modified residues)".to_string(),
+            label: "ccd.pkl".to_string(),
             path: ccd.display().to_string(),
             present: ccd.is_file(),
             required: true,
             note: None,
         },
         FileCheck {
-            label: "Molecules archive (mols.tar)".to_string(),
+            label: "mols.tar".to_string(),
             path: mols.display().to_string(),
             present: mols.is_file(),
             required: true,
             note: None,
         },
         FileCheck {
-            label: "Affinity checkpoint (safetensors)".to_string(),
+            label: "boltz2_aff.safetensors".to_string(),
             path: aff_sf.display().to_string(),
             present: aff_sf.is_file(),
             required: false,
-            note: Some("Only needed for --affinity.".to_string()),
+            note: Some("Affinity only.".to_string()),
         },
         FileCheck {
-            label: "Affinity checkpoint (ckpt)".to_string(),
+            label: "boltz2_aff.ckpt".to_string(),
             path: aff_ckpt.display().to_string(),
             present: aff_ckpt.is_file(),
             required: false,
-            note: Some("Optional; export to .safetensors for native affinity.".to_string()),
+            note: Some("Affinity only.".to_string()),
         },
     ];
 
-    notes.push(
-        "LibTorch must be available and boltr-cli built with --features tch for full inference."
-            .to_string(),
-    );
+    notes.push("Inference needs LibTorch and `boltr` with `--features tch`.".to_string());
 
     StatusResponse {
         cache_dir: cache.display().to_string(),

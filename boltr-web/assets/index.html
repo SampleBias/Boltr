@@ -86,6 +86,31 @@
       max-width: 100%;
       -webkit-overflow-scrolling: touch;
     }
+    .help-box {
+      border: 1px solid var(--border);
+      background: #111;
+      padding: 0.65rem 0.75rem;
+      margin: 0.5rem 0 0.75rem;
+      max-width: 42rem;
+    }
+    .help-box p { margin: 0 0 0.5rem; color: var(--muted); font-size: 12px; }
+    .help-box p:last-child { margin-bottom: 0; }
+    .help-box strong { color: var(--fg); }
+    pre.example {
+      margin: 0.4rem 0 0;
+      padding: 0.45rem 0.5rem;
+      font-size: 11px;
+      color: var(--fg);
+      background: #0a0a0a;
+      border: 1px dashed var(--border);
+      user-select: all;
+      cursor: text;
+    }
+    pre.example:first-of-type { margin-top: 0.25rem; }
+    input.path-wide {
+      width: min(100%, 42rem);
+      max-width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -114,13 +139,20 @@
                                                                                                                  
 ___</pre>
   <h1>Boltr — prediction prerequisites</h1>
-  <p class="notes">Black / white / grey UI. Status reflects your cache and optional <code>BOLTZ_CACHE</code>. Upload a Boltz YAML to validate parse, cache, and (if present) <code>manifest.json</code> + preprocess <code>.npz</code>. For MSA/template path checks, set <strong>Job directory</strong> to the absolute folder that already contains the YAML and sidecar files on this machine — the server reads from disk there instead of only the uploaded bytes.</p>
+  <p class="notes">Paths are on <strong>this machine</strong> only. Blank fields use defaults.</p>
 
   <section>
-    <h2>Cache directory</h2>
+    <h2>1. Model cache</h2>
+    <div class="help-box">
+      <p>Where <code>boltr download</code> / checkpoints live (<code>boltz2_conf.*</code>, <code>ccd.pkl</code>, <code>mols.tar</code>, …). Same as <code>boltr predict --cache-dir</code>.</p>
+      <p><strong>Blank</strong> → <code>BOLTZ_CACHE</code>, else <code>~/.cache/boltr</code>.</p>
+      <pre class="example" tabindex="0">/home/YOURUSER/.cache/boltr</pre>
+    </div>
     <div class="row">
-      <label for="cacheDir">Override path</label>
-      <input type="text" id="cacheDir" placeholder="leave empty for server default" autocomplete="off" />
+      <label for="cacheDir">Override</label>
+    </div>
+    <div class="row">
+      <input type="text" class="path-wide" id="cacheDir" placeholder="default cache" autocomplete="off" spellcheck="false" />
     </div>
     <div class="row">
       <button type="button" id="btnRefresh">Refresh status</button>
@@ -130,12 +162,18 @@ ___</pre>
   </section>
 
   <section>
-    <h2>Upload YAML</h2>
-    <div class="row">
-      <label for="jobDir">Job directory (optional)</label>
+    <h2>2. YAML + job folder</h2>
+    <div class="help-box">
+      <p><strong>Job folder</strong> (optional): absolute path to the directory that already has your YAML, MSAs, templates, and optionally <code>manifest.json</code> + <code>.npz</code>. Lets the server check relative paths.</p>
+      <p><strong>Blank</strong> → upload only; paths like <code>./msa.a3m</code> won’t resolve.</p>
+      <pre class="example" tabindex="0">/home/YOURUSER/Boltr/my-case</pre>
+      <p class="notes" style="margin-top:0.45rem">Pick the same YAML file below; with a job folder set, validation reads that path on disk.</p>
     </div>
     <div class="row">
-      <input type="text" id="jobDir" placeholder="/absolute/path/to/folder/with/yaml+msa" autocomplete="off" />
+      <label for="jobDir">Job folder</label>
+    </div>
+    <div class="row">
+      <input type="text" class="path-wide" id="jobDir" placeholder="optional" autocomplete="off" spellcheck="false" />
     </div>
     <div class="row">
       <input type="file" id="yamlFile" accept=".yaml,.yml,text/yaml" />
@@ -160,34 +198,34 @@ ___</pre>
 
     function renderStatus(data) {
       const rows = (data.files || []).map((f) => {
-        const st = f.present ? '<span class="ok">present</span>' : '<span class="no">missing</span>';
-        const req = f.required ? "required" : "optional";
+        const st = f.present ? '<span class="ok">yes</span>' : '<span class="no">no</span>';
+        const req = f.required ? "req" : "opt";
         return `<div class="row"><span class="tag">${esc(f.label)}</span><span>${st}</span><span class="notes">${req}</span><span class="notes">${esc(f.path)}</span></div>`;
       }).join("");
       const notes = (data.notes || []).map((n) => `<p class="notes">${esc(n)}</p>`).join("");
-      cachePill.textContent = data.native_structure_checkpoint_ok ? "safetensors: ok" : "safetensors: missing";
+      cachePill.textContent = data.native_structure_checkpoint_ok ? ".safetensors ✓" : "need .safetensors";
       cachePill.className = "pill " + (data.native_structure_checkpoint_ok ? "ready" : "not-ready");
-      statusMount.innerHTML = `<p class="notes">Cache: <code>${esc(data.cache_dir)}</code></p>${rows}${notes}`;
+      statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${notes}`;
     }
 
     function renderValidate(data) {
       const ready = data.ready_to_run_native;
-      const head = `<p class="row"><span class="pill ${ready ? "ready" : "not-ready"}">${ready ? "Ready for native predict" : "Not ready — see blockers"}</span></p>`;
+      const head = `<p class="row"><span class="pill ${ready ? "ready" : "not-ready"}">${ready ? "Ready" : "Blocked"}</span></p>`;
       const blockers = (data.blockers || []).length
-        ? `<h2 style="margin-top:1rem">Blockers</h2><pre>${esc((data.blockers || []).join("\n"))}</pre>`
+        ? `<h2 style="margin-top:1rem">Issues</h2><pre>${esc((data.blockers || []).join("\n"))}</pre>`
         : "";
       const warns = (data.warnings || []).length
-        ? `<h2 style="margin-top:1rem">Warnings</h2><pre>${esc((data.warnings || []).join("\n"))}</pre>`
+        ? `<h2 style="margin-top:1rem">Heads-up</h2><pre>${esc((data.warnings || []).join("\n"))}</pre>`
         : "";
       const chains = (data.chain_ids || []).join(", ");
       const probes = (data.path_probes || []).map((p) =>
-        `<div class="row"><span class="tag">${esc(p.kind)}</span><span>${p.exists ? '<span class="ok">ok</span>' : '<span class="no">missing</span>'}</span><span class="notes">${esc(p.path)}</span></div>`
+        `<div class="row"><span class="tag">${esc(p.kind)}</span><span>${p.exists ? '<span class="ok">yes</span>' : '<span class="no">no</span>'}</span><span class="notes">${esc(p.path)}</span></div>`
       ).join("");
       const prep = data.preprocess || {};
-      const prepHtml = `<div class="row"><span class="tag">manifest.json</span><span>${prep.manifest_present ? '<span class="ok">present</span>' : '<span class="notes">absent</span>'}</span></div>
-        <div class="row"><span class="tag">preprocess .npz</span><span>${prep.npz_present ? '<span class="ok">ok</span>' : '<span class="notes">n/a or missing</span>'}</span><span class="notes">${esc(prep.npz_path || "")}</span></div>`;
+      const prepHtml = `<div class="row"><span class="tag">manifest</span><span>${prep.manifest_present ? '<span class="ok">yes</span>' : '<span class="notes">no</span>'}</span></div>
+        <div class="row"><span class="tag">.npz</span><span>${prep.npz_present ? '<span class="ok">yes</span>' : '<span class="notes">no</span>'}</span><span class="notes">${esc(prep.npz_path || "")}</span></div>`;
       validateMount.innerHTML = head + `<p class="notes">Chains: ${esc(chains || "—")}</p>` + probes + prepHtml + blockers + warns +
-        `<h2 style="margin-top:1rem">Cache snapshot (at validate)</h2><div id="valCache"></div>`;
+        `<h2 style="margin-top:1rem">Cache</h2><div id="valCache"></div>`;
       const snap = $("valCache");
       if (snap && data.cache) {
         const t = document.createElement("div");
@@ -198,7 +236,7 @@ ___</pre>
 
     function renderStatusInto(el, data) {
       const rows = (data.files || []).map((f) => {
-        const st = f.present ? '<span class="ok">present</span>' : '<span class="no">missing</span>';
+        const st = f.present ? '<span class="ok">yes</span>' : '<span class="no">no</span>';
         return `<div class="row"><span class="tag">${esc(f.label)}</span><span>${st}</span><span class="notes">${esc(f.path)}</span></div>`;
       }).join("");
       el.innerHTML = rows;
