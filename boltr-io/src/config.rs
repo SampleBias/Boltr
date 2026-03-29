@@ -496,6 +496,7 @@ impl TemplateChainId {
 
 /// A property entry under `properties:`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum PropertyEntry {
     /// Affinity prediction.
     Affinity {
