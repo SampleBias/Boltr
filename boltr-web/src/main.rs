@@ -64,6 +64,7 @@ async fn post_validate(
     let mut file_name: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut cache_override: Option<PathBuf> = None;
+    let mut job_dir: Option<PathBuf> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -87,44 +88,72 @@ async fn post_validate(
             if !t.is_empty() {
                 cache_override = Some(PathBuf::from(t));
             }
+        } else if name == "job_dir" {
+            let t = field
+                .text()
+                .await
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            let t = t.trim();
+            if !t.is_empty() {
+                job_dir = Some(PathBuf::from(t));
+            }
         }
     }
 
-    let bytes = file_bytes.ok_or_else(|| {
-        (
-            StatusCode::BAD_REQUEST,
-            "missing file field".to_string(),
-        )
-    })?;
-
     let name = file_name.unwrap_or_else(|| "input.yaml".to_string());
-    let tmp = tempfile::tempdir().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("temp dir: {e}"),
-        )
-    })?;
-    let yaml_path = tmp.path().join(&name);
-    std::fs::write(&yaml_path, &bytes).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("write upload: {e}"),
-        )
-    })?;
+
+    let (yaml_path, text): (PathBuf, String) = if let Some(ref dir) = job_dir {
+        let p = dir.join(&name);
+        if !p.is_file() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!("job_dir: file not found: {}", p.display()),
+            ));
+        }
+        let text = std::fs::read_to_string(&p).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("read {}: {e}", p.display()),
+            )
+        })?;
+        (p, text)
+    } else {
+        let bytes = file_bytes.ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                "missing file field (or set job_dir to validate YAML on disk)".to_string(),
+            )
+        })?;
+        let tmp = tempfile::tempdir().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("temp dir: {e}"),
+            )
+        })?;
+        let yaml_path = tmp.path().join(&name);
+        std::fs::write(&yaml_path, &bytes).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("write upload: {e}"),
+            )
+        })?;
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("UTF-8: {e}"),
+                )
+            })?
+            .to_string();
+        (yaml_path, text)
+    };
 
     let cache = cache_override
         .as_ref()
         .map(|p| resolve_cache_dir(Some(p.as_path())))
         .unwrap_or_else(|| state.default_cache.clone());
 
-    let text = std::str::from_utf8(&bytes).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("UTF-8: {e}"),
-        )
-    })?;
-
-    let v = validate_yaml_at(&yaml_path, text, &cache);
+    let v = validate_yaml_at(&yaml_path, &text, &cache);
     let json = serde_json::to_value(&v).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

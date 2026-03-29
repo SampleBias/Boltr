@@ -301,12 +301,6 @@ pub fn validate_yaml_at(
         }
     }
 
-    if !cache_status.native_structure_checkpoint_ok {
-        push_blocker(
-            &mut blockers,
-            "Cache missing boltz2_conf.safetensors (run boltr download + export).".to_string(),
-        );
-    }
     for f in &cache_status.files {
         if f.required && !f.present {
             push_blocker(
