@@ -225,6 +225,67 @@ fn single_to_keys(single: &Tensor, indexing_matrix: &Tensor, w: i64, h: i64) -> 
 }
 
 // ---------------------------------------------------------------------------
+// AtomEncoder — flags / extra feats (encodersv2.AtomEncoder)
+// ---------------------------------------------------------------------------
+
+/// Hyperparameters controlling which atom feature tensors are concatenated before `embed_atom_features`.
+///
+/// Reference: `boltz-reference/.../encodersv2.py::AtomEncoder.__init__`.
+#[derive(Clone, Debug)]
+pub struct AtomEncoderFlags {
+    /// One-hot width of `ref_element` (Boltz `num_elements`, often 128).
+    pub num_elements: i64,
+    pub use_no_atom_char: bool,
+    pub use_atom_backbone_feat: bool,
+    pub use_residue_feats_atoms: bool,
+    /// When `use_atom_backbone_feat`, last dim of `atom_backbone_feat` (Boltz uses 17 classes).
+    pub backbone_feat_dim: i64,
+    /// Token vocabulary size (`const.num_tokens`, 33).
+    pub num_tokens: i64,
+}
+
+impl Default for AtomEncoderFlags {
+    fn default() -> Self {
+        Self {
+            // 3 + 1 + 128 = 132 with `use_no_atom_char=true` (Boltz `num_elements` / boltr-io `NUM_ELEMENTS`)
+            num_elements: 128,
+            use_no_atom_char: true,
+            use_atom_backbone_feat: false,
+            use_residue_feats_atoms: false,
+            backbone_feat_dim: 17,
+            num_tokens: 33,
+        }
+    }
+}
+
+impl AtomEncoderFlags {
+    /// Expected `embed_atom_features` in-features for these flags (must match checkpoint `atom_feature_dim`).
+    #[must_use]
+    pub fn expected_atom_feature_dim(&self) -> i64 {
+        let mut d = 3 + 1 + self.num_elements;
+        if !self.use_no_atom_char {
+            d += 4 * 64;
+        }
+        if self.use_atom_backbone_feat {
+            d += self.backbone_feat_dim;
+        }
+        if self.use_residue_feats_atoms {
+            d += self.num_tokens + 1 + 4;
+        }
+        d
+    }
+}
+
+/// Optional per-forward tensors for extended atom encodings (name chars, backbone, residue broadcast).
+pub struct AtomEncoderBatchFeats<'a> {
+    pub ref_atom_name_chars: Option<&'a Tensor>,
+    pub atom_backbone_feat: Option<&'a Tensor>,
+    pub res_type: Option<&'a Tensor>,
+    pub modified: Option<&'a Tensor>,
+    pub mol_type: Option<&'a Tensor>,
+}
+
+// ---------------------------------------------------------------------------
 // AtomEncoder
 // ---------------------------------------------------------------------------
 
@@ -239,6 +300,7 @@ pub struct AtomEncoder {
     atoms_per_window_queries: i64,
     atoms_per_window_keys: i64,
     structure_prediction: bool,
+    flags: AtomEncoderFlags,
     s_to_c_trans_norm: Option<tch::nn::LayerNorm>,
     s_to_c_trans_linear: Option<tch::nn::Linear>,
     z_to_p_trans_norm: Option<tch::nn::LayerNorm>,
@@ -264,7 +326,14 @@ impl AtomEncoder {
         atoms_per_window_keys: i64,
         atom_feature_dim: i64,
         structure_prediction: bool,
+        flags: AtomEncoderFlags,
     ) -> Self {
+        let expected = flags.expected_atom_feature_dim();
+        assert_eq!(
+            atom_feature_dim, expected,
+            "atom_feature_dim {atom_feature_dim} != expected {expected} for AtomEncoderFlags {:?}",
+            flags
+        );
         let embed_atom_features = linear(
             path.sub("embed_atom_features"),
             atom_feature_dim,
@@ -304,6 +373,7 @@ impl AtomEncoder {
             atoms_per_window_queries,
             atoms_per_window_keys,
             structure_prediction,
+            flags,
             s_to_c_trans_norm,
             s_to_c_trans_linear,
             z_to_p_trans_norm,
@@ -318,9 +388,72 @@ impl AtomEncoder {
         }
     }
 
+    pub fn flags(&self) -> &AtomEncoderFlags {
+        &self.flags
+    }
+
+    fn concat_atom_feats(
+        &self,
+        ref_pos: &Tensor,
+        ref_charge: &Tensor,
+        ref_element: &Tensor,
+        atom_to_token: &Tensor,
+        batch: Option<&AtomEncoderBatchFeats<'_>>,
+    ) -> Tensor {
+        let f = &self.flags;
+        debug_assert_eq!(
+            ref_element.size()[2],
+            f.num_elements,
+            "ref_element last dim must match AtomEncoderFlags::num_elements"
+        );
+        let mut pieces: Vec<Tensor> = vec![
+            ref_pos.shallow_clone(),
+            ref_charge.unsqueeze(-1),
+            ref_element.shallow_clone(),
+        ];
+        if !f.use_no_atom_char {
+            let chars = batch
+                .and_then(|b| b.ref_atom_name_chars)
+                .expect("ref_atom_name_chars required when use_no_atom_char is false");
+            let sz = chars.size();
+            let flat = chars.reshape(&[sz[0], sz[1], 4 * 64]);
+            pieces.push(flat);
+        }
+        if f.use_atom_backbone_feat {
+            let bb = batch
+                .and_then(|b| b.atom_backbone_feat)
+                .expect("atom_backbone_feat required when use_atom_backbone_feat");
+            pieces.push(bb.shallow_clone());
+        }
+        if f.use_residue_feats_atoms {
+            let b = batch.expect("batch required when use_residue_feats_atoms");
+            let res_type = b
+                .res_type
+                .expect("res_type required when use_residue_feats_atoms");
+            let modified = b
+                .modified
+                .expect("modified required when use_residue_feats_atoms");
+            let mol_type = b
+                .mol_type
+                .expect("mol_type required when use_residue_feats_atoms");
+            let mol_oh = mol_type.to_kind(Kind::Int64).one_hot(4).to_kind(Kind::Float);
+            let res_feats = Tensor::cat(
+                &[
+                    res_type.shallow_clone(),
+                    modified.unsqueeze(-1).to_kind(Kind::Float),
+                    mol_oh,
+                ],
+                -1,
+            );
+            let atom_res = atom_to_token.to_kind(Kind::Float).bmm(&res_feats);
+            pieces.push(atom_res);
+        }
+        Tensor::cat(&pieces, -1)
+    }
+
     /// Returns `(q, c, p, indexing_matrix)`.
     ///
-    /// * `feats`: atom features dict (ref_pos, ref_charge, ref_element, atom_pad_mask, ref_space_uid, atom_to_token)
+    /// * `batch`: optional extra tensors matching [`AtomEncoderFlags`]; required when flags request them.
     /// * `s_trunk`: `[B, N, token_s]` (only when `structure_prediction`)
     /// * `z`: `[B, N, N, token_z]` conditioned pair repr (only when `structure_prediction`)
     pub fn forward(
@@ -333,6 +466,7 @@ impl AtomEncoder {
         atom_to_token: &Tensor,
         s_trunk: Option<&Tensor>,
         z: Option<&Tensor>,
+        batch: Option<&AtomEncoderBatchFeats<'_>>,
     ) -> (Tensor, Tensor, Tensor, Tensor) {
         let size = ref_pos.size();
         let (b, n) = (size[0], size[1]);
@@ -340,14 +474,12 @@ impl AtomEncoder {
         let h = self.atoms_per_window_keys;
         let k = n / w;
 
-        // Atom features: [ref_pos, ref_charge, ref_element]
-        let atom_feats = Tensor::cat(
-            &[
-                ref_pos.shallow_clone(),
-                ref_charge.unsqueeze(-1),
-                ref_element.shallow_clone(),
-            ],
-            -1,
+        let atom_feats = self.concat_atom_feats(
+            ref_pos,
+            ref_charge,
+            ref_element,
+            atom_to_token,
+            batch,
         );
         let c = self.embed_atom_features.forward(&atom_feats);
 

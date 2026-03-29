@@ -8,7 +8,7 @@ use tch::{Device, Tensor};
 
 use crate::tch_compat::{layer_norm_1d, linear_no_bias};
 
-use super::encoders::{AtomEncoder, PairwiseConditioning};
+use super::encoders::{AtomEncoder, AtomEncoderBatchFeats, AtomEncoderFlags, PairwiseConditioning};
 
 /// Pre-computed conditioning tensors consumed by the score model at each step.
 pub struct DiffusionConditioningOutput {
@@ -61,6 +61,7 @@ impl DiffusionConditioning {
         atom_feature_dim: i64,
         conditioning_transition_layers: i64,
         device: Device,
+        atom_flags: AtomEncoderFlags,
     ) -> Self {
         let pairwise_conditioner = PairwiseConditioning::new(
             path.sub("pairwise_conditioner"),
@@ -81,6 +82,7 @@ impl DiffusionConditioning {
             atoms_per_window_keys,
             atom_feature_dim,
             true, // structure_prediction
+            atom_flags,
         );
 
         let mut atom_enc_proj_z = Vec::new();
@@ -147,6 +149,7 @@ impl DiffusionConditioning {
         atom_pad_mask: &Tensor,
         ref_space_uid: &Tensor,
         atom_to_token: &Tensor,
+        batch: Option<&AtomEncoderBatchFeats<'_>>,
     ) -> DiffusionConditioningOutput {
         let z = self
             .pairwise_conditioner
@@ -161,6 +164,7 @@ impl DiffusionConditioning {
             atom_to_token,
             Some(s_trunk),
             Some(&z),
+            batch,
         );
 
         // Compute biases by concatenating per-layer projections
@@ -229,6 +233,15 @@ mod tests {
         let trans_heads = 4_i64;
         let atom_feat_dim = 3 + 1 + 4; // ref_pos(3) + charge(1) + element(4)
 
+        let atom_flags = AtomEncoderFlags {
+            num_elements: 4,
+            use_no_atom_char: true,
+            use_atom_backbone_feat: false,
+            use_residue_feats_atoms: false,
+            backbone_feat_dim: 17,
+            num_tokens: 33,
+        };
+        assert_eq!(atom_flags.expected_atom_feature_dim(), atom_feat_dim);
         let dc = DiffusionConditioning::new(
             vs.root().sub("diffusion_conditioning"),
             token_s,
@@ -246,6 +259,7 @@ mod tests {
             atom_feat_dim,
             2,
             device,
+            atom_flags,
         );
 
         let b = 1_i64;
@@ -272,6 +286,7 @@ mod tests {
             &atom_pad_mask,
             &ref_space_uid,
             &atom_to_token,
+            None,
         );
 
         assert_eq!(out.q.size()[0], b);

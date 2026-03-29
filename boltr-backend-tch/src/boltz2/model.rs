@@ -15,7 +15,8 @@ use super::contact_conditioning::{ContactConditioning, ContactFeatures};
 use super::diffusion::{AtomDiffusion, AtomDiffusionConfig, DiffusionSampleOutput};
 use super::diffusion_conditioning::{DiffusionConditioning, DiffusionConditioningOutput};
 use super::distogram::{BFactorModule, DistogramModule};
-use super::input_embedder::InputEmbedder;
+use super::encoders::AtomEncoderBatchFeats;
+use super::input_embedder::{InputEmbedder, InputEmbedderFeats};
 use super::msa_module::{MsaFeatures, MsaModule};
 use super::potentials::PotentialBatchFeats;
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
@@ -156,7 +157,10 @@ pub struct Boltz2DiffusionArgs {
     pub token_transformer_heads: i64,
     pub atom_decoder_depth: i64,
     pub atom_decoder_heads: i64,
+    /// In-features for `atom_encoder.embed_atom_features` (must match [`AtomEncoderFlags::expected_atom_feature_dim`]).
     pub atom_feature_dim: i64,
+    /// Which optional atom tensors are concatenated (must match checkpoint / featurizer).
+    pub atom_encoder_flags: super::encoders::AtomEncoderFlags,
     pub conditioning_transition_layers: i64,
     pub dim_fourier: i64,
     pub num_bins: i64,
@@ -178,6 +182,8 @@ pub struct PredictStepFeats<'a> {
     pub atom_pad_mask: &'a Tensor,
     pub ref_space_uid: &'a Tensor,
     pub atom_to_token: &'a Tensor,
+    /// Optional extras for [`AtomEncoder`] when flags request name chars / backbone / residue broadcast.
+    pub atom_encoder_batch: Option<&'a AtomEncoderBatchFeats<'a>>,
 }
 
 /// Trunk + structure + distogram + optional confidence (Python `Boltz2.forward` predict path).
@@ -191,6 +197,8 @@ pub struct PredictStepOutput {
 
 impl Default for Boltz2DiffusionArgs {
     fn default() -> Self {
+        let atom_encoder_flags = super::encoders::AtomEncoderFlags::default();
+        let atom_feature_dim = atom_encoder_flags.expected_atom_feature_dim();
         Self {
             atom_s: 128,
             atom_z: 16,
@@ -202,7 +210,8 @@ impl Default for Boltz2DiffusionArgs {
             token_transformer_heads: 8,
             atom_decoder_depth: 3,
             atom_decoder_heads: 4,
-            atom_feature_dim: 128,
+            atom_feature_dim,
+            atom_encoder_flags,
             conditioning_transition_layers: 2,
             dim_fourier: 256,
             num_bins: 64,
@@ -314,7 +323,20 @@ impl Boltz2Model {
         });
         let contact_conditioning =
             ContactConditioning::new(root.sub("contact_conditioning"), token_z, 4.0, 20.0);
-        let input_embedder = InputEmbedder::new(root.sub("input_embedder"), token_s);
+        let input_embedder = InputEmbedder::new(
+            root.sub("input_embedder"),
+            token_s,
+            token_z,
+            diff_args.atom_s,
+            diff_args.atom_z,
+            diff_args.atoms_per_window_queries,
+            diff_args.atoms_per_window_keys,
+            diff_args.atom_feature_dim,
+            diff_args.atom_encoder_depth,
+            diff_args.atom_encoder_heads,
+            diff_args.atom_encoder_flags.clone(),
+            device,
+        );
 
         let diffusion_conditioning = DiffusionConditioning::new(
             root.sub("diffusion_conditioning"),
@@ -333,6 +355,7 @@ impl Boltz2Model {
             diff_args.atom_feature_dim,
             diff_args.conditioning_transition_layers,
             device,
+            diff_args.atom_encoder_flags.clone(),
         );
 
         let structure_module = AtomDiffusion::new(
@@ -696,6 +719,7 @@ impl Boltz2Model {
         atom_pad_mask: &Tensor,
         ref_space_uid: &Tensor,
         atom_to_token: &Tensor,
+        atom_encoder_batch: Option<&AtomEncoderBatchFeats<'_>>,
     ) -> DiffusionConditioningOutput {
         self.diffusion_conditioning.forward(
             s_trunk,
@@ -707,6 +731,7 @@ impl Boltz2Model {
             atom_pad_mask,
             ref_space_uid,
             atom_to_token,
+            atom_encoder_batch,
         )
     }
 
@@ -808,6 +833,7 @@ impl Boltz2Model {
             feats.atom_pad_mask,
             feats.ref_space_uid,
             feats.atom_to_token,
+            feats.atom_encoder_batch,
         );
         let potential_merged = merge_potential_batch(feats, potential_extra);
         let potential_for_sample =
@@ -882,6 +908,42 @@ impl Boltz2Model {
     /// Whether templates are enabled (weights created in the trunk).
     pub fn use_templates(&self) -> bool {
         self.trunk.has_template()
+    }
+
+    /// Python `input_embedder(feats)` — full atom stack + token linears → `s_inputs` `[B, N, token_s]`.
+    pub fn forward_s_inputs_from_embedder(
+        &self,
+        feats: &InputEmbedderFeats<'_>,
+        affinity: bool,
+    ) -> Tensor {
+        self.input_embedder.forward(feats, affinity)
+    }
+
+    /// Trunk predict with `s_inputs` produced from collate tensors (full [`InputEmbedder`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn predict_step_trunk_from_embedder(
+        &self,
+        embedder: &InputEmbedderFeats<'_>,
+        affinity: bool,
+        rel: &RelPosFeatures<'_>,
+        token_bonds: Option<&Tensor>,
+        type_bonds: Option<&Tensor>,
+        contact: Option<&ContactFeatures<'_>>,
+        recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
+    ) -> Result<(Tensor, Tensor)> {
+        let s_inputs = self.forward_s_inputs_from_embedder(embedder, affinity);
+        self.forward_trunk_with_z_init_terms(
+            &s_inputs,
+            rel,
+            token_bonds,
+            type_bonds,
+            contact,
+            recycling_steps,
+            msa_feats,
+            template_feats,
+        )
     }
 }
 

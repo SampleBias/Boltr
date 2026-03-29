@@ -35,9 +35,11 @@ pub use contact_conditioning::{
 pub use diffusion::{AtomDiffusion, AtomDiffusionConfig, DiffusionModule, DiffusionSampleOutput};
 pub use diffusion_conditioning::{DiffusionConditioning, DiffusionConditioningOutput};
 pub use distogram::{BFactorModule, DistogramModule};
+pub use encoders::{AtomEncoderBatchFeats, AtomEncoderFlags};
 pub use featurizer_bridge::zeros_atom_attention_out;
 pub use input_embedder::{
-    AtomEncoderPlaceholder, InputEmbedder, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
+    AtomEncoderPlaceholder, InputEmbedder, InputEmbedderFeats, BOLTZ_MSA_PROFILE_IN,
+    BOLTZ_NUM_TOKENS,
 };
 pub use model::{
     Boltz2DiffusionArgs, Boltz2Model, PredictStepFeats, PredictStepOutput, BOND_TYPE_EMBEDDING_NUM,

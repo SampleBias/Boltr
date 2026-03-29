@@ -109,7 +109,8 @@ impl RelativePositionEncoder {
             b_same_chain.shallow_clone()
         };
         let off_ch = Tensor::full_like(&d_chain, s2 + 1);
-        d_chain = d_chain.where_self(&cond, &off_ch);
+        // Match Python `torch.where(cond, off, d_chain)`: `off.where_self(cond, d_chain)`.
+        d_chain = off_ch.where_self(&cond, &d_chain);
         let a_rel_chain = d_chain.one_hot(s2 + 2);
 
         let b_ent_f = b_same_entity.unsqueeze(-1).to_kind(Kind::Float);
