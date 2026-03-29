@@ -5,6 +5,7 @@
 //! runs end-to-end (scores match Python when ligand frame logic is inactive).
 
 use std::collections::BTreeMap;
+use std::ops::Mul;
 
 use tch::{Device, Kind, Tensor};
 
@@ -14,10 +15,12 @@ pub const CHAIN_TYPE_NONPOLYMER: i64 = 3;
 
 /// `compute_aggregated_metric(logits, end)` — expected value over softmax bins.
 pub fn compute_aggregated_metric(logits: &Tensor, end: f64) -> Tensor {
-    let num_bins = logits.size().last().expect("logits rank");
-    let bin_width = end / f64::from(num_bins);
+    let num_bins = *logits.size().last().expect("logits rank");
+    let bin_width = end / num_bins as f64;
     let device = logits.device();
-    let bounds = Tensor::arange_step(0.5 * bin_width, end, bin_width, (Kind::Float, device));
+    let bounds = Tensor::arange(num_bins, (Kind::Float, device))
+        .g_mul_scalar(bin_width)
+        .g_add_scalar(0.5 * bin_width);
     let probs = logits.softmax(-1, Kind::Float);
     let n = probs.dim() as usize;
     let mut view_shape = vec![1i64; n];
@@ -31,10 +34,10 @@ pub fn compute_aggregated_metric(logits: &Tensor, end: f64) -> Tensor {
 fn tm_function(d: &Tensor, n_res: &Tensor) -> Tensor {
     let d0 = n_res
         .clamp_min(19.0)
-        .sub_scalar(15.0)
+        .g_sub_scalar(15.0)
         .pow_tensor_scalar(1.0 / 3.0)
-        .mul_scalar(1.24)
-        .sub_scalar(1.8);
+        .g_mul_scalar(1.24)
+        .g_sub_scalar(1.8);
     let ratio = d / d0;
     Tensor::ones_like(&ratio) / (Tensor::ones_like(&ratio) + ratio.pow_tensor_scalar(2.0))
 }
@@ -91,10 +94,13 @@ pub fn compute_ptms(
     let ne = asym_r.unsqueeze(2).ne_tensor(&asym_r.unsqueeze(1));
     let pair_mask_iptm = maski.unsqueeze(2) * ne.to_kind(Kind::Float) * &pad_pair;
 
-    let num_bins = pae_logits.size().last().expect("pae bins");
-    let bin_width = 32.0 / f64::from(num_bins);
+    let num_bins = *pae_logits.size().last().expect("pae bins");
+    let bin_width = 32.0 / num_bins as f64;
     let device = pae_logits.device();
-    let pae_value = Tensor::arange_step(0.5 * bin_width, 32.0, bin_width, (Kind::Float, device)).unsqueeze(0);
+    let pae_value = Tensor::arange(num_bins, (Kind::Float, device))
+        .g_mul_scalar(bin_width)
+        .g_add_scalar(0.5 * bin_width)
+        .unsqueeze(0);
     let n_res = mask_pad.sum_dim_intlist(&[-1i64][..], true, Kind::Float);
     let tm_w = tm_function(&pae_value, &n_res);
     let tm_value = tm_w.unsqueeze(1).unsqueeze(2);
@@ -158,7 +164,7 @@ pub fn compute_ptms(
     let nuniq = flat.numel();
     let mut uniq_ids = Vec::new();
     for u in 0..nuniq {
-        uniq_ids.push(flat.get(u).int64_value(&[]));
+        uniq_ids.push(flat.get(u as i64).int64_value(&[]));
     }
     uniq_ids.sort_unstable();
     uniq_ids.dedup();

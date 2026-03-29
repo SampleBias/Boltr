@@ -91,6 +91,42 @@ pub fn write_npy_1d(descr: &str, n: usize, payload: &[u8]) -> Result<Vec<u8>> {
     Ok(b)
 }
 
+fn shape_repr_nd(shape: &[usize]) -> String {
+    match shape.len() {
+        0 => "()".to_string(),
+        1 => format!("({},)", shape[0]),
+        _ => {
+            let inner = shape
+                .iter()
+                .map(|&d| d.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({inner})")
+        }
+    }
+}
+
+/// Build a NumPy `.npy` blob for little-endian `float32` in C order (row-major).
+///
+/// Compatible with `numpy.load` / `numpy.save` for the same `shape` and dtype `<f4`.
+pub fn write_npy_f32_c_order(shape: &[usize], data: &[f32]) -> Result<Vec<u8>> {
+    let expected: usize = shape.iter().product();
+    if data.len() != expected {
+        bail!(
+            "data length {} does not match shape product {}",
+            data.len(),
+            expected
+        );
+    }
+    let shape_line = shape_repr_nd(shape);
+    let dict = numpy_header_dict_v1("<f4", &shape_line, false);
+    let mut b = wrap_npy_header_v1(&dict)?;
+    for &x in data {
+        b.extend_from_slice(&x.to_le_bytes());
+    }
+    Ok(b)
+}
+
 fn parse_shape_tuple(header: &str) -> Result<Vec<usize>> {
     let key = "'shape': ";
     let pos = header
@@ -637,6 +673,13 @@ mod tests {
     use super::*;
     use crate::fixtures::structure_v2_single_ala;
     use crate::tokenize::boltz2::tokenize_structure;
+
+    #[test]
+    fn write_npy_f32_produces_numpy_magic() {
+        let data = vec![1.0_f32, 2.0, 3.0, 4.0];
+        let blob = write_npy_f32_c_order(&[2, 2], &data).unwrap();
+        assert!(blob.starts_with(b"\x93NUMPY"));
+    }
 
     #[test]
     fn roundtrip_structure_npz_matches_fixture() {

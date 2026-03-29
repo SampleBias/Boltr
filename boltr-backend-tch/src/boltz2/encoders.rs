@@ -412,7 +412,8 @@ impl AtomEncoder {
                     &[&z_to_p, &atom_to_token_queries, &atom_to_token_keys],
                     None::<i64>,
                 );
-                p = p + z_to_p_out.to_kind(p.kind());
+                let p_kind = p.kind();
+                p = p + z_to_p_out.to_kind(p_kind);
             }
         }
 

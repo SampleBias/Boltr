@@ -1,5 +1,6 @@
-//! Confidence JSON and output naming — mirrors [`BoltzWriter`](../../../boltz-reference/src/boltz/data/write/writer.py)
-//! (`confidence_{id}_model_{rank}.json`, sibling `plddt_*.npz` / `pae_*.npz` names).
+//! Confidence JSON and output naming — layout from [prediction.md](../../../../boltz-reference/docs/prediction.md)
+//! (`confidence_{id}_model_{rank}.json`; sibling `plddt_*` / `pae_*` / `pde_*` `.npz` under each record dir).
+//! Tensor payloads are written by [`crate::write::prediction_npz`](prediction_npz).
 
 use std::collections::HashMap;
 use std::fs;
@@ -62,11 +63,44 @@ impl PredictionFileNames {
             self.record_id
         ))
     }
+
+    /// `pae_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
+    #[must_use]
+    pub fn pae_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
+        self.struct_dir(output_dir).join(pae_npz_filename(&self.record_id, model_rank))
+    }
+
+    /// `pde_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
+    #[must_use]
+    pub fn pde_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
+        self.struct_dir(output_dir).join(pde_npz_filename(&self.record_id, model_rank))
+    }
+
+    /// `plddt_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
+    #[must_use]
+    pub fn plddt_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
+        self.struct_dir(output_dir).join(plddt_npz_filename(&self.record_id, model_rank))
+    }
 }
 
 #[must_use]
 pub fn confidence_json_filename(record_id: &str, model_rank: usize) -> String {
     format!("confidence_{record_id}_model_{model_rank}.json")
+}
+
+#[must_use]
+pub fn pae_npz_filename(record_id: &str, model_rank: usize) -> String {
+    format!("pae_{record_id}_model_{model_rank}.npz")
+}
+
+#[must_use]
+pub fn pde_npz_filename(record_id: &str, model_rank: usize) -> String {
+    format!("pde_{record_id}_model_{model_rank}.npz")
+}
+
+#[must_use]
+pub fn plddt_npz_filename(record_id: &str, model_rank: usize) -> String {
+    format!("plddt_{record_id}_model_{model_rank}.npz")
 }
 
 /// Write `confidence_{record_id}_model_{rank}.json` under `output_dir / record_id /`.
@@ -87,6 +121,26 @@ pub fn write_confidence_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn prediction_npz_paths_under_record_dir() {
+        let p = PredictionFileNames::new("input_file1");
+        let out = Path::new("/predictions");
+        assert_eq!(
+            p.pae_npz_path(out, 0),
+            Path::new("/predictions/input_file1/pae_input_file1_model_0.npz")
+        );
+        assert_eq!(
+            p.pde_npz_path(out, 1),
+            Path::new("/predictions/input_file1/pde_input_file1_model_1.npz")
+        );
+        assert_eq!(
+            p.plddt_npz_path(out, 2),
+            Path::new("/predictions/input_file1/plddt_input_file1_model_2.npz")
+        );
+        assert_eq!(pae_npz_filename("x", 0), "pae_x_model_0.npz");
+    }
 
     #[test]
     fn confidence_serializes_nested_maps() {

@@ -1,4 +1,5 @@
-//! PDB text — Boltz2-style (`to_pdb` in [`pdb.py`](../../../boltz-reference/src/boltz/data/write/pdb.py)).
+//! PDB text — Boltz-style ATOM/HETATM + CONECT; coordinates and `--output_format pdb` in
+//! [prediction.md](../../../../boltz-reference/docs/prediction.md).
 //!
 //! Uses [`crate::ambiguous_atoms::resolve_ambiguous_element`] for element symbols; no RDKit.
 
@@ -177,6 +178,7 @@ pub fn structure_v2_to_pdb(t: &StructureV2Tables, per_atom_plddt_01: Option<&[f3
 mod tests {
     use super::*;
     use crate::fixtures::structure_v2_single_ala;
+    use crate::structure_v2::BondV2AtomRow;
 
     #[test]
     fn ala_smoke_contains_atom_and_end() {
@@ -184,6 +186,27 @@ mod tests {
         let s = structure_v2_to_pdb(&t, None);
         assert!(s.contains("ATOM"));
         assert!(s.contains("END"));
+        assert!(s.lines().all(|l| l.len() <= 80));
+    }
+
+    #[test]
+    fn conect_two_bonds_share_first_atom() {
+        let mut t = structure_v2_single_ala();
+        t.bonds.push(BondV2AtomRow {
+            atom_1: 0,
+            atom_2: 1,
+            bond_type: 1,
+        });
+        t.bonds.push(BondV2AtomRow {
+            atom_1: 0,
+            atom_2: 2,
+            bond_type: 1,
+        });
+        let s = structure_v2_to_pdb(&t, None);
+        let conects: Vec<_> = s.lines().filter(|l| l.starts_with("CONECT")).collect();
+        assert_eq!(conects.len(), 2);
+        assert!(conects.iter().any(|l| l.contains("    1    2")));
+        assert!(conects.iter().any(|l| l.contains("    1    3")));
         assert!(s.lines().all(|l| l.len() <= 80));
     }
 }

@@ -1,6 +1,6 @@
 //! Minimal mmCIF (`_atom_site`) — consumer-friendly coordinates without Python `modelcif` / `ihm`.
 //!
-//! For full **ModelCIF** parity see [`mmcif.py`](../../../boltz-reference/src/boltz/data/write/mmcif.py).
+//! Default Boltz prediction output is mmCIF when `--output_format mmcif` ([prediction.md](../../../../boltz-reference/docs/prediction.md)); full ModelCIF / `ihm` is out of scope here.
 
 use crate::ambiguous_atoms::{pdb_atom_key, resolve_ambiguous_element};
 use crate::boltz_const::CHAIN_TYPES;
@@ -135,8 +135,16 @@ mod tests {
     fn ala_smoke_has_atom_site_loop() {
         let t = structure_v2_single_ala();
         let s = structure_v2_to_mmcif(&t);
+        assert!(s.starts_with("data_BOLTR\n"));
         assert!(s.contains("loop_"));
+        assert!(s.contains("_atom_site.group_PDB"));
+        assert!(s.contains("_atom_site.label_atom_id"));
+        assert!(s.contains("_atom_site.label_comp_id"));
+        assert!(s.contains("_atom_site.label_asym_id"));
         assert!(s.contains("_atom_site.Cartn_x"));
+        assert!(s.contains("_atom_site.Cartn_y"));
+        assert!(s.contains("_atom_site.Cartn_z"));
+        assert!(s.contains("_atom_site.B_iso_or_equiv"));
         assert!(s.contains("ATOM"));
     }
 }

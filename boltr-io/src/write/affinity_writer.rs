@@ -1,4 +1,4 @@
-//! Affinity prediction JSON — mirrors [`BoltzAffinityWriter`](../../../boltz-reference/src/boltz/data/write/writer.py) (`affinity_{id}.json`).
+//! Affinity prediction JSON — schema in [prediction.md](../../../../boltz-reference/docs/prediction.md) (`affinity_{id}.json`).
 
 use std::fs;
 use std::path::Path;

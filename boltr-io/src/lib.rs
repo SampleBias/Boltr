@@ -128,6 +128,8 @@ pub use parser::parse_input_path as parse_input;
 pub use parser::{parse_input_path, parse_input_str};
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
 pub use write::{
-    confidence_json_filename, structure_v2_to_mmcif, structure_v2_to_pdb, write_affinity_json,
-    write_confidence_json, AffinitySummary, ConfidenceSummary, PredictionFileNames,
+    confidence_json_filename, pae_npz_filename, pde_npz_filename, plddt_npz_filename,
+    structure_v2_to_mmcif, structure_v2_to_pdb, write_affinity_json, write_confidence_json,
+    write_pae_npz_path, write_pde_npz_path, write_plddt_npz_path, AffinitySummary, ConfidenceSummary,
+    PredictionFileNames,
 };
