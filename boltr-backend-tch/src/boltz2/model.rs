@@ -17,7 +17,9 @@ use super::diffusion_conditioning::{DiffusionConditioning, DiffusionConditioning
 use super::distogram::{BFactorModule, DistogramModule};
 use super::input_embedder::InputEmbedder;
 use super::msa_module::{MsaFeatures, MsaModule};
+use super::potentials::PotentialBatchFeats;
 use super::relative_position::{RelPosFeatures, RelativePositionEncoder};
+use super::steering::SteeringParams;
 use super::template_module::TemplateFeatures;
 use super::trunk::TrunkV2;
 use crate::boltz_hparams::Boltz2Hparams;
@@ -25,6 +27,89 @@ use crate::checkpoint::load_tensor_from_safetensors;
 
 /// `len(const.bond_types) + 1` in Boltz (`boltz-reference/.../const.py`).
 pub const BOND_TYPE_EMBEDDING_NUM: i64 = 7;
+
+fn merge_potential_batch<'a>(
+    feats: &'a PredictStepFeats<'a>,
+    extra: Option<&'a PotentialBatchFeats<'a>>,
+) -> PotentialBatchFeats<'a> {
+    let mut p = PotentialBatchFeats {
+        atom_to_token: Some(feats.atom_to_token),
+        asym_id: Some(feats.asym_id),
+        atom_pad_mask: Some(feats.atom_pad_mask),
+        ref_element: Some(feats.ref_element),
+        token_to_rep_atom: Some(feats.token_to_rep_atom),
+        ..Default::default()
+    };
+    if let Some(e) = extra {
+        if e.token_index.is_some() {
+            p.token_index = e.token_index;
+        }
+        if e.symmetric_chain_index.is_some() {
+            p.symmetric_chain_index = e.symmetric_chain_index;
+        }
+        if e.connected_chain_index.is_some() {
+            p.connected_chain_index = e.connected_chain_index;
+        }
+        if e.connected_atom_index.is_some() {
+            p.connected_atom_index = e.connected_atom_index;
+        }
+        if e.rdkit_bounds_index.is_some() {
+            p.rdkit_bounds_index = e.rdkit_bounds_index;
+        }
+        if e.rdkit_lower_bounds.is_some() {
+            p.rdkit_lower_bounds = e.rdkit_lower_bounds;
+        }
+        if e.rdkit_upper_bounds.is_some() {
+            p.rdkit_upper_bounds = e.rdkit_upper_bounds;
+        }
+        if e.rdkit_bounds_bond_mask.is_some() {
+            p.rdkit_bounds_bond_mask = e.rdkit_bounds_bond_mask;
+        }
+        if e.rdkit_bounds_angle_mask.is_some() {
+            p.rdkit_bounds_angle_mask = e.rdkit_bounds_angle_mask;
+        }
+        if e.stereo_bond_index.is_some() {
+            p.stereo_bond_index = e.stereo_bond_index;
+        }
+        if e.stereo_bond_orientations.is_some() {
+            p.stereo_bond_orientations = e.stereo_bond_orientations;
+        }
+        if e.chiral_atom_index.is_some() {
+            p.chiral_atom_index = e.chiral_atom_index;
+        }
+        if e.chiral_atom_orientations.is_some() {
+            p.chiral_atom_orientations = e.chiral_atom_orientations;
+        }
+        if e.planar_bond_index.is_some() {
+            p.planar_bond_index = e.planar_bond_index;
+        }
+        if e.template_mask_cb.is_some() {
+            p.template_mask_cb = e.template_mask_cb;
+        }
+        if e.template_force.is_some() {
+            p.template_force = e.template_force;
+        }
+        if e.template_cb.is_some() {
+            p.template_cb = e.template_cb;
+        }
+        if e.template_force_threshold.is_some() {
+            p.template_force_threshold = e.template_force_threshold;
+        }
+        if e.contact_pair_index.is_some() {
+            p.contact_pair_index = e.contact_pair_index;
+        }
+        if e.contact_union_index.is_some() {
+            p.contact_union_index = e.contact_union_index;
+        }
+        if e.contact_negation_mask.is_some() {
+            p.contact_negation_mask = e.contact_negation_mask;
+        }
+        if e.contact_thresholds.is_some() {
+            p.contact_thresholds = e.contact_thresholds;
+        }
+    }
+    p
+}
 
 /// Boltz2 inference model: trunk + pairformer + diffusion conditioning + structure module +
 /// distogram/bfactor heads on a shared [`VarStore`].
@@ -636,6 +721,10 @@ impl Boltz2Model {
     }
 
     /// Run the full reverse-diffusion sampling.
+    ///
+    /// When `steering` is `None`, or [`SteeringParams::uses_extended_sampler`] is false, uses the
+    /// fast sampler. Otherwise uses [`AtomDiffusion::sample_with_steering`] (random aug, potentials
+    /// guidance, weighted rigid alignment; FK resampling is partial).
     #[allow(clippy::too_many_arguments)]
     pub fn forward_diffusion_sample(
         &self,
@@ -647,17 +736,35 @@ impl Boltz2Model {
         atom_to_token: &Tensor,
         num_sampling_steps: Option<i64>,
         multiplicity: i64,
+        steering: Option<SteeringParams>,
+        potential_feats: Option<&PotentialBatchFeats<'_>>,
+        max_parallel_samples: Option<i64>,
     ) -> DiffusionSampleOutput {
-        self.structure_module.sample(
-            s_inputs,
-            s_trunk,
-            cond,
-            token_pad_mask,
-            atom_pad_mask,
-            atom_to_token,
-            num_sampling_steps,
-            multiplicity,
-        )
+        match steering {
+            None | Some(s) if !s.uses_extended_sampler() => self.structure_module.sample(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+            ),
+            Some(s) => self.structure_module.sample_with_steering(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+                &s,
+                potential_feats,
+                max_parallel_samples,
+            ),
+        }
     }
 
     /// Full predict path: trunk → diffusion conditioning → sample → distogram → optional confidence.
@@ -676,6 +783,9 @@ impl Boltz2Model {
         feats: &PredictStepFeats<'_>,
         num_sampling_steps: Option<i64>,
         multiplicity: i64,
+        steering: Option<SteeringParams>,
+        potential_extra: Option<&PotentialBatchFeats<'_>>,
+        max_parallel_samples: Option<i64>,
     ) -> Result<PredictStepOutput> {
         let (s_trunk, z_trunk) = self.forward_trunk_with_z_init_terms(
             s_inputs,
@@ -699,6 +809,13 @@ impl Boltz2Model {
             feats.ref_space_uid,
             feats.atom_to_token,
         );
+        let potential_merged = merge_potential_batch(feats, potential_extra);
+        let potential_for_sample =
+            if steering.is_some_and(|s| s.uses_extended_sampler()) {
+                Some(&potential_merged)
+            } else {
+                None
+            };
         let diffusion = self.forward_diffusion_sample(
             s_inputs,
             &s_trunk,
@@ -708,6 +825,9 @@ impl Boltz2Model {
             feats.atom_to_token,
             num_sampling_steps,
             multiplicity,
+            steering,
+            potential_for_sample,
+            max_parallel_samples,
         );
         let pdistogram = self.forward_distogram(&z_trunk);
         let confidence = self.confidence_module.as_ref().map(|cm| {

@@ -218,7 +218,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Note |
 |--------|------|------|
-| [ ] | Inference potentials | Only if CLI needs `--use_potentials`. |
+| [x] | Inference potentials | [`SteeringParams`](boltr-backend-tch/src/boltz2/steering.rs), [`PotentialBatchFeats`](boltr-backend-tch/src/boltz2/potentials/feats.rs) + [`get_potentials_boltz2`](boltr-backend-tch/src/boltz2/potentials/registry.rs); extended [`AtomDiffusion::sample_with_steering`](boltr-backend-tch/src/boltz2/diffusion.rs); [`Boltz2Model::predict_step`](boltr-backend-tch/src/boltz2/model.rs) / `forward_diffusion_sample` threading; CLI `--use-potentials`. FK resampling still partial. |
 
 ### 5.10 Top-level forward
 
@@ -236,7 +236,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 |--------|------|---------|
 | [x] | `download` | Checkpoints + ccd + mols URLs aligned with `main.py`. |
 | [~] | `predict` | Parses YAML, optional MSA, summary JSON; **TBD:** full pipeline when §4–5 complete. |
-| [ ] | Flags parity | Recycling, sampling steps, diffusion samples, potentials, affinity-only, output format. |
+| [~] | Flags parity | Recycling, sampling steps, diffusion samples, **potentials (`--use-potentials`)**, affinity-only, output format. |
 | [ ] | `eval` | Optional; [boltz-reference/docs/evaluation.md](boltz-reference/docs/evaluation.md). |
 
 ---

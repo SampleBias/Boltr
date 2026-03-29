@@ -16,7 +16,10 @@ use tch::{Device, Kind, Tensor};
 use crate::tch_compat::{layer_norm_1d, linear_no_bias};
 
 use super::diffusion_conditioning::DiffusionConditioningOutput;
+use super::diffusion_geometry::{compute_random_augmentation, weighted_rigid_align};
 use super::encoders::{AtomAttentionDecoder, AtomAttentionEncoder, SingleConditioning};
+use super::potentials::{get_potentials_boltz2, PotentialBatchFeats};
+use super::steering::SteeringParams;
 use super::transformers::DiffusionTransformer;
 
 // ---------------------------------------------------------------------------
@@ -212,6 +215,8 @@ pub struct AtomDiffusion {
     noise_scale: f64,
     step_scale: f64,
     token_s: i64,
+    /// Match Boltz `AtomDiffusion(alignment_reverse_diff=…)` (default `True` in Boltz CLI).
+    alignment_reverse_diff: bool,
 }
 
 /// Configuration for constructing [`AtomDiffusion`].
@@ -225,6 +230,7 @@ pub struct AtomDiffusionConfig {
     pub gamma_min: f64,
     pub noise_scale: f64,
     pub step_scale: f64,
+    pub alignment_reverse_diff: bool,
 }
 
 impl Default for AtomDiffusionConfig {
@@ -239,6 +245,7 @@ impl Default for AtomDiffusionConfig {
             gamma_min: 1.0,
             noise_scale: 1.003,
             step_scale: 1.5,
+            alignment_reverse_diff: true,
         }
     }
 }
@@ -299,6 +306,7 @@ impl AtomDiffusion {
             noise_scale: config.noise_scale,
             step_scale: config.step_scale,
             token_s,
+            alignment_reverse_diff: config.alignment_reverse_diff,
         }
     }
 
@@ -367,11 +375,112 @@ impl AtomDiffusion {
         Tensor::cat(&[sigmas, Tensor::zeros(&[1], (Kind::Float, device))], 0)
     }
 
-    /// Run the full reverse-diffusion sampling loop.
+    /// Run the full reverse-diffusion sampling loop (no steering / potentials).
     ///
     /// Returns denoised atom coordinates `[multiplicity, M, 3]`.
     #[allow(clippy::too_many_arguments)]
     pub fn sample(
+        &self,
+        s_inputs: &Tensor,
+        s_trunk: &Tensor,
+        cond: &DiffusionConditioningOutput,
+        token_pad_mask: &Tensor,
+        atom_pad_mask: &Tensor,
+        atom_to_token: &Tensor,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+    ) -> DiffusionSampleOutput {
+        self.sample_inner(
+            s_inputs,
+            s_trunk,
+            cond,
+            token_pad_mask,
+            atom_pad_mask,
+            atom_to_token,
+            num_sampling_steps,
+            multiplicity,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// Same as [`Self::sample`] with Boltz-style steering / inference potentials.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sample_with_steering(
+        &self,
+        s_inputs: &Tensor,
+        s_trunk: &Tensor,
+        cond: &DiffusionConditioningOutput,
+        token_pad_mask: &Tensor,
+        atom_pad_mask: &Tensor,
+        atom_to_token: &Tensor,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+        steering: &SteeringParams,
+        potential_feats: Option<&PotentialBatchFeats<'_>>,
+        max_parallel_samples: Option<i64>,
+    ) -> DiffusionSampleOutput {
+        self.sample_inner(
+            s_inputs,
+            s_trunk,
+            cond,
+            token_pad_mask,
+            atom_pad_mask,
+            atom_to_token,
+            num_sampling_steps,
+            multiplicity,
+            Some(steering),
+            potential_feats,
+            max_parallel_samples,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn sample_inner(
+        &self,
+        s_inputs: &Tensor,
+        s_trunk: &Tensor,
+        cond: &DiffusionConditioningOutput,
+        token_pad_mask: &Tensor,
+        atom_pad_mask: &Tensor,
+        atom_to_token: &Tensor,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+        steering: Option<&SteeringParams>,
+        potential_feats: Option<&PotentialBatchFeats<'_>>,
+        max_parallel_samples: Option<i64>,
+    ) -> DiffusionSampleOutput {
+        match steering {
+            None | Some(s) if !s.uses_extended_sampler() => self.sample_fast(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+            ),
+            Some(s) => self.sample_extended(
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                num_sampling_steps,
+                multiplicity,
+                s,
+                potential_feats,
+                max_parallel_samples,
+            ),
+        }
+    }
+
+    /// Fast path (no random augmentation, FK, or potentials).
+    #[allow(clippy::too_many_arguments)]
+    fn sample_fast(
         &self,
         s_inputs: &Tensor,
         s_trunk: &Tensor,
@@ -433,6 +542,151 @@ impl AtomDiffusion {
             let denoised_over_sigma = (&atom_coords_noisy - acd) / t_hat;
             atom_coords =
                 &atom_coords_noisy + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma;
+        }
+
+        DiffusionSampleOutput {
+            sample_atom_coords: atom_coords,
+        }
+    }
+
+    /// Boltz `diffusionv2.py` sampling with random augmentation, optional potentials guidance, and
+    /// weighted rigid alignment. FK particle resampling is not yet wired (same energy landscape,
+    /// no per-step particle re-indexing).
+    #[allow(clippy::too_many_arguments)]
+    fn sample_extended(
+        &self,
+        s_inputs: &Tensor,
+        s_trunk: &Tensor,
+        cond: &DiffusionConditioningOutput,
+        token_pad_mask: &Tensor,
+        atom_pad_mask: &Tensor,
+        atom_to_token: &Tensor,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+        steering: &SteeringParams,
+        potential_feats: Option<&PotentialBatchFeats<'_>>,
+        max_parallel_samples: Option<i64>,
+    ) -> DiffusionSampleOutput {
+        let device = s_trunk.device();
+        let num_steps = num_sampling_steps.unwrap_or(self.num_sampling_steps);
+        let feats = potential_feats.unwrap_or(&PotentialBatchFeats::default());
+
+        let mut mult_eff = multiplicity;
+        if steering.fk_steering {
+            mult_eff *= steering.num_particles;
+        }
+        let _max_parallel = max_parallel_samples.unwrap_or(mult_eff).max(1);
+
+        let potentials = get_potentials_boltz2(steering);
+
+        let atom_mask = atom_pad_mask.repeat_interleave_self_int(mult_eff, Some(0), None);
+        let shape = [atom_mask.size()[0], atom_mask.size()[1], 3usize];
+
+        let sigmas = self.sample_schedule(num_steps, device);
+
+        let init_sigma =
+            f64::try_from(sigmas.select(0, 0)).unwrap_or(self.sigma_max * self.sigma_data);
+        let mut atom_coords = Tensor::randn(&shape, (Kind::Float, device)) * init_sigma;
+        let mut atom_coords_denoised: Option<Tensor> = None;
+        let mut scaled_guidance_update: Option<Tensor> = None;
+
+        if steering.physical_guidance_update || steering.contact_guidance_update {
+            scaled_guidance_update = Some(Tensor::zeros(
+                &[atom_coords.size()[0], atom_coords.size()[1], 3],
+                (Kind::Float, device),
+            ));
+        }
+
+        for step_idx in 0..(num_steps as usize) {
+            let sigma_tm = f64::try_from(sigmas.select(0, step_idx as i64)).unwrap();
+            let sigma_t = f64::try_from(sigmas.select(0, (step_idx + 1) as i64)).unwrap();
+            let gamma = if sigma_t > self.gamma_min {
+                self.gamma_0
+            } else {
+                0.0
+            };
+
+            let (random_r, random_tr) = compute_random_augmentation(mult_eff, device, Kind::Float);
+            let mut ac = atom_coords.shallow_clone();
+            ac = ac - ac.mean_dim(&[-2i64][..], true, Kind::Float);
+            ac = Tensor::einsum("bmd,bds->bms", &[&ac, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
+                + &random_tr;
+
+            if let Some(ref ad) = atom_coords_denoised {
+                let mut adn = ad - ad.mean_dim(&[-2i64][..], true, Kind::Float);
+                adn = Tensor::einsum("bmd,bds->bms", &[&adn, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
+                    + &random_tr;
+                atom_coords_denoised = Some(adn);
+            }
+
+            if let Some(ref mut sgu) = scaled_guidance_update {
+                *sgu = Tensor::einsum("bmd,bds->bms", &[sgu, &random_r], None::<Vec<i64>>).to_kind(Kind::Float);
+            }
+
+            atom_coords = ac;
+
+            let t_hat = sigma_tm * (1.0 + gamma);
+            let steering_t = 1.0 - (step_idx as f64 / num_steps as f64);
+            let noise_var =
+                self.noise_scale * self.noise_scale * (t_hat * t_hat - sigma_tm * sigma_tm);
+            let eps = Tensor::randn(&shape, (Kind::Float, device)) * noise_var.sqrt();
+            let atom_coords_noisy = &atom_coords + &eps;
+
+            let t_hat_tensor =
+                Tensor::full(&[atom_coords_noisy.size()[0]], t_hat, (Kind::Float, device));
+
+            let _no_grad = tch::no_grad_guard();
+            let mut acd = self.preconditioned_network_forward(
+                &atom_coords_noisy,
+                &t_hat_tensor,
+                s_inputs,
+                s_trunk,
+                cond,
+                token_pad_mask,
+                atom_pad_mask,
+                atom_to_token,
+                mult_eff,
+            );
+
+            if steering.physical_guidance_update || steering.contact_guidance_update {
+                if step_idx + 1 < num_steps as usize {
+                    let mut guidance_update = Tensor::zeros_like(&acd);
+                    for gd in 0..steering.num_gd_steps {
+                        let mut energy_gradient = Tensor::zeros_like(&acd);
+                        for p in &potentials {
+                            let gw = p.guidance_weight(steering_t);
+                            let gi = p.guidance_interval();
+                            if gw > 0.0 && gd % gi == 0 {
+                                energy_gradient = energy_gradient
+                                    + gw * p.compute_gradient(&(acd + guidance_update), feats, steering_t);
+                            }
+                        }
+                        guidance_update = guidance_update - energy_gradient;
+                    }
+                    acd = acd + guidance_update;
+                    if let Some(ref mut sgu) = scaled_guidance_update {
+                        *sgu =
+                            guidance_update * -1.0 * self.step_scale * (sigma_t - t_hat) / t_hat;
+                    }
+                }
+            }
+
+            atom_coords_denoised = Some(acd);
+
+            let mut coords_noisy = atom_coords_noisy.shallow_clone();
+            if self.alignment_reverse_diff {
+                coords_noisy = weighted_rigid_align(
+                    &coords_noisy,
+                    atom_coords_denoised.as_ref().unwrap(),
+                    &atom_mask.to_kind(Kind::Float),
+                    &atom_mask.to_kind(Kind::Bool),
+                );
+            }
+
+            let acd = atom_coords_denoised.as_ref().unwrap();
+            let denoised_over_sigma = (&coords_noisy - acd) / t_hat;
+            atom_coords =
+                &coords_noisy + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma;
         }
 
         DiffusionSampleOutput {

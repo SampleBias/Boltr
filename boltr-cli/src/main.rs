@@ -53,6 +53,9 @@ enum Commands {
         /// Affinity inference (expects preprocess `pre_affinity_*.npz` layout; same flag intent as Boltz)
         #[arg(long)]
         affinity: bool,
+        /// Inference-time physical potentials / steering (Boltz `--use_potentials`; disabled on affinity path)
+        #[arg(long)]
+        use_potentials: bool,
     },
     /// Download model weights and static assets
     Download {
@@ -119,8 +122,12 @@ async fn main() -> Result<()> {
     tracing::info!("Boltr starting...");
 
     match cli.command {
-        Commands::Predict { ref input, affinity } => {
-            predict_flow(&cli, input, affinity).await?;
+        Commands::Predict {
+            ref input,
+            affinity,
+            use_potentials,
+        } => {
+            predict_flow(&cli, input, affinity, use_potentials).await?;
         }
         Commands::Download { version } => {
             let cache = cli.cache_dir.unwrap_or_else(default_cache_dir);
@@ -231,11 +238,23 @@ fn default_msa_npz_path(input: &Path) -> PathBuf {
     parent.join(format!("{}.npz", base.to_string_lossy()))
 }
 
-async fn predict_flow(cli: &Cli, input: &str, affinity: bool) -> Result<()> {
+async fn predict_flow(cli: &Cli, input: &str, affinity: bool, use_potentials: bool) -> Result<()> {
     let input_path = std::path::Path::new(input);
     let parsed = boltr_io::parse_input_path(input_path)?;
     if affinity {
         tracing::info!("--affinity set: use Boltz affinity preprocess (pre_affinity npz) when wiring full I/O");
+    }
+    if use_potentials {
+        if affinity {
+            tracing::warn!(
+                "--use-potentials with --affinity: Boltz disables steering on affinity; potentials not applied"
+            );
+        } else {
+            tracing::info!(
+                use_potentials,
+                "inference potentials / steering requested (Boltz --use_potentials); wired when full predict uses Boltz2Model::predict_step"
+            );
+        }
     }
     tracing::info!(
         chains = ?parsed.summary_chain_ids(),
@@ -275,7 +294,14 @@ async fn predict_flow(cli: &Cli, input: &str, affinity: bool) -> Result<()> {
     summary.write_json(&summary_path)?;
     tracing::info!(path = %summary_path.display(), "wrote run summary");
 
-    try_model_spike(cli, &device_str, out_dir, cli.recycling_steps).await?;
+    try_model_spike(
+        cli,
+        &device_str,
+        out_dir,
+        cli.recycling_steps,
+        use_potentials && !affinity,
+    )
+    .await?;
 
     Ok(())
 }
@@ -297,16 +323,19 @@ async fn try_model_spike(
     device_str: &str,
     out_dir: &std::path::Path,
     recycling_steps: i64,
+    use_potentials_steering: bool,
 ) -> Result<()> {
     use boltr_backend_tch::{
         cuda_is_available, parse_device_spec, safetensor_names_not_in_var_store, Boltz2Model,
-        RelPosFeatures,
+        RelPosFeatures, SteeringParams,
     };
 
     tch::maybe_init_cuda();
     tracing::info!(
         cuda_available = cuda_is_available(),
         requested_device = %device_str,
+        use_potentials_steering,
+        steering = ?SteeringParams::from_use_potentials(use_potentials_steering),
         "LibTorch device probe"
     );
 
@@ -443,6 +472,7 @@ async fn try_model_spike(
     _device_str: &str,
     _out_dir: &std::path::Path,
     _recycling_steps: i64,
+    _use_potentials_steering: bool,
 ) -> Result<()> {
     Ok(())
 }
