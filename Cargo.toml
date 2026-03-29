@@ -4,6 +4,7 @@ members = [
     "boltr-cli",
     "boltr-io",
     "boltr-backend-tch",
+    "boltr-web",
 ]
 
 [workspace.package]

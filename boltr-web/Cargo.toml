@@ -1,0 +1,26 @@
+[package]
+name = "boltr-web"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Minimal local web UI for Boltr prediction prerequisites and YAML validation"
+
+[[bin]]
+name = "boltr-web"
+path = "src/main.rs"
+
+[dependencies]
+boltr-io = { path = "../boltr-io" }
+axum = { version = "0.7", features = ["multipart"] }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dirs.workspace = true
+tempfile = "3"

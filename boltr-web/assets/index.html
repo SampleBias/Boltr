@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boltr — prediction status</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --fg: #e8e8e8;
+      --muted: #9a9a9a;
+      --border: #3a3a3a;
+      --dim: #555;
+      --ok: #c0c0c0;
+      --bad: #888;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+      background: var(--bg);
+      color: var(--fg);
+      margin: 0;
+      padding: 1.25rem;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+    h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem; letter-spacing: 0.02em; }
+    h2 { font-size: 0.95rem; font-weight: 600; color: var(--muted); margin: 1.25rem 0 0.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.25rem; }
+    section { margin-bottom: 1.5rem; max-width: 56rem; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; margin: 0.35rem 0; }
+    .tag { color: var(--muted); min-width: 7rem; }
+    .ok { color: var(--ok); }
+    .no { color: var(--bad); }
+    button, input[type="file"]::file-selector-button {
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      padding: 0.35rem 0.65rem;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:hover, input[type="file"]::file-selector-button:hover { border-color: var(--muted); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    input[type="file"] { color: var(--muted); font-size: 12px; }
+    progress {
+      width: 100%;
+      max-width: 28rem;
+      height: 10px;
+      accent-color: var(--dim);
+    }
+    .bar-wrap { margin: 0.5rem 0; }
+    .notes { color: var(--muted); font-size: 12px; margin: 0.25rem 0; }
+    pre {
+      background: #111;
+      border: 1px solid var(--border);
+      padding: 0.6rem;
+      overflow: auto;
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0.35rem 0 0;
+    }
+    .pill { display: inline-block; padding: 0.15rem 0.45rem; border: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+    .ready { border-color: var(--ok); color: var(--fg); }
+    .not-ready { border-color: var(--bad); }
+    label { color: var(--muted); font-size: 12px; }
+    input[type="text"] {
+      background: #111;
+      border: 1px solid var(--border);
+      color: var(--fg);
+      padding: 0.3rem 0.5rem;
+      font-family: inherit;
+      font-size: 12px;
+      width: min(100%, 28rem);
+    }
+  </style>
+</head>
+<body>
+  <h1>Boltr — prediction prerequisites</h1>
+  <p class="notes">Black / white / grey UI. Status reflects your cache and optional <code>BOLTZ_CACHE</code>. Upload a Boltz YAML to validate parse, paths, preprocess bundle, and cache.</p>
+
+  <section>
+    <h2>Cache directory</h2>
+    <div class="row">
+      <label for="cacheDir">Override path</label>
+      <input type="text" id="cacheDir" placeholder="leave empty for server default" autocomplete="off" />
+    </div>
+    <div class="row">
+      <button type="button" id="btnRefresh">Refresh status</button>
+      <span class="pill" id="cachePill"></span>
+    </div>
+    <div id="statusMount"></div>
+  </section>
+
+  <section>
+    <h2>Upload YAML</h2>
+    <div class="row">
+      <input type="file" id="yamlFile" accept=".yaml,.yml,text/yaml" />
+      <button type="button" id="btnValidate" disabled>Validate</button>
+    </div>
+    <div class="bar-wrap">
+      <progress id="uploadBar" max="100" value="0"></progress>
+    </div>
+    <div id="validateMount"></div>
+  </section>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const statusMount = $("statusMount");
+    const validateMount = $("validateMount");
+    const cachePill = $("cachePill");
+    const uploadBar = $("uploadBar");
+
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function renderStatus(data) {
+      const rows = (data.files || []).map((f) => {
+        const st = f.present ? '<span class="ok">present</span>' : '<span class="no">missing</span>';
+        const req = f.required ? "required" : "optional";
+        return `<div class="row"><span class="tag">${esc(f.label)}</span><span>${st}</span><span class="notes">${req}</span><span class="notes">${esc(f.path)}</span></div>`;
+      }).join("");
+      const notes = (data.notes || []).map((n) => `<p class="notes">${esc(n)}</p>`).join("");
+      cachePill.textContent = data.native_structure_checkpoint_ok ? "safetensors: ok" : "safetensors: missing";
+      cachePill.className = "pill " + (data.native_structure_checkpoint_ok ? "ready" : "not-ready");
+      statusMount.innerHTML = `<p class="notes">Cache: <code>${esc(data.cache_dir)}</code></p>${rows}${notes}`;
+    }
+
+    function renderValidate(data) {
+      const ready = data.ready_to_run_native;
+      const head = `<p class="row"><span class="pill ${ready ? "ready" : "not-ready"}">${ready ? "Ready for native predict" : "Not ready — see blockers"}</span></p>`;
+      const blockers = (data.blockers || []).length
+        ? `<h2 style="margin-top:1rem">Blockers</h2><pre>${esc((data.blockers || []).join("\n"))}</pre>`
+        : "";
+      const warns = (data.warnings || []).length
+        ? `<h2 style="margin-top:1rem">Warnings</h2><pre>${esc((data.warnings || []).join("\n"))}</pre>`
+        : "";
+      const chains = (data.chain_ids || []).join(", ");
+      const probes = (data.path_probes || []).map((p) =>
+        `<div class="row"><span class="tag">${esc(p.kind)}</span><span>${p.exists ? '<span class="ok">ok</span>' : '<span class="no">missing</span>'}</span><span class="notes">${esc(p.path)}</span></div>`
+      ).join("");
+      const prep = data.preprocess || {};
+      const prepHtml = `<div class="row"><span class="tag">manifest.json</span><span>${prep.manifest_present ? '<span class="ok">present</span>' : '<span class="notes">absent</span>'}</span></div>
+        <div class="row"><span class="tag">preprocess .npz</span><span>${prep.npz_present ? '<span class="ok">ok</span>' : '<span class="notes">n/a or missing</span>'}</span><span class="notes">${esc(prep.npz_path || "")}</span></div>`;
+      validateMount.innerHTML = head + `<p class="notes">Chains: ${esc(chains || "—")}</p>` + probes + prepHtml + blockers + warns +
+        `<h2 style="margin-top:1rem">Cache snapshot (at validate)</h2><div id="valCache"></div>`;
+      const snap = $("valCache");
+      if (snap && data.cache) {
+        const t = document.createElement("div");
+        renderStatusInto(t, data.cache);
+        snap.appendChild(t);
+      }
+    }
+
+    function renderStatusInto(el, data) {
+      const rows = (data.files || []).map((f) => {
+        const st = f.present ? '<span class="ok">present</span>' : '<span class="no">missing</span>';
+        return `<div class="row"><span class="tag">${esc(f.label)}</span><span>${st}</span><span class="notes">${esc(f.path)}</span></div>`;
+      }).join("");
+      el.innerHTML = rows;
+    }
+
+    async function fetchStatus() {
+      const q = new URLSearchParams();
+      const c = $("cacheDir").value.trim();
+      if (c) q.set("cache_dir", c);
+      const r = await fetch("/api/status?" + q.toString());
+      if (!r.ok) throw new Error(await r.text());
+      renderStatus(await r.json());
+    }
+
+    $("btnRefresh").onclick = () => {
+      fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
+    };
+
+    $("yamlFile").onchange = () => {
+      $("btnValidate").disabled = !$("yamlFile").files.length;
+    };
+
+    $("btnValidate").onclick = () => {
+      const f = $("yamlFile").files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("file", f, f.name);
+      const c = $("cacheDir").value.trim();
+      if (c) fd.append("cache_dir", c);
+      uploadBar.value = 0;
+      validateMount.innerHTML = "";
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/validate");
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) uploadBar.value = Math.round((ev.loaded / ev.total) * 100);
+      };
+      xhr.onload = () => {
+        uploadBar.value = 100;
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (xhr.status >= 400) {
+            validateMount.innerHTML = `<pre>${esc(data.error || xhr.responseText)}</pre>`;
+            return;
+          }
+          renderValidate(data);
+        } catch (e) {
+          validateMount.innerHTML = `<pre>${esc(xhr.responseText)}</pre>`;
+        }
+      };
+      xhr.onerror = () => { validateMount.innerHTML = "<pre>network error</pre>"; };
+      xhr.send(fd);
+    };
+
+    fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
+  </script>
+</body>
+</html>
