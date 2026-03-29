@@ -77,7 +77,7 @@
 </head>
 <body>
   <h1>Boltr — prediction prerequisites</h1>
-  <p class="notes">Black / white / grey UI. Status reflects your cache and optional <code>BOLTZ_CACHE</code>. Upload a Boltz YAML to validate parse, paths, preprocess bundle, and cache.</p>
+  <p class="notes">Black / white / grey UI. Status reflects your cache and optional <code>BOLTZ_CACHE</code>. Upload a Boltz YAML to validate parse, cache, and (if present) <code>manifest.json</code> + preprocess <code>.npz</code>. For MSA/template path checks, set <strong>Job directory</strong> to the absolute folder that already contains the YAML and sidecar files on this machine — the server reads from disk there instead of only the uploaded bytes.</p>
 
   <section>
     <h2>Cache directory</h2>
@@ -94,6 +94,12 @@
 
   <section>
     <h2>Upload YAML</h2>
+    <div class="row">
+      <label for="jobDir">Job directory (optional)</label>
+    </div>
+    <div class="row">
+      <input type="text" id="jobDir" placeholder="/absolute/path/to/folder/with/yaml+msa" autocomplete="off" />
+    </div>
     <div class="row">
       <input type="file" id="yamlFile" accept=".yaml,.yml,text/yaml" />
       <button type="button" id="btnValidate" disabled>Validate</button>
@@ -185,6 +191,8 @@
       fd.append("file", f, f.name);
       const c = $("cacheDir").value.trim();
       if (c) fd.append("cache_dir", c);
+      const jd = $("jobDir").value.trim();
+      if (jd) fd.append("job_dir", jd);
       uploadBar.value = 0;
       validateMount.innerHTML = "";
       const xhr = new XMLHttpRequest();
