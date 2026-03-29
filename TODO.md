@@ -206,7 +206,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [ ] | `ConfidenceModule` v2 | Placeholder [confidence.rs](boltr-backend-tch/src/boltz2/confidence.rs) |
+| [x] | `ConfidenceModule` v2 | [confidence.rs](boltr-backend-tch/src/boltz2/confidence.rs) + [confidence_utils.rs](boltr-backend-tch/src/boltz2/confidence_utils.rs) (`ConfidenceModule`, `ConfidenceHeads`, `compute_ptms`, `compute_aggregated_metric`; ligand `compute_frame_pred` stub). Optional `confidence_module` on [`Boltz2Model`](boltr-backend-tch/src/boltz2/model.rs); **`predict_step`** runs trunk → diffusion → distogram → confidence when enabled. |
 
 ### 5.8 Affinity
 
@@ -225,7 +225,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 | Status | Task | Deliverables |
 |--------|------|--------------|
 | [x] | Trunk-only predict | [predict_step_trunk](boltr-backend-tch/src/boltz2/model.rs) — recycling + trunk + optional MSA; template stub. |
-| [~] | Full `predict_step` | **Trunk + diffusion + distogram/bfactor wired** (`forward_diffusion_conditioning`, `forward_diffusion_sample`, `forward_distogram`, `forward_bfactor`). Missing: confidence + affinity + writers (§5.7–5.8). |
+| [~] | Full `predict_step` | **`predict_step`** — trunk + diffusion + distogram + optional confidence ([`PredictStepOutput`](boltr-backend-tch/src/boltz2/model.rs)). Still missing: affinity, writers, recycling parity vs `predict_args`. |
 | [ ] | Recycling loop parity | Match `predict_args` step counts. |
 
 ---

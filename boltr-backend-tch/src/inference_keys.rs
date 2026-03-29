@@ -25,6 +25,7 @@ pub const BOLTZ2_INFERENCE_TOP_LEVEL_KEYS: &[&str] = &[
     "structure_module",
     "distogram_module",
     "bfactor_module",
+    "confidence_module",
 ];
 
 #[inline]

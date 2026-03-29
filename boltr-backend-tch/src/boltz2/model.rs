@@ -10,6 +10,7 @@ use anyhow::Result;
 use tch::nn::{embedding, linear, EmbeddingConfig, LinearConfig, Module, VarStore};
 use tch::{Device, Kind, Tensor};
 
+use super::confidence::{ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput};
 use super::contact_conditioning::{ContactConditioning, ContactFeatures};
 use super::diffusion::{AtomDiffusion, AtomDiffusionConfig, DiffusionSampleOutput};
 use super::diffusion_conditioning::{DiffusionConditioning, DiffusionConditioningOutput};
@@ -48,6 +49,8 @@ pub struct Boltz2Model {
     distogram_module: DistogramModule,
     /// Optional B-factor head.
     bfactor_module: Option<BFactorModule>,
+    /// Optional confidence stack (`confidence_module` in Lightning) — `boltz.model.modules.confidencev2`.
+    confidence_module: Option<ConfidenceModule>,
     token_s: i64,
     token_z: i64,
     atom_s: i64,
@@ -75,6 +78,30 @@ pub struct Boltz2DiffusionArgs {
     pub predict_bfactor: bool,
     /// `Some((template_dim, template_blocks))` to enable templates.
     pub use_templates: Option<(i64, i64)>,
+}
+
+/// Tensors required for diffusion sampling + confidence after trunk (collate / featurizer keys).
+pub struct PredictStepFeats<'a> {
+    pub token_pad_mask: &'a Tensor,
+    pub asym_id: &'a Tensor,
+    pub mol_type: &'a Tensor,
+    pub token_to_rep_atom: &'a Tensor,
+    pub frames_idx: &'a Tensor,
+    pub ref_pos: &'a Tensor,
+    pub ref_charge: &'a Tensor,
+    pub ref_element: &'a Tensor,
+    pub atom_pad_mask: &'a Tensor,
+    pub ref_space_uid: &'a Tensor,
+    pub atom_to_token: &'a Tensor,
+}
+
+/// Trunk + structure + distogram + optional confidence (Python `Boltz2.forward` predict path).
+pub struct PredictStepOutput {
+    pub s_trunk: Tensor,
+    pub z_trunk: Tensor,
+    pub diffusion: DiffusionSampleOutput,
+    pub pdistogram: Tensor,
+    pub confidence: Option<ConfidenceOutput>,
 }
 
 impl Default for Boltz2DiffusionArgs {
@@ -112,6 +139,7 @@ impl Boltz2Model {
             h.resolved_bond_type_feature(),
             Boltz2DiffusionArgs::default(),
             AtomDiffusionConfig::default(),
+            None,
         )
     }
 
@@ -146,6 +174,7 @@ impl Boltz2Model {
             bond_type_feature,
             Boltz2DiffusionArgs::default(),
             AtomDiffusionConfig::default(),
+            None,
         )
         .expect("default diffusion args should not fail")
     }
@@ -160,6 +189,7 @@ impl Boltz2Model {
         bond_type_feature: bool,
         diff_args: Boltz2DiffusionArgs,
         diff_config: AtomDiffusionConfig,
+        confidence: Option<ConfidenceModuleConfig>,
     ) -> Result<Self> {
         let var_store = VarStore::new(device);
         let root = var_store.root();
@@ -253,6 +283,17 @@ impl Boltz2Model {
             )
         });
 
+        let confidence_module = confidence.map(|mut cfg| {
+            cfg.pairformer_num_blocks = num_pairformer_blocks.unwrap_or(cfg.pairformer_num_blocks);
+            ConfidenceModule::new(
+                root.sub("confidence_module"),
+                device,
+                token_s,
+                token_z,
+                &cfg,
+            )
+        });
+
         Ok(Self {
             device,
             var_store,
@@ -266,6 +307,7 @@ impl Boltz2Model {
             structure_module,
             distogram_module,
             bfactor_module,
+            confidence_module,
             token_s,
             token_z,
             atom_s: diff_args.atom_s,
@@ -546,6 +588,10 @@ impl Boltz2Model {
         self.bfactor_module.as_ref()
     }
 
+    pub fn confidence_module(&self) -> Option<&ConfidenceModule> {
+        self.confidence_module.as_ref()
+    }
+
     pub fn atom_s(&self) -> i64 {
         self.atom_s
     }
@@ -618,6 +664,80 @@ impl Boltz2Model {
             num_sampling_steps,
             multiplicity,
         )
+    }
+
+    /// Full predict path: trunk → diffusion conditioning → sample → distogram → optional confidence.
+    /// Aligns with `Boltz2.forward` when `run_trunk_and_structure` and `confidence_prediction` are set.
+    #[allow(clippy::too_many_arguments)]
+    pub fn predict_step(
+        &self,
+        s_inputs: &Tensor,
+        rel: &RelPosFeatures<'_>,
+        token_bonds: Option<&Tensor>,
+        type_bonds: Option<&Tensor>,
+        contact: Option<&ContactFeatures<'_>>,
+        recycling_steps: Option<i64>,
+        msa_feats: Option<&MsaFeatures<'_>>,
+        template_feats: Option<&TemplateFeatures<'_>>,
+        feats: &PredictStepFeats<'_>,
+        num_sampling_steps: Option<i64>,
+        multiplicity: i64,
+    ) -> Result<PredictStepOutput> {
+        let (s_trunk, z_trunk) = self.forward_trunk_with_z_init_terms(
+            s_inputs,
+            rel,
+            token_bonds,
+            type_bonds,
+            contact,
+            recycling_steps,
+            msa_feats,
+            template_feats,
+        )?;
+        let rel_enc = self.forward_rel_pos(rel);
+        let cond = self.forward_diffusion_conditioning(
+            &s_trunk,
+            &z_trunk,
+            &rel_enc,
+            feats.ref_pos,
+            feats.ref_charge,
+            feats.ref_element,
+            feats.atom_pad_mask,
+            feats.ref_space_uid,
+            feats.atom_to_token,
+        );
+        let diffusion = self.forward_diffusion_sample(
+            s_inputs,
+            &s_trunk,
+            &cond,
+            feats.token_pad_mask,
+            feats.atom_pad_mask,
+            feats.atom_to_token,
+            num_sampling_steps,
+            multiplicity,
+        );
+        let pdistogram = self.forward_distogram(&z_trunk);
+        let confidence = self.confidence_module.as_ref().map(|cm| {
+            cm.forward(
+                s_inputs,
+                &s_trunk,
+                &z_trunk,
+                &diffusion.sample_atom_coords,
+                feats.token_pad_mask,
+                feats.asym_id,
+                feats.mol_type,
+                feats.token_to_rep_atom,
+                feats.frames_idx,
+                &pdistogram,
+                multiplicity,
+            )
+        });
+        Ok(PredictStepOutput {
+            s_trunk,
+            z_trunk,
+            diffusion,
+            pdistogram,
+            confidence,
+        })
     }
 
     /// `predict_step`-shaped entry: trunk with recycling + MSA + template + pairformer.
@@ -900,5 +1020,23 @@ mod tests {
                     path.display()
                 )
             });
+    }
+
+    #[test]
+    fn confidence_module_optional_on_model() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let m = Boltz2Model::with_all_options(
+            device,
+            64,
+            32,
+            Some(1),
+            false,
+            Boltz2DiffusionArgs::default(),
+            AtomDiffusionConfig::default(),
+            Some(crate::boltz2::confidence::ConfidenceModuleConfig::default()),
+        )
+        .expect("with_all_options");
+        assert!(m.confidence_module().is_some());
     }
 }
