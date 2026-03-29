@@ -55,10 +55,12 @@ Boltr/
 
 ```bash
 boltr download --version boltz2
+# Full model path (needs LibTorch — see build section above):
+# bash scripts/cargo-tch build --release -p boltr-cli --features tch
 boltr predict input.yaml --output ./out --device cpu
 ```
 
-`predict` **end-to-end** preprocess → structure files is still **[~]** per [`TODO.md` §6](TODO.md).
+With **`--features tch`**, `predict` writes **PDB/mmCIF** when Boltz-style **`manifest.json`** and preprocess **`.npz`** sit next to the input YAML ([`TODO.md` §5.10](TODO.md)); otherwise see run summary / placeholder outputs.
 
 ## Resources
 

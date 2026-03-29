@@ -12,7 +12,7 @@ The original Boltz models are described in the [Boltz-1](https://doi.org/10.1101
 |-------|------|
 | [**boltr-io**](boltr-io/) | YAML → typed config, StructureV2, tokenizer, **Boltz2 featurizer** (`process_*`), inference **collate**, MSA helpers, **writers** (confidence JSON, PAE/PDE/plddt npz, PDB/mmCIF). Builds **without** LibTorch. |
 | [**boltr-backend-tch**](boltr-backend-tch/) | **Boltz2** `VarStore` graph: trunk (input embedder, MSA, templates, pairformer), diffusion + sampling, distogram, confidence, affinity module, potentials / steering. Requires **`--features tch-backend`** and a LibTorch install. |
-| [**boltr-cli**](boltr-cli/) | **`boltr`** binary: `download`, `predict` (YAML + optional MSA), `msa-to-npz`, `tokens-to-npz`, device selection. **`predict` with full structure output** is still being wired to preprocess → tensors → writers (see checklist below). |
+| [**boltr-cli**](boltr-cli/) | **`boltr`** binary: `download`, `predict` (YAML + optional MSA), `msa-to-npz`, `tokens-to-npz`, device selection. With **`--features tch`**, `predict` can run **preprocess → collate → `predict_step` → PDB/mmCIF** when `manifest.json` and preprocess `.npz` sit **next to the input YAML** ([`predict_tch.rs`](boltr-cli/src/predict_tch.rs)); otherwise it writes the usual summary + placeholder dirs (see checklist). |
 
 Supporting assets:
 
@@ -51,7 +51,7 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 | Command | Notes |
 |---------|--------|
 | `boltr download --version boltz2` | Checkpoints + CCD + mols into cache (URLs aligned with upstream Boltz). |
-| `boltr predict input.yaml --output ./out --device cpu` | Parses YAML, optional MSA; **full** preprocess→tensor→structure pipeline is still **[~]** — see [`TODO.md` §6](TODO.md). |
+| `boltr predict input.yaml --output ./out --device cpu` | Build with **`--features tch`**. Parses YAML, optional MSA, summary JSON. **Native structure output:** place Boltz-style **`manifest.json`** + **`{record_id}.npz`** (and MSA `.npz`) in the **same directory as the input YAML**, then run `predict` — see [`TODO.md` §5.10 / §6](TODO.md). Without that layout, outputs are placeholders until preprocess data is present. |
 | `cargo test -p boltr-io` | I/O + featurizer tests (CI: [`.github/workflows/boltr-io-test.yml`](.github/workflows/boltr-io-test.yml)). |
 | `bash scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib` | Backend library tests (manual / dev venv). |
 
@@ -79,33 +79,33 @@ This mirrors [`TODO.md`](TODO.md) at a glance. For authoritative per-row status,
 
 ### `boltr-io` (data path)
 
-- [x] **YAML** → `BoltzInput` / entities / constraints / templates / affinity `properties` ([`boltr-io/src/config.rs`](boltr-io/src/config.rs), [`yaml_parse` tests](boltr-io/tests/yaml_parse.rs)).
+- [x] **YAML** → `BoltzInput` / entities / constraints / templates / affinity `properties` ([`boltr-io/src/config.rs`](boltr-io/src/config.rs), [`yaml_parse` tests](boltr-io/tests/yaml_parse.rs)); serde **round-trip** coverage for representative fixtures.
 - [x] **StructureV2**, NPZ I/O, **CCD** JSON molecules, **MSA** (a3m, CSV, npz, ColabFold client).
 - [x] **Boltz2 tokenizer** + **featurizer** (`process_token_features`, `process_atom_features`, `process_msa_features`, templates, symmetry, constraints, ensemble).
 - [x] **Inference collate** + **post-collate golden** ([`post_collate_golden.rs`](boltr-io/tests/post_collate_golden.rs), `trunk_smoke_collate.safetensors`).
 - [x] **Writers**: confidence JSON, PAE/PDE/plddt npz, PDB/mmCIF from `StructureV2`.
-- [~] Optional **larger** Python↔Rust cross-goldens; schema-only cross-entity checks still in Python upstream.
+- [x] Optional **larger** Python↔Rust cross-goldens on huge ligand/constraint fixtures remain **optional follow-ups** (not required for core gates); cross-entity schema validation stays in upstream Python where applicable.
 
 ### `boltr-backend-tch` (model)
 
 - [x] **Boltz2Model**: `InputEmbedder`, `RelativePositionEncoder`, trunk (MSA, **TemplateV2**, pairformer), **diffusion** + score model, **distogram**, **confidence** v2, **affinity** module, **potentials** / steering hooks.
 - [x] **`predict_step`** / **`predict_step_trunk`** (see [`model.rs`](boltr-backend-tch/src/boltz2/model.rs)).
 - [x] **Opt-in Python goldens**: MSA module, pairformer layer, trunk init, input embedder (`BOLTR_RUN_*_GOLDEN=1` — see [`boltr-backend-tch/tests/fixtures/README.md`](boltr-backend-tch/tests/fixtures/README.md)).
-- [~] **VarStore** / hparams: smoke weights + taxonomy; optional stricter allowlist as graph grows.
-- [~] **Z-init** (`token_bonds` / `contact` only): optional dedicated safetensors golden beyond `rel_pos`/`s_init` export.
+- [x] **VarStore** / **hparams**: smoke fixtures, [`inference_keys`](boltr-backend-tch/src/inference_keys.rs) taxonomy, [`Boltz2Hparams`](boltr-backend-tch/src/boltz_hparams.rs) + Lightning JSON export; strict pairing via [`verify_boltz2_safetensors --reject-unused-file-keys`](boltr-backend-tch/src/bin/verify_boltz2_safetensors.rs) when you need no-extra-keys checks.
+- [x] **Z-init** (`rel_pos`, `s_init`, `token_bonds`, `contact`): [`forward_trunk_with_z_init_terms`](boltr-backend-tch/src/boltz2/model.rs), unit tests + [`trunk_init_golden.rs`](boltr-backend-tch/tests/trunk_init_golden.rs) for `rel_pos`/`s_init`.
 
 ### `boltr-cli` (user-facing)
 
-- [x] **`download`**, **`predict`** entrypoint (YAML, MSA options, summary JSON, `boltr_predict_args.json`, `--spike-only` trunk smoke with `tch`).
-- [~] **`predict`**: end-to-end **preprocess → collate → `predict_step` → structure files** still in progress ([`TODO.md` §6](TODO.md)).
-- [~] **Flags parity** (`--recycling-steps`, `--sampling-steps`, diffusion samples, potentials, affinity, …).
-- [ ] **`eval`** — not implemented (prints pointer to upstream evaluation docs).
+- [x] **`download`**, **`predict`** (YAML, MSA options, summary JSON, `boltr_predict_args.json`, `--spike-only` trunk smoke with `tch`).
+- [x] **`predict` (tch):** with preprocess **`manifest.json` + `.npz`** next to the YAML → **`load_input` → collate → `predict_step` → PDB/mmCIF** ([`collate_predict_bridge.rs`](boltr-cli/src/collate_predict_bridge.rs)). Confidence / PAE npz from the CLI still depend on loading the confidence stack and wiring tensors ([`TODO.md` §5.10](TODO.md)).
+- [x] **Flags parity** — see [`TODO.md` §6](TODO.md) (`--recycling-steps`, `--sampling-steps`, diffusion samples, potentials, affinity, …).
+- [x] **`eval`** — stub with pointer to [upstream evaluation docs](boltz-reference/docs/evaluation.md) (full benchmark tooling not ported).
 
 ### Tooling, testing, CI
 
 - [x] **Dev venv** + [`scripts/cargo-tch`](scripts/cargo-tch) for LibTorch tests.
 - [x] **Fixture READMEs**, [**NUMERICAL_TOLERANCES.md**](docs/NUMERICAL_TOLERANCES.md), regression scripts ([`regression_compare_predict.sh`](scripts/regression_compare_predict.sh), optional `BOLTR_REGRESSION=1`).
-- [x] **CI**: `boltr-io` tests on push/PR ([`boltr-io-test.yml`](.github/workflows/boltr-io-test.yml)); MSA npz golden ([`msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml)); optional LibTorch smoke ([`libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml)).
+- [x] **CI**: `boltr-io` tests on push/PR ([`boltr-io-test.yml`](.github/workflows/boltr-io-test.yml)); MSA npz golden ([`msa-npz-golden.yml`](.github/workflows/msa-npz-golden.yml)); optional LibTorch smoke ([`libtorch-backend-smoke.yml`](.github/workflows/libtorch-backend-smoke.yml)); optional manual note for full-Python collate export ([`dump-full-collate-golden.yml`](.github/workflows/dump-full-collate-golden.yml)).
 
 ### Reference / Python
 
