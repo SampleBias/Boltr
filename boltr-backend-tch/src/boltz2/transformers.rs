@@ -143,12 +143,8 @@ impl DiffusionTransformerLayer {
             dim,
             LinearConfig::default(),
         );
-        let transition = ConditionedTransitionBlock::new(
-            path.sub("transition"),
-            dim,
-            dim_single_cond,
-            None,
-        );
+        let transition =
+            ConditionedTransitionBlock::new(path.sub("transition"), dim, dim_single_cond, None);
         Self {
             adaln,
             pair_bias_attn,
@@ -170,24 +166,24 @@ impl DiffusionTransformerLayer {
 
         let bias_t = match bias {
             Some(b) => b.shallow_clone(),
-            None => Tensor::zeros(&[a.size()[0], a.size()[1], a.size()[1]], (a.kind(), a.device())),
+            None => Tensor::zeros(
+                &[a.size()[0], a.size()[1], a.size()[1]],
+                (a.kind(), a.device()),
+            ),
         };
 
         // Rust AttentionPairBiasV2 expects a 3D mask [B, I, J].
         // Expand 2D key mask [B, N] → [B, 1, N] → broadcast inside attention.
         let mask_3d = if mask.dim() == 2 {
-            mask.unsqueeze(1).expand(&[mask.size()[0], a.size()[1], mask.size()[1]], false)
+            mask.unsqueeze(1)
+                .expand(&[mask.size()[0], a.size()[1], mask.size()[1]], false)
         } else {
             mask.shallow_clone()
         };
 
-        let b_val = self.pair_bias_attn.forward(
-            &b_val,
-            &bias_t,
-            &mask_3d,
-            &b_val,
-            Some(multiplicity),
-        );
+        let b_val =
+            self.pair_bias_attn
+                .forward(&b_val, &bias_t, &mask_3d, &b_val, Some(multiplicity));
 
         let b_val = self.output_projection_linear.forward(s).sigmoid() * b_val;
 
@@ -396,15 +392,7 @@ mod tests {
         let heads = 4;
         let b = 2_i64;
         let n = 8_i64;
-        let dt = DiffusionTransformer::new(
-            vs.root(),
-            depth,
-            heads,
-            dim,
-            Some(dim),
-            true,
-            device,
-        );
+        let dt = DiffusionTransformer::new(vs.root(), depth, heads, dim, Some(dim), true, device);
         let a = Tensor::randn(&[b, n, dim], (Kind::Float, device));
         let s = Tensor::randn(&[b, n, dim], (Kind::Float, device));
         let bias = Tensor::randn(&[b, n, n, heads * depth], (Kind::Float, device));

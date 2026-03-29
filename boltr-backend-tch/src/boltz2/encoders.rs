@@ -26,7 +26,12 @@ impl FourierEmbedding {
     pub fn new(path: Path<'_>, dim: i64) -> Self {
         let proj = linear(path.sub("proj"), 1, dim, LinearConfig::default());
         let proj_weight = proj.ws.shallow_clone().set_requires_grad(false);
-        let proj_bias = proj.bs.as_ref().unwrap().shallow_clone().set_requires_grad(false);
+        let proj_bias = proj
+            .bs
+            .as_ref()
+            .unwrap()
+            .shallow_clone()
+            .set_requires_grad(false);
         Self {
             proj_weight,
             proj_bias,
@@ -103,12 +108,7 @@ impl SingleConditioning {
     /// * `times`: `[B]` noise level (already `c_noise`-scaled)
     /// * `s_trunk`: `[B, N, token_s]`
     /// * `s_inputs`: `[B, N, token_s]`
-    pub fn forward(
-        &self,
-        times: &Tensor,
-        s_trunk: &Tensor,
-        s_inputs: &Tensor,
-    ) -> (Tensor, Tensor) {
+    pub fn forward(&self, times: &Tensor, s_trunk: &Tensor, s_inputs: &Tensor) -> (Tensor, Tensor) {
         let s = Tensor::cat(&[s_trunk, s_inputs], -1);
         let mut s = self.single_embed.forward(&self.norm_single.forward(&s));
 
@@ -146,10 +146,8 @@ impl PairwiseConditioning {
         device: Device,
     ) -> Self {
         let combined = token_z + dim_token_rel_pos_feats;
-        let dim_pairwise_init_proj_norm = layer_norm_1d(
-            path.sub("dim_pairwise_init_proj").sub("0"),
-            combined,
-        );
+        let dim_pairwise_init_proj_norm =
+            layer_norm_1d(path.sub("dim_pairwise_init_proj").sub("0"), combined);
         let dim_pairwise_init_proj_linear = linear_no_bias(
             path.sub("dim_pairwise_init_proj").sub("1"),
             combined,
@@ -208,12 +206,10 @@ fn get_indexing_matrix(k: i64, w: i64, h: i64, device: Device) -> Tensor {
     // index: [2K, 2K], take every other row: index[::2] effectively = index.view(K, 2, 2K)[:, 0, :]
     let index = index.reshape(&[k, 2, 2 * k]).select(1, 0); // [K, 2K]
     let onehot = index.one_hot(h_ratio + 2); // [K, 2K, h_ratio+2]
-    // Slice off first and last class
+                                             // Slice off first and last class
     let onehot = onehot.slice(2, 1, h_ratio + 1, 1); // [K, 2K, h_ratio]
     let onehot = onehot.transpose(0, 1); // [2K, K, h_ratio]
-    onehot
-        .reshape(&[2 * k, h_ratio * k])
-        .to_kind(Kind::Float)
+    onehot.reshape(&[2 * k, h_ratio * k]).to_kind(Kind::Float)
 }
 
 /// Map single representation from query windows to key windows.
@@ -346,7 +342,11 @@ impl AtomEncoder {
 
         // Atom features: [ref_pos, ref_charge, ref_element]
         let atom_feats = Tensor::cat(
-            &[ref_pos.shallow_clone(), ref_charge.unsqueeze(-1), ref_element.shallow_clone()],
+            &[
+                ref_pos.shallow_clone(),
+                ref_charge.unsqueeze(-1),
+                ref_element.shallow_clone(),
+            ],
             -1,
         );
         let c = self.embed_atom_features.forward(&atom_feats);
@@ -359,15 +359,21 @@ impl AtomEncoder {
             single_to_keys(ref_pos, &indexing_matrix, w, h).reshape(&[b, k, 1, h, 3]);
 
         let d = &atom_ref_pos_keys - &atom_ref_pos_queries;
-        let d_norm = d.pow_tensor_scalar(2).sum_dim_intlist(&[-1i64][..], true, Kind::Float);
+        let d_norm = d
+            .pow_tensor_scalar(2)
+            .sum_dim_intlist(&[-1i64][..], true, Kind::Float);
         let d_norm = 1.0 / (1.0 + d_norm);
 
         let atom_mask = atom_pad_mask.to_kind(Kind::Bool);
         let atom_mask_queries = atom_mask.reshape(&[b, k, w, 1]);
-        let atom_mask_keys =
-            single_to_keys(&atom_mask.unsqueeze(-1).to_kind(Kind::Float), &indexing_matrix, w, h)
-                .reshape(&[b, k, 1, h])
-                .to_kind(Kind::Bool);
+        let atom_mask_keys = single_to_keys(
+            &atom_mask.unsqueeze(-1).to_kind(Kind::Float),
+            &indexing_matrix,
+            w,
+            h,
+        )
+        .reshape(&[b, k, 1, h])
+        .to_kind(Kind::Bool);
         let atom_uid_queries = ref_space_uid.reshape(&[b, k, w, 1]);
         let atom_uid_keys = single_to_keys(
             &ref_space_uid.unsqueeze(-1).to_kind(Kind::Float),
@@ -395,13 +401,21 @@ impl AtomEncoder {
         if self.structure_prediction {
             if let (Some(s_trunk), Some(z)) = (s_trunk, z) {
                 let s_to_c = self.s_to_c_trans_linear.as_ref().unwrap().forward(
-                    &self.s_to_c_trans_norm.as_ref().unwrap().forward(&s_trunk.to_kind(Kind::Float)),
+                    &self
+                        .s_to_c_trans_norm
+                        .as_ref()
+                        .unwrap()
+                        .forward(&s_trunk.to_kind(Kind::Float)),
                 );
                 let s_to_c = atom_to_token.to_kind(Kind::Float).bmm(&s_to_c);
                 c = &c + &s_to_c.to_kind(c.kind());
 
                 let z_to_p = self.z_to_p_trans_linear.as_ref().unwrap().forward(
-                    &self.z_to_p_trans_norm.as_ref().unwrap().forward(&z.to_kind(Kind::Float)),
+                    &self
+                        .z_to_p_trans_norm
+                        .as_ref()
+                        .unwrap()
+                        .forward(&z.to_kind(Kind::Float)),
                 );
                 let atom_to_token_queries =
                     atom_to_token.to_kind(Kind::Float).reshape(&[b, k, w, -1]);
@@ -484,8 +498,11 @@ impl AtomAttentionEncoder {
         } else {
             token_s
         };
-        let atom_to_token_trans_linear =
-            linear_no_bias(path.sub("atom_to_token_trans").sub("0"), atom_s, token_s_out);
+        let atom_to_token_trans_linear = linear_no_bias(
+            path.sub("atom_to_token_trans").sub("0"),
+            atom_s,
+            token_s_out,
+        );
 
         Self {
             structure_prediction,
@@ -529,7 +546,9 @@ impl AtomAttentionEncoder {
         let c = c.repeat_interleave_self_int(multiplicity, Some(0), None);
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self.atom_encoder.forward(&q, &c, atom_enc_bias, &mask, multiplicity);
+        q = self
+            .atom_encoder
+            .forward(&q, &c, atom_enc_bias, &mask, multiplicity);
 
         let q_skip = q.shallow_clone();
         let c_skip = c.shallow_clone();
@@ -588,15 +607,10 @@ impl AtomAttentionDecoder {
             device,
         );
 
-        let atom_feat_norm = layer_norm_1d(
-            path.sub("atom_feat_to_atom_pos_update").sub("0"),
-            atom_s,
-        );
-        let atom_feat_linear = linear_no_bias(
-            path.sub("atom_feat_to_atom_pos_update").sub("1"),
-            atom_s,
-            3,
-        );
+        let atom_feat_norm =
+            layer_norm_1d(path.sub("atom_feat_to_atom_pos_update").sub("0"), atom_s);
+        let atom_feat_linear =
+            linear_no_bias(path.sub("atom_feat_to_atom_pos_update").sub("1"), atom_s, 3);
 
         Self {
             a_to_q_trans,
@@ -629,11 +643,12 @@ impl AtomAttentionDecoder {
         let mut q = q + a_to_q.to_kind(q.kind());
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self.atom_decoder.forward(&q, c, atom_dec_bias, &mask, multiplicity);
+        q = self
+            .atom_decoder
+            .forward(&q, c, atom_dec_bias, &mask, multiplicity);
 
-        self.atom_feat_to_atom_pos_update_linear.forward(
-            &self.atom_feat_to_atom_pos_update_norm.forward(&q),
-        )
+        self.atom_feat_to_atom_pos_update_linear
+            .forward(&self.atom_feat_to_atom_pos_update_norm.forward(&q))
     }
 }
 

@@ -426,8 +426,15 @@ impl PairformerModule {
 
         for layer in &self.layers {
             // TODO: Implement activation checkpointing
-            let (s_new, z_new) =
-                layer.forward(&s, &z, mask, pair_mask, chunk_size_tri_attn, self.training, false);
+            let (s_new, z_new) = layer.forward(
+                &s,
+                &z,
+                mask,
+                pair_mask,
+                chunk_size_tri_attn,
+                self.training,
+                false,
+            );
             s = s_new;
             z = z_new;
         }
@@ -525,4 +532,3 @@ mod tests {
 // Additional training mode tests
 #[path = "training_tests.rs"]
 mod training_tests;
-

@@ -310,7 +310,8 @@ impl AtomDiffusion {
     }
 
     fn c_out(&self, sigma: &Tensor) -> Tensor {
-        sigma * self.sigma_data / (sigma.pow_tensor_scalar(2) + self.sigma_data * self.sigma_data).sqrt()
+        sigma * self.sigma_data
+            / (sigma.pow_tensor_scalar(2) + self.sigma_data * self.sigma_data).sqrt()
     }
 
     fn c_in(&self, sigma: &Tensor) -> Tensor {
@@ -389,7 +390,8 @@ impl AtomDiffusion {
 
         let sigmas = self.sample_schedule(num_steps, device);
 
-        let init_sigma = f64::try_from(sigmas.select(0, 0)).unwrap_or(self.sigma_max * self.sigma_data);
+        let init_sigma =
+            f64::try_from(sigmas.select(0, 0)).unwrap_or(self.sigma_max * self.sigma_data);
         let mut atom_coords = Tensor::randn(&shape, (Kind::Float, device)) * init_sigma;
         let mut atom_coords_denoised: Option<Tensor> = None;
 
@@ -406,7 +408,8 @@ impl AtomDiffusion {
             atom_coords = &atom_coords - atom_coords.mean_dim(&[-2i64][..], true, Kind::Float);
 
             let t_hat = sigma_tm * (1.0 + gamma);
-            let noise_var = self.noise_scale * self.noise_scale * (t_hat * t_hat - sigma_tm * sigma_tm);
+            let noise_var =
+                self.noise_scale * self.noise_scale * (t_hat * t_hat - sigma_tm * sigma_tm);
             let eps = Tensor::randn(&shape, (Kind::Float, device)) * noise_var.sqrt();
             let atom_coords_noisy = &atom_coords + &eps;
 
@@ -451,7 +454,18 @@ mod tests {
         let cfg = AtomDiffusionConfig::default();
         let ad = AtomDiffusion::new(
             vs.root().sub("structure_module"),
-            32, 16, 4, 8, 64, 1, 2, 1, 2, 1, 2, 2,
+            32,
+            16,
+            4,
+            8,
+            64,
+            1,
+            2,
+            1,
+            2,
+            1,
+            2,
+            2,
             cfg,
             device,
         );

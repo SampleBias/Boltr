@@ -109,29 +109,23 @@ pub fn compute_ptms(
         .mul(&tm_value)
         .sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
-    let ptm = (tm_expected_value * &pair_mask_ptm).sum_dim_intlist(
-        &[-1i64][..],
-        false,
-        Kind::Float,
-    ) / (pair_mask_ptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
+    let ptm =
+        (tm_expected_value * &pair_mask_ptm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            / (pair_mask_ptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let ptm = ptm.max_dim(1, false).0;
 
-    let iptm = (tm_expected_value * &pair_mask_iptm).sum_dim_intlist(
-        &[-1i64][..],
-        false,
-        Kind::Float,
-    ) / (pair_mask_iptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
+    let iptm =
+        (tm_expected_value * &pair_mask_iptm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            / (pair_mask_iptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let iptm = iptm.max_dim(1, false).0;
 
     let token_type = mol_type
         .repeat_interleave_self_int(multiplicity, Some(0), None)
         .to_kind(Kind::Float);
-    let is_ligand = token_type.eq_tensor(
-        &Tensor::from(CHAIN_TYPE_NONPOLYMER as f64).to_device(token_type.device()),
-    );
-    let is_protein = token_type.eq_tensor(
-        &Tensor::from(CHAIN_TYPE_PROTEIN as f64).to_device(token_type.device()),
-    );
+    let is_ligand = token_type
+        .eq_tensor(&Tensor::from(CHAIN_TYPE_NONPOLYMER as f64).to_device(token_type.device()));
+    let is_protein = token_type
+        .eq_tensor(&Tensor::from(CHAIN_TYPE_PROTEIN as f64).to_device(token_type.device()));
 
     let ligand_iptm_mask = maski.unsqueeze(2)
         * ne.to_kind(Kind::Float)
@@ -143,18 +137,17 @@ pub fn compute_ptms(
         * &pad_pair
         * (is_protein.unsqueeze(2) * is_protein.unsqueeze(1));
 
-    let ligand_iptm = ((tm_expected_value * &ligand_iptm_mask).sum_dim_intlist(
-        &[-1i64][..],
-        false,
-        Kind::Float,
-    ) / (ligand_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
-        .max_dim(1, false)
-        .0;
+    let ligand_iptm =
+        ((tm_expected_value * &ligand_iptm_mask).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+            / (ligand_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
+            .max_dim(1, false)
+            .0;
     let protein_iptm = ((tm_expected_value * &protein_iptm_mask).sum_dim_intlist(
         &[-1i64][..],
         false,
         Kind::Float,
-    ) / (protein_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
+    ) / (protein_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+        + 1e-5))
         .max_dim(1, false)
         .0;
 
@@ -182,7 +175,8 @@ pub fn compute_ptms(
                 &[-1i64][..],
                 false,
                 Kind::Float,
-            ) / (mask_pair_chain.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
+            ) / (mask_pair_chain.sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+                + 1e-5))
                 .max_dim(1, false)
                 .0;
             inner.insert(idx2, v);

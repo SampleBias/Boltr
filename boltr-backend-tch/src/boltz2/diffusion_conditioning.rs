@@ -85,7 +85,10 @@ impl DiffusionConditioning {
 
         let mut atom_enc_proj_z = Vec::new();
         for i in 0..atom_encoder_depth {
-            let ln = layer_norm_1d(path.sub("atom_enc_proj_z").sub(format!("{i}")).sub("0"), atom_z);
+            let ln = layer_norm_1d(
+                path.sub("atom_enc_proj_z").sub(format!("{i}")).sub("0"),
+                atom_z,
+            );
             let l = linear_no_bias(
                 path.sub("atom_enc_proj_z").sub(format!("{i}")).sub("1"),
                 atom_z,
@@ -96,7 +99,10 @@ impl DiffusionConditioning {
 
         let mut atom_dec_proj_z = Vec::new();
         for i in 0..atom_decoder_depth {
-            let ln = layer_norm_1d(path.sub("atom_dec_proj_z").sub(format!("{i}")).sub("0"), atom_z);
+            let ln = layer_norm_1d(
+                path.sub("atom_dec_proj_z").sub(format!("{i}")).sub("0"),
+                atom_z,
+            );
             let l = linear_no_bias(
                 path.sub("atom_dec_proj_z").sub(format!("{i}")).sub("1"),
                 atom_z,
@@ -276,8 +282,14 @@ mod tests {
         assert_eq!(out.c.size()[1], n_atoms);
 
         let k = n_atoms / w;
-        assert_eq!(out.atom_enc_bias.size(), vec![b, k, w, h, enc_depth * enc_heads]);
-        assert_eq!(out.atom_dec_bias.size(), vec![b, k, w, h, dec_depth * dec_heads]);
+        assert_eq!(
+            out.atom_enc_bias.size(),
+            vec![b, k, w, h, enc_depth * enc_heads]
+        );
+        assert_eq!(
+            out.atom_dec_bias.size(),
+            vec![b, k, w, h, dec_depth * dec_heads]
+        );
         assert_eq!(
             out.token_trans_bias.size(),
             vec![b, n_tokens, n_tokens, trans_depth * trans_heads]

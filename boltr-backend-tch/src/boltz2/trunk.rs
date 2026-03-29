@@ -463,7 +463,14 @@ mod tests {
         let vs = VarStore::new(device);
 
         // Create TrunkV2 that owns a PairformerModule
-        let trunk = TrunkV2::new(&vs, Some(token_s), Some(token_z), Some(num_blocks), None, device);
+        let trunk = TrunkV2::new(
+            &vs,
+            Some(token_s),
+            Some(token_z),
+            Some(num_blocks),
+            None,
+            device,
+        );
 
         assert_eq!(trunk.pairformer().num_blocks(), num_blocks);
 
@@ -532,7 +539,14 @@ mod tests {
         let num_tokens = 30;
 
         let vs = VarStore::new(device);
-        let trunk = TrunkV2::new(&vs, Some(token_s), Some(token_z), Some(num_blocks), None, device);
+        let trunk = TrunkV2::new(
+            &vs,
+            Some(token_s),
+            Some(token_z),
+            Some(num_blocks),
+            None,
+            device,
+        );
 
         let s_inputs = Tensor::randn(
             &[batch_size, num_tokens, token_s],
@@ -562,7 +576,14 @@ mod tests {
         let num_tokens = 20;
 
         let vs = VarStore::new(device);
-        let trunk = TrunkV2::new(&vs, Some(token_s), Some(token_z), Some(num_blocks), None, device);
+        let trunk = TrunkV2::new(
+            &vs,
+            Some(token_s),
+            Some(token_z),
+            Some(num_blocks),
+            None,
+            device,
+        );
 
         let s_inputs = Tensor::randn(
             &[batch_size, num_tokens, token_s],

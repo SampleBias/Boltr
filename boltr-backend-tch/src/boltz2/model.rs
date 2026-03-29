@@ -275,13 +275,9 @@ impl Boltz2Model {
             None,
         );
 
-        let bfactor_module = diff_args.predict_bfactor.then(|| {
-            BFactorModule::new(
-                root.sub("bfactor_module"),
-                token_s,
-                diff_args.num_bins,
-            )
-        });
+        let bfactor_module = diff_args
+            .predict_bfactor
+            .then(|| BFactorModule::new(root.sub("bfactor_module"), token_s, diff_args.num_bins));
 
         let confidence_module = confidence.map(|mut cfg| {
             cfg.pairformer_num_blocks = num_pairformer_blocks.unwrap_or(cfg.pairformer_num_blocks);
@@ -462,9 +458,7 @@ impl Boltz2Model {
         path: &Path,
     ) -> Result<(Vec<String>, Vec<String>)> {
         let names = crate::checkpoint::list_safetensor_names(path)?;
-        Ok(crate::inference_keys::partition_safetensors_keys_for_inference(
-            &names,
-        ))
+        Ok(crate::inference_keys::partition_safetensors_keys_for_inference(&names))
     }
 
     /// [`load_partial_from_safetensors`] then fail if any model parameter was not found in the file.
@@ -968,7 +962,16 @@ mod tests {
             contact_threshold: &ct,
         };
         let (s, z) = m
-            .forward_trunk_with_z_init_terms(&s_in, &rel, None, None, Some(&contact), Some(0), None, None)
+            .forward_trunk_with_z_init_terms(
+                &s_in,
+                &rel,
+                None,
+                None,
+                Some(&contact),
+                Some(0),
+                None,
+                None,
+            )
             .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);

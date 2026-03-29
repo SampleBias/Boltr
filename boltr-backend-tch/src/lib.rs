@@ -40,14 +40,15 @@ pub mod model;
 
 #[cfg(feature = "tch-backend")]
 pub use boltz2::{
-    AffinityHead, AffinityModule, AtomDiffusion, AtomDiffusionConfig, AtomEncoderPlaceholder,
-    BFactorModule, Boltz2Model, ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput,
-    ConfidenceV2, ContactConditioning, ContactFeatures, DiffusionConditioning,
+    apply_affinity_mw_correction, zeros_atom_attention_out, AffinityHead, AffinityModule,
+    AffinityModuleConfig, AffinityOutput, AtomDiffusion, AtomDiffusionConfig,
+    AtomEncoderPlaceholder, BFactorModule, Boltz2Model, ConfidenceModule, ConfidenceModuleConfig,
+    ConfidenceOutput, ConfidenceV2, ContactConditioning, ContactFeatures, DiffusionConditioning,
     DiffusionConditioningOutput, DiffusionModule, DiffusionSampleOutput, DistogramModule,
     InputEmbedder, MsaFeatures, MsaModule, PredictStepFeats, PredictStepOutput, RelPosFeatures,
-    RelativePositionEncoder, TemplateFeatures, TemplateModule, TemplateV2Module, BOLTZ_MSA_PROFILE_IN,
-    BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
-    zeros_atom_attention_out,
+    RelativePositionEncoder, TemplateFeatures, TemplateModule, TemplateV2Module, AFFINITY_MW_BIAS,
+    AFFINITY_MW_COEF, AFFINITY_MW_MODEL_COEF, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
+    BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{

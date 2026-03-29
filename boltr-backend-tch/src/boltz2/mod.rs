@@ -21,7 +21,10 @@ pub mod template_module;
 pub mod transformers;
 pub mod trunk;
 
-pub use affinity::{AffinityHead, AffinityModule};
+pub use affinity::{
+    apply_affinity_mw_correction, AffinityHead, AffinityModule, AffinityModuleConfig,
+    AffinityOutput, AFFINITY_MW_BIAS, AFFINITY_MW_COEF, AFFINITY_MW_MODEL_COEF,
+};
 pub use confidence::{ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput, ConfidenceV2};
 pub use contact_conditioning::{
     ContactConditioning, ContactFeatures, CONTACT_CONDITIONING_CHANNELS,
@@ -33,8 +36,10 @@ pub use featurizer_bridge::zeros_atom_attention_out;
 pub use input_embedder::{
     AtomEncoderPlaceholder, InputEmbedder, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS,
 };
-pub use model::{Boltz2DiffusionArgs, Boltz2Model, PredictStepFeats, PredictStepOutput, BOND_TYPE_EMBEDDING_NUM};
+pub use model::{
+    Boltz2DiffusionArgs, Boltz2Model, PredictStepFeats, PredictStepOutput, BOND_TYPE_EMBEDDING_NUM,
+};
 pub use msa_module::{MsaFeatures, MsaModule};
 pub use relative_position::{RelPosFeatures, RelativePositionEncoder};
-pub use template_module::{TemplateFeatures, TemplateV2Module, TemplateModule};
+pub use template_module::{TemplateFeatures, TemplateModule, TemplateV2Module};
 pub use trunk::TrunkV2;

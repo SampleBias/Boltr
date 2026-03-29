@@ -35,7 +35,13 @@ impl DistogramModule {
         let z_sym = z + z.transpose(1, 2);
         let out = self.distogram.forward(&z_sym);
         let size = z_sym.size();
-        out.reshape(&[size[0], size[1], size[2], self.num_distograms, self.num_bins])
+        out.reshape(&[
+            size[0],
+            size[1],
+            size[2],
+            self.num_distograms,
+            self.num_bins,
+        ])
     }
 
     pub fn num_bins(&self) -> i64 {

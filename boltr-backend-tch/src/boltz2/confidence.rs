@@ -69,12 +69,7 @@ impl ConfidenceModule {
         cfg: &ConfidenceModuleConfig,
     ) -> Self {
         let num_dist = cfg.num_dist_bins;
-        let boundaries = Tensor::linspace(
-            2.0,
-            cfg.max_dist,
-            num_dist - 1,
-            (Kind::Float, device),
-        );
+        let boundaries = Tensor::linspace(2.0, cfg.max_dist, num_dist - 1, (Kind::Float, device));
 
         let dist_bin_pairwise_embed = embedding(
             path.sub("dist_bin_pairwise_embed"),
@@ -158,7 +153,8 @@ impl ConfidenceModule {
         let mut z = z.repeat_interleave_self_int(multiplicity, Some(0), None);
         let s_inputs = s_inputs.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        let token_to_rep_atom = token_to_rep_atom.repeat_interleave_self_int(multiplicity, Some(0), None);
+        let token_to_rep_atom =
+            token_to_rep_atom.repeat_interleave_self_int(multiplicity, Some(0), None);
 
         let x_pred = if x_pred.dim() == 4 {
             let b = x_pred.size()[0];
@@ -277,9 +273,7 @@ impl ConfidenceHeads {
         );
 
         let pae_logits = self.to_pae_logits.forward(z);
-        let pde_logits = self
-            .to_pde_logits
-            .forward(&(z + z.transpose(1, 2)));
+        let pde_logits = self.to_pde_logits.forward(&(z + z.transpose(1, 2)));
         let resolved_logits = self.to_resolved_logits.forward(s);
         let plddt_logits = self.to_plddt_logits.forward(s);
 
@@ -294,10 +288,12 @@ impl ConfidenceHeads {
             .repeat_interleave_self_int(multiplicity, Some(0), None);
 
         let nb = *pred_distogram_prob.size().last().unwrap();
-        let mut contacts = Tensor::zeros(&[1, 1, 1, nb], (Kind::Float, pred_distogram_prob.device()));
+        let mut contacts =
+            Tensor::zeros(&[1, 1, 1, nb], (Kind::Float, pred_distogram_prob.device()));
         let n_contact_bins = 20_i64.min(nb);
         let _ = contacts.narrow(3, 0, n_contact_bins).fill_(1.0);
-        let prob_contact = (pred_distogram_prob * &contacts).sum_dim_intlist(&[-1i64][..], false, Kind::Float);
+        let prob_contact =
+            (pred_distogram_prob * &contacts).sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
         let token_pad_mask_m = token_pad_mask
             .repeat_interleave_self_int(multiplicity, Some(0), None)
@@ -311,8 +307,9 @@ impl ConfidenceHeads {
         let token_pair_mask = &token_pad_pair_mask * &prob_contact;
 
         let plddt = compute_aggregated_metric(&plddt_logits, 1.0);
-        let complex_plddt = (plddt * &token_pad_mask_m).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
-            / token_pad_mask_m.sum_dim_intlist(&[-1i64][..], false, Kind::Float);
+        let complex_plddt =
+            (plddt * &token_pad_mask_m).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+                / token_pad_mask_m.sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
         let is_contact = d.less_tensor(&Tensor::from(8.0)).to_kind(Kind::Float);
         let is_different_chain = asym_id
@@ -325,12 +322,14 @@ impl ConfidenceHeads {
             .eq_tensor(&Tensor::from(CHAIN_TYPE_NONPOLYMER as f64))
             .repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        let token_interface_mask = (is_contact * &is_different_chain
+        let token_interface_mask = (is_contact
+            * &is_different_chain
             * (Tensor::ones_like(&is_ligand_token) - &is_ligand_token).unsqueeze(-1))
-            .max_dim(2, false)
-            .0;
-        let token_non_interface_mask =
-            (Tensor::ones_like(&token_interface_mask) - &token_interface_mask) * (Tensor::ones_like(&is_ligand_token) - &is_ligand_token);
+        .max_dim(2, false)
+        .0;
+        let token_non_interface_mask = (Tensor::ones_like(&token_interface_mask)
+            - &token_interface_mask)
+            * (Tensor::ones_like(&is_ligand_token) - &is_ligand_token);
 
         let ligand_weight = 20.0;
         let non_interface_weight = 1.0;
@@ -338,18 +337,25 @@ impl ConfidenceHeads {
         let iplddt_weight = is_ligand_token * ligand_weight
             + &token_interface_mask * interface_weight
             + token_non_interface_mask * non_interface_weight;
-        let complex_iplddt = (plddt * &token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float)
-            / (token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float);
+        let complex_iplddt =
+            (plddt * &token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float)
+                / (token_pad_mask_m * &iplddt_weight).sum_dim_intlist(&[-1], false, Kind::Float);
 
         let pae = compute_aggregated_metric(&pae_logits, 32.0);
 
         let asym_m = asym_id.repeat_interleave_self_int(multiplicity, Some(0), None);
-        let token_interface_pair_mask =
-            &token_pair_mask * asym_m.unsqueeze(2).ne_tensor(&asym_m.unsqueeze(1)).to_kind(Kind::Float);
-        let complex_pde = (pde * &token_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
-            / token_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float);
-        let complex_ipde = (pde * &token_interface_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
-            / (token_interface_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float) + 1e-5);
+        let token_interface_pair_mask = &token_pair_mask
+            * asym_m
+                .unsqueeze(2)
+                .ne_tensor(&asym_m.unsqueeze(1))
+                .to_kind(Kind::Float);
+        let complex_pde =
+            (pde * &token_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+                / token_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float);
+        let complex_ipde =
+            (pde * &token_interface_pair_mask).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+                / (token_interface_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float)
+                    + 1e-5);
 
         let (ptm, iptm, ligand_iptm, protein_iptm, pair_chains_iptm) = compute_ptms(
             &pae_logits,

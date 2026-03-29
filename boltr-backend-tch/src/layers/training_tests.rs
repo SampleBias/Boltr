@@ -48,14 +48,19 @@ mod tests {
             layer.forward(&s, &z, &mask, &pair_mask, None, true, false);
 
         // Eval mode - should not apply dropout
-        let (s_eval_out, z_eval_out) =
-            layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
+        let (s_eval_out, z_eval_out) = layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
 
         // Outputs should have correct shapes
         assert_eq!(s_train_out.size(), vec![batch_size, seq_len, token_s]);
-        assert_eq!(z_train_out.size(), vec![batch_size, seq_len, seq_len, token_z]);
+        assert_eq!(
+            z_train_out.size(),
+            vec![batch_size, seq_len, seq_len, token_z]
+        );
         assert_eq!(s_eval_out.size(), vec![batch_size, seq_len, token_s]);
-        assert_eq!(z_eval_out.size(), vec![batch_size, seq_len, seq_len, token_z]);
+        assert_eq!(
+            z_eval_out.size(),
+            vec![batch_size, seq_len, seq_len, token_z]
+        );
     }
 
     #[test]
@@ -93,10 +98,8 @@ mod tests {
         let pair_mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
 
         // Two forward passes in eval mode should produce identical results
-        let (s_out1, z_out1) =
-            layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
-        let (s_out2, z_out2) =
-            layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
+        let (s_out1, z_out1) = layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
+        let (s_out2, z_out2) = layer.forward(&s, &z, &mask, &pair_mask, None, false, false);
 
         // Results should be identical (no randomness in eval mode)
         let s_diff = (s_out1 - s_out2).abs().max().double_value(&[]);
@@ -177,7 +180,10 @@ mod tests {
 
         // Training mode should produce different outputs (with dropout)
         assert_eq!(s_train_out.size(), vec![batch_size, seq_len, token_s]);
-        assert_eq!(z_train_out.size(), vec![batch_size, seq_len, seq_len, token_z]);
+        assert_eq!(
+            z_train_out.size(),
+            vec![batch_size, seq_len, seq_len, token_z]
+        );
     }
 
     #[test]

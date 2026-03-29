@@ -170,10 +170,8 @@ impl TemplateV2Module {
         // Pairwise masks: outer product along token dimension, then unsqueeze for feature concat
         // b_cb_mask:    [B, T, N, 1] * [B, T, 1, N] → [B, T, N, N] → [B, T, N, N, 1]
         // b_frame_mask: same pattern
-        let b_cb_mask =
-            (cb_mask.unsqueeze(-1) * cb_mask.unsqueeze(-2)).unsqueeze(-1);
-        let b_frame_mask =
-            (frame_mask.unsqueeze(-1) * frame_mask.unsqueeze(-2)).unsqueeze(-1);
+        let b_cb_mask = (cb_mask.unsqueeze(-1) * cb_mask.unsqueeze(-2)).unsqueeze(-1);
+        let b_frame_mask = (frame_mask.unsqueeze(-1) * frame_mask.unsqueeze(-2)).unsqueeze(-1);
 
         // V2 asym mask: same visibility_id ↔ same chain
         let tmlp_pair_mask = visibility_ids
@@ -236,19 +234,11 @@ impl TemplateV2Module {
         // ── Aggregate templates ────────────────────────────────────────────
 
         // template_mask: [B, T] → [B, T, 1, 1, 1]
-        let tmask = template_mask
-            .unsqueeze(-1)
-            .unsqueeze(-1)
-            .unsqueeze(-1);
+        let tmask = template_mask.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1);
         // num_templates: [B] → [B, 1, 1, 1]
-        let ntmpl = num_templates
-            .unsqueeze(-1)
-            .unsqueeze(-1)
-            .unsqueeze(-1);
+        let ntmpl = num_templates.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1);
 
-        let u = (&v * &tmask)
-            .sum_dim_intlist(&[1i64][..], false, Kind::Float)
-            / &ntmpl; // [B, N, N, template_dim]
+        let u = (&v * &tmask).sum_dim_intlist(&[1i64][..], false, Kind::Float) / &ntmpl; // [B, N, N, template_dim]
 
         // Output projection
         self.u_proj.forward(&u.relu())
@@ -289,11 +279,7 @@ impl TemplateV2Module {
     /// Faithfully ports the Python: `torch.norm(vector, dim=-1, keepdim=True)`.
     ///
     /// Returns `[B, T, N, N, 3]` float.
-    fn compute_unit_vectors(
-        ca_coords: &Tensor,
-        frame_rot: &Tensor,
-        frame_t: &Tensor,
-    ) -> Tensor {
+    fn compute_unit_vectors(ca_coords: &Tensor, frame_rot: &Tensor, frame_t: &Tensor) -> Tensor {
         // frame_rot: [B, T, N, 3, 3] → [B, T, 1, N, 3, 3] (transposed = R^T)
         let rot_t = frame_rot.unsqueeze(2).transpose(-1, -2);
         // frame_t: [B, T, N, 3] → [B, T, 1, N, 3, 1]
@@ -354,10 +340,7 @@ mod tests {
         let pair_mask = Tensor::ones(&[b, n, n], (Kind::Float, device));
 
         let feats = TemplateFeatures {
-            template_restype: &Tensor::zeros(
-                &[b, t, n, BOLTZ_NUM_TOKENS],
-                (Kind::Float, device),
-            ),
+            template_restype: &Tensor::zeros(&[b, t, n, BOLTZ_NUM_TOKENS], (Kind::Float, device)),
             template_frame_rot: &Tensor::eye(3, (Kind::Float, device))
                 .unsqueeze(0)
                 .unsqueeze(0)

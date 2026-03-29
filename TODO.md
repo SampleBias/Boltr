@@ -212,7 +212,7 @@ Single path for preprocess → features → batch. See also [`.cursor/plans/feat
 
 | Status | Task | Deliverables |
 |--------|------|--------------|
-| [ ] | `AffinityModule`, MW correction | Placeholder [affinity.rs](boltr-backend-tch/src/boltz2/affinity.rs) |
+| [x] | `AffinityModule`, MW correction | [affinity.rs](boltr-backend-tch/src/boltz2/affinity.rs): `AffinityModule`, `AffinityHeads`, `AffinityModuleConfig::from_affinity_model_args`, `apply_affinity_mw_correction` + `AFFINITY_MW_*` constants; **`Boltz2Model` affinity wiring** still pending featurizer path. |
 
 ### 5.9 Potentials / steering (optional)
 

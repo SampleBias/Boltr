@@ -152,7 +152,10 @@ mod tests {
     fn preserves_unknown_top_level_in_other() {
         let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4, "confidence_prediction": true, "ema": true}"#;
         let h = Boltz2Hparams::from_json_slice(j).unwrap();
-        assert_eq!(h.other.get("confidence_prediction"), Some(&serde_json::json!(true)));
+        assert_eq!(
+            h.other.get("confidence_prediction"),
+            Some(&serde_json::json!(true))
+        );
         assert_eq!(h.other.get("ema"), Some(&serde_json::json!(true)));
     }
 
@@ -166,7 +169,8 @@ mod tests {
 
     #[test]
     fn parses_sample_full_fixture() {
-        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hparams/sample_full.json");
+        let p =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hparams/sample_full.json");
         let raw = std::fs::read(&p).expect("sample_full.json");
         let h = Boltz2Hparams::from_json_slice(&raw).unwrap();
         assert_eq!(h.atom_s, Some(128));
