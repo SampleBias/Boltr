@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# One-shot Boltr setup: dev venv (torch + safetensors), build boltr + boltr-web with tch,
+# download Boltz2 checkpoints, export .ckpt → .safetensors + boltz2_hparams.json, verify keys, smoke tests.
+#
+# From repo root:
+#   chmod +x Boltr_go && ./Boltr_go
+#   # or:  bash Boltr_go
+#
+# Env:
+#   BOLTZ_CACHE          — model cache (default: ~/.cache/boltr); same as boltr --cache-dir
+#   BOLTR_GO_SKIP_TESTS  — set to 1 to skip cargo tests (faster iteration after first run)
+#   BOLTR_GO_SKIP_VERIFY — set to 1 to skip verify_boltz2_safetensors (if checkpoint flags differ)
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+echo "==> Boltr_go: prerequisite hints (non-fatal)"
+bash scripts/check_tch_prereqs.sh || true
+
+echo
+echo "==> Boltr_go: venv, build, download, Lightning → safetensors, boltr doctor"
+bash scripts/bootstrap_webui_env.sh
+
+CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
+CONF_SF="$CACHE/boltz2_conf.safetensors"
+
+if [[ "${BOLTR_GO_SKIP_VERIFY:-}" != "1" ]]; then
+  echo
+  echo "==> Boltr_go: VarStore keys vs $CONF_SF"
+  if [[ ! -f "$CONF_SF" ]]; then
+    echo "WARN: missing $CONF_SF — skip verify (re-run boltr download or export manually)" >&2
+  else
+    # Defaults match Boltz-2 trunk export; add --bond-type-feature / --blocks if your ckpt differs (DEVELOPMENT.md).
+    scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- "$CONF_SF"
+  fi
+else
+  echo "==> Boltr_go: skipping verify (BOLTR_GO_SKIP_VERIFY=1)"
+fi
+
+if [[ "${BOLTR_GO_SKIP_TESTS:-}" != "1" ]]; then
+  echo
+  echo "==> Boltr_go: boltr-io tests (no LibTorch)"
+  cargo test -p boltr-io
+
+  echo
+  echo "==> Boltr_go: boltr-cli integration tests (default features; exercises predict/doctor/msa/tokens CLIs)"
+  cargo test -p boltr-cli
+
+  echo
+  echo "==> Boltr_go: boltr-backend-tch library tests (tch)"
+  scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib
+else
+  echo "==> Boltr_go: skipping tests (BOLTR_GO_SKIP_TESTS=1)"
+fi
+
+echo
+echo "Boltr_go finished OK."
+echo "  boltr:     $ROOT/target/release/boltr"
+echo "  boltr-web: $ROOT/scripts/with_dev_venv.sh $ROOT/target/release/boltr-web"
+echo "  export BOLTR=$ROOT/target/release/boltr   # for boltr-web status probes"

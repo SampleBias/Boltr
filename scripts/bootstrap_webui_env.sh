@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-shot setup: dev venv, LibTorch via PyTorch, tch-enabled boltr + boltr-web, model download,
-# and Lightning .ckpt → .safetensors export for native Rust predict.
+# Lightning .ckpt → .safetensors export, and boltz2_hparams.json (from boltz2_conf.ckpt) for native predict.
 #
 # Usage (from repo root):
 #   bash scripts/bootstrap_webui_env.sh
@@ -44,6 +44,14 @@ AFF_SF="$CACHE/boltz2_aff.safetensors"
 echo "==> Exporting safetensors for Rust-native load"
 "$PY" "$ROOT/scripts/export_checkpoint_to_safetensors.py" "$CONF_CKPT" "$CONF_SF"
 "$PY" "$ROOT/scripts/export_checkpoint_to_safetensors.py" "$AFF_CKPT" "$AFF_SF"
+
+HPARAMS_JSON="$CACHE/boltz2_hparams.json"
+echo "==> Exporting Lightning hyperparameters JSON ($HPARAMS_JSON)"
+if [[ -f "$CONF_CKPT" ]]; then
+  "$PY" "$ROOT/scripts/export_hparams_from_ckpt.py" "$CONF_CKPT" "$HPARAMS_JSON"
+else
+  echo "WARN: missing $CONF_CKPT — skip boltz2_hparams.json (re-run boltr download)" >&2
+fi
 
 echo
 echo "==> Optional: verify VarStore keys (adjust --token-s / --blocks if your checkpoint differs)"

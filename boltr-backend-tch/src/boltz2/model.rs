@@ -1331,23 +1331,49 @@ mod tests {
         let device = Device::Cpu;
         let token_s = 64_i64;
         let token_z = 32_i64;
-        let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+        let mut diff_args = Boltz2DiffusionArgs::default();
+        // Match query/key window sizes so atom attention bias is `w×w` (see `AttentionPairBiasV2`).
+        diff_args.atoms_per_window_keys = diff_args.atoms_per_window_queries;
+        let m = Boltz2Model::with_all_options(
+            device,
+            token_s,
+            token_z,
+            Some(1),
+            false,
+            diff_args,
+            AtomDiffusionConfig::default(),
+            None,
+            None,
+            false,
+        )
+        .expect("with_all_options");
         let b = 1_i64;
         let n = 3_i64;
-        let n_atoms = 10_i64;
-        let ne = m.atom_s();
+        // `AtomEncoder` reshapes atoms into windows of `atoms_per_window_queries` (default 32);
+        // atom count must be a positive multiple of that size.
+        let n_atoms = 32_i64;
+        // Boltz element one-hot width (`AtomEncoderFlags::num_elements`, typically 128) — not `atom_s`.
+        let num_elements: i64 = 128;
         let nt = crate::boltz2::input_embedder::BOLTZ_NUM_TOKENS;
 
         let ref_pos = Tensor::randn(&[b, n_atoms, 3], (Kind::Float, device));
         let ref_charge = Tensor::randn(&[b, n_atoms], (Kind::Float, device));
-        let ref_element = Tensor::randn(&[b, n_atoms, ne], (Kind::Float, device));
+        let ref_element = Tensor::randn(&[b, n_atoms, num_elements], (Kind::Float, device));
         let atom_pad_mask = Tensor::ones(&[b, n_atoms], (Kind::Float, device));
         let ref_space_uid = Tensor::zeros(&[b, n_atoms], (Kind::Int64, device));
-        let atom_to_token = Tensor::from_slice(
-            &[0_i64, 0, 1, 1, 1, 2, 2, 2, 2, 2][..n_atoms as usize],
-        )
-        .view([1, n_atoms])
-        .to_device(device);
+        let mut atom_to_token_flat = vec![0_i64; n_atoms as usize];
+        for (i, t) in [0_i64, 0, 1, 1, 1, 2, 2, 2, 2, 2].iter().enumerate() {
+            atom_to_token_flat[i] = *t;
+        }
+        for i in 10..(n_atoms as usize) {
+            atom_to_token_flat[i] = 2;
+        }
+        let atom_to_token = Tensor::from_slice(&atom_to_token_flat)
+            .view([1, n_atoms])
+            .to_device(device)
+            .to_kind(Kind::Int64)
+            .one_hot(n)
+            .to_kind(Kind::Float);
         let res_type = Tensor::randn(&[b, n, nt], (Kind::Float, device));
         let profile = Tensor::randn(&[b, n, nt], (Kind::Float, device));
         let deletion_mean = Tensor::randn(&[b, n], (Kind::Float, device));

@@ -165,7 +165,7 @@ impl TemplateV2Module {
             .to_kind(Kind::Float);
         let num_templates = template_mask
             .sum_dim_intlist(&[1i64][..], false, Kind::Float)
-            .clamp(1.0, f64::MAX); // [B]
+            .clamp_min(1.0); // [B] — avoid `f64::MAX` upper bound (tch Scalar overflow on clamp)
 
         // Pairwise masks: outer product along token dimension, then unsqueeze for feature concat
         // b_cb_mask:    [B, T, N, 1] * [B, T, 1, N] → [B, T, N, N] → [B, T, N, N, 1]
@@ -305,6 +305,7 @@ impl TemplateV2Module {
 mod tests {
     use super::*;
     use tch::nn::VarStore;
+    use tch::IndexOp;
 
     #[test]
     fn template_v2_forward_shapes() {
@@ -405,17 +406,27 @@ mod tests {
             .unsqueeze(0)
             .expand(&[b, t, n, 3, 3], false);
         let frame_t = Tensor::zeros(&[b, t, n, 3], (Kind::Float, device));
-        let mut ca_data = Tensor::zeros(&[b, t, n, 3], (Kind::Float, device));
-        // Set ca[0,0,1] = [3,0,0] so the unit vector from residue 0 to 1 should be [1,0,0]
-        let _ = ca_data.narrow(2, 1, 1).narrow(3, 0, 1).fill_(3.0);
+        // Set ca[...,1] = [3,0,0] so the unit vector from residue 0 to 1 should be [1,0,0]
+        let row1 = Tensor::from_slice(&[3.0_f32, 0.0, 0.0])
+            .view([1, 1, 1, 3])
+            .expand(&[b, t, 1, 3], false)
+            .to_device(device);
+        let ca_data = Tensor::cat(
+            &[
+                Tensor::zeros(&[b, t, 1, 3], (Kind::Float, device)),
+                row1,
+                Tensor::zeros(&[b, t, 1, 3], (Kind::Float, device)),
+            ],
+            2,
+        );
 
         let uv = TemplateV2Module::compute_unit_vectors(&ca_data, &frame_rot, &frame_t);
         assert_eq!(uv.size(), vec![b, t, n, n, 3]);
 
-        // uv[0,0,0,1] should be ~ [1,0,0] (identity frame, origin translation, ca_j at [3,0,0])
-        let v01 = uv.i((0, 0, 0, 1));
+        // Python layout: diff[i,j] = ca_i - t_j. With (i,j)=(1,0): ca_1 - t_0 = [3,0,0] → unit [1,0,0].
+        let v10 = uv.i((0, 0, 1, 0));
         let expected = Tensor::from_slice(&[1.0_f32, 0.0, 0.0]);
-        let diff = (&v01 - &expected).abs().max().double_value(&[]);
+        let diff = (&v10 - &expected).abs().max().double_value(&[]);
         assert!(diff < 1e-5, "unit vector mismatch: diff = {diff}");
     }
 }

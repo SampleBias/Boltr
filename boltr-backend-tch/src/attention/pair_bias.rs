@@ -2,7 +2,7 @@
 //!
 //! Reference: boltz-reference/src/boltz/model/layers/attentionv2.py
 
-use crate::tch_compat::layer_norm_1d;
+use crate::tch_compat::{layer_norm_1d, linear_no_bias};
 use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
@@ -106,15 +106,8 @@ impl AttentionPairBiasV2 {
             },
         );
 
-        let proj_g = linear(
-            path.sub("proj_g"),
-            c_s,
-            c_s,
-            LinearConfig {
-                bias: true,
-                ..Default::default()
-            },
-        );
+        // Python `AttentionPairBias`: `proj_g = Linear(c_s, c_s, bias=False)`.
+        let proj_g = linear_no_bias(path.sub("proj_g"), c_s, c_s);
 
         let proj_o = linear(
             path.sub("proj_o"),
@@ -127,20 +120,12 @@ impl AttentionPairBiasV2 {
         );
 
         // Pairwise bias projection (LayerNorm -> Linear -> reshape)
+        // Python: `proj_z = Sequential(LayerNorm(c_z), Linear(c_z, num_heads, bias=False), Rearrange(...))`
+        // → state dict keys `proj_z.0.*`, `proj_z.1.weight`.
         let (proj_z_layer_norm, proj_z) = if compute_pair_bias {
             let c_z = c_z.unwrap();
-            let ln = layer_norm_1d(path.sub("proj_z_layer_norm"), c_z);
-
-            let proj_z_linear = linear(
-                path.sub("proj_z"),
-                c_z,
-                num_heads,
-                LinearConfig {
-                    bias: false,
-                    ..Default::default()
-                },
-            );
-
+            let ln = layer_norm_1d(path.sub("proj_z").sub("0"), c_z);
+            let proj_z_linear = linear_no_bias(path.sub("proj_z").sub("1"), c_z, num_heads);
             (Some(ln), Some(proj_z_linear))
         } else {
             (None, None)

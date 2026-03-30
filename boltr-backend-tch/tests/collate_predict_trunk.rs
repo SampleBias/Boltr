@@ -82,6 +82,7 @@ fn collate_smoke_predict_step_trunk_runs_with_msa() {
             &token_pad_mask,
             Some(0),
             Some(&feats),
+            None,
         )
         .expect("predict_step_trunk");
 

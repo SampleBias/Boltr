@@ -208,14 +208,17 @@ impl AffinityHeads {
         affinity_token_mask: &Tensor,
         multiplicity: i64,
     ) -> AffinityOutput {
+        let mut z = z.shallow_clone();
         let pad_token_mask = token_pad_mask
             .repeat_interleave_self_int(multiplicity, Some(0), None)
             .unsqueeze(-1)
             .to_kind(Kind::Float);
         let mol_b = mol_type.repeat_interleave_self_int(multiplicity, Some(0), None);
+        // `[B,N] * [B,N,1]` would broadcast to `[B,N,N]`; match Python `[B,N,1]` masks.
         let rec_mask = mol_b
             .eq_tensor(&Tensor::zeros_like(&mol_b))
             .to_kind(Kind::Float)
+            .unsqueeze(-1)
             * &pad_token_mask;
         let lig_mask = affinity_token_mask
             .repeat_interleave_self_int(multiplicity, Some(0), None)
@@ -230,11 +233,28 @@ impl AffinityHeads {
         let n = lig_mask.size()[1];
         let device = lig_mask.device();
         let eye = Tensor::eye(n, (Kind::Float, device)).unsqueeze(0);
+        // Outer products are `[B, N, N, 1]`. Squeeze before `(1 - eye)`: `[B,N,N,1] * [1,N,N]`
+        // would broadcast to `[B,N,N,N]` in libtorch.
+        cross_pair_mask = cross_pair_mask.squeeze_dim(-1);
         cross_pair_mask = cross_pair_mask * (Tensor::ones_like(&eye) - eye);
 
-        let numer =
-            (z * cross_pair_mask.unsqueeze(-1)).sum_dim_intlist(&[1i64, 2][..], false, Kind::Float);
-        let denom = cross_pair_mask.sum_dim_intlist(&[1i64, 2][..], false, Kind::Float) + 1e-7;
+        // `PairformerNoSeq` can mis-shape batch as an extra leading `N` (symmetric `[N,N,N,C]`);
+        // collapse to `[1,N,N,C]` so pooling matches Python `[B,N,N,C]`.
+        if multiplicity == 1 && z.dim() == 4 {
+            let b0 = z.size()[0];
+            let n1 = z.size()[1];
+            let n2 = z.size()[2];
+            if b0 > 1 && b0 == n1 && n1 == n2 {
+                z = z.narrow(0, 0, 1);
+            }
+        }
+
+        // Pool over (i,j) pairs — match Python `sum(dim=(1,2))` on `[B, N, N, C]`.
+        let numer = (z * cross_pair_mask.unsqueeze(-1))
+            .flatten(1, 2)
+            .sum_dim_intlist(&[1i64][..], false, Kind::Float);
+        let denom = cross_pair_mask.flatten(1, 2).sum_dim_intlist(&[1i64][..], false, Kind::Float)
+            + 1e-7;
         let g = numer / denom.unsqueeze(-1);
 
         let g = self
@@ -414,10 +434,13 @@ impl AffinityModule {
         let cross_pair_mask = lig_mask.unsqueeze(2) * rec_mask.unsqueeze(1)
             + rec_mask.unsqueeze(2) * lig_mask.unsqueeze(1)
             + lig_mask.unsqueeze(2) * lig_mask.unsqueeze(1);
+        // `TriangleMultiplication*` / attention expect `[B, N, N]` and apply `mask.unsqueeze(-1)`;
+        // lig/rec outer products are `[B, N, N, 1]` — squeeze so we do not build a 5D mask.
+        let pair_mask = cross_pair_mask.squeeze_dim(-1);
 
         let z = self
             .pairformer_stack
-            .forward(&z, &cross_pair_mask, use_kernels);
+            .forward(&z, &pair_mask, use_kernels);
 
         self.affinity_heads.forward(
             &z,
@@ -496,7 +519,7 @@ mod tests {
         let token_pad_mask = Tensor::ones(&[b, n], (Kind::Float, device));
         // First 6 tokens protein (mol_type 0); last 2 ligand (non-zero mol_type).
         let mut mol_tail = Tensor::zeros(&[b, 2], (Kind::Int64, device));
-        mol_tail.fill_(2);
+        let _ = mol_tail.fill_(2);
         let mol_type = Tensor::cat(
             &[Tensor::zeros(&[b, 6], (Kind::Int64, device)), mol_tail],
             1,

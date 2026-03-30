@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export a Lightning Boltz `.ckpt` state dict to Safetensors for Rust (`boltr-backend-tch`) loading.
 
-Requires: `pip install torch safetensors`
+Requires: `pip install torch safetensors` (Lightning `.ckpt` unpickling also needs `omegaconf`).
 
 Example:
   python scripts/export_checkpoint_to_safetensors.py \\
@@ -50,9 +50,14 @@ def main() -> int:
     for k, v in sd.items():
         if prefix and k.startswith(prefix):
             k = k[len(prefix) :]
-        if hasattr(v, "dtype") and v.dtype in (torch.bfloat16, torch.float16):
+        if not isinstance(v, torch.Tensor):
+            continue
+        if v.dtype in (torch.bfloat16, torch.float16):
             v = v.float()
-        out_sd[k] = v
+        # Boltz/Lightning state dicts may register the same storage under two names
+        # (e.g. output_projection.0.weight vs output_projection_linear.weight). safetensors
+        # rejects shared storage; detach+clone gives each key its own buffer.
+        out_sd[k] = v.detach().clone().contiguous()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     save_file(out_sd, str(args.out))

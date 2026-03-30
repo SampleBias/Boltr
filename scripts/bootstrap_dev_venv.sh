@@ -76,10 +76,11 @@ fi
 
 .venv/bin/pip install -U pip
 # torch-sys probes Python via torch.utils.cpp_extension → requires setuptools (not always pulled by torch wheels).
-.venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors
+# omegaconf: Lightning/Boltz .ckpt unpickling (torch.load) resolves OmegaConf types in the checkpoint.
+.venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors omegaconf
 
 echo
-echo "Installed setuptools, torch==${TORCH_PIN}, safetensors into $ROOT/.venv"
+echo "Installed setuptools, torch==${TORCH_PIN}, safetensors, omegaconf into $ROOT/.venv"
 .venv/bin/python -c "import torch; print('torch:', torch.__version__, 'python:', __import__('sys').version.split()[0])"
 echo
 echo "Build:"

@@ -2,7 +2,10 @@
 //!
 //! Uses random tensors with shapes matching Boltz collate (no checkpoint).
 
-use boltr_backend_tch::{Boltz2Model, InputEmbedderFeats, MsaFeatures, RelPosFeatures};
+use boltr_backend_tch::boltz2::{
+    AtomDiffusionConfig, Boltz2DiffusionArgs, Boltz2Model, InputEmbedderFeats, MsaFeatures,
+    RelPosFeatures,
+};
 use tch::{Device, Kind, Tensor};
 
 #[test]
@@ -15,7 +18,21 @@ fn predict_step_trunk_from_embedder_runs() {
     let n_tok = 4_i64;
     let n_atoms = 32_i64;
 
-    let m = Boltz2Model::with_options(device, token_s, token_z, Some(1));
+    let mut diff_args = Boltz2DiffusionArgs::default();
+    diff_args.atoms_per_window_keys = diff_args.atoms_per_window_queries;
+    let m = Boltz2Model::with_all_options(
+        device,
+        token_s,
+        token_z,
+        Some(1),
+        false,
+        diff_args,
+        AtomDiffusionConfig::default(),
+        None,
+        None,
+        false,
+    )
+    .expect("with_all_options");
 
     let ref_pos = Tensor::randn(&[b, n_atoms, 3], (Kind::Float, device));
     let ref_charge = Tensor::randn(&[b, n_atoms], (Kind::Float, device));

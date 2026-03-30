@@ -4,7 +4,7 @@
 //! Reference: `boltz-reference/src/boltz/model/modules/transformersv2.py`
 
 use crate::attention::AttentionPairBiasV2;
-use crate::tch_compat::{layer_norm_1d, linear_no_bias};
+use crate::tch_compat::{linear_no_bias, LayerNormWeightOnly};
 use tch::nn::{linear, LinearConfig, Module, Path};
 use tch::{Device, Kind, Tensor};
 
@@ -14,7 +14,7 @@ use tch::{Device, Kind, Tensor};
 
 pub struct AdaLN {
     a_norm: tch::nn::LayerNorm,
-    s_norm: tch::nn::LayerNorm,
+    s_norm: LayerNormWeightOnly,
     s_scale: tch::nn::Linear,
     s_bias: tch::nn::Linear,
 }
@@ -29,9 +29,7 @@ impl AdaLN {
                 ..Default::default()
             },
         );
-        // Python uses `LayerNorm(dim, bias=False)` — weight only. tch 0.16 always
-        // creates both weight+bias when affine; the extra zero bias is harmless at inference.
-        let s_norm = layer_norm_1d(path.sub("s_norm"), dim_single_cond);
+        let s_norm = LayerNormWeightOnly::new(path.sub("s_norm"), dim_single_cond);
         let s_scale = linear(
             path.sub("s_scale"),
             dim_single_cond,
