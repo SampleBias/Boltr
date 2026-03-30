@@ -19,6 +19,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 safetensors.workspace = true
+json5 = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

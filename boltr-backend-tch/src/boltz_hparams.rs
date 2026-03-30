@@ -5,7 +5,7 @@
 //! Typed fields mirror common top-level keys in [`Boltz2`](../../../boltz-reference/src/boltz/model/models/boltz2.py);
 //! anything else is preserved in [`Boltz2Hparams::other`].
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 /// Subset of keys used to size the Rust inference graph; nested dicts kept as JSON.
@@ -74,10 +74,69 @@ pub struct PairformerArgs {
     pub num_blocks: Option<i64>,
 }
 
+/// Lightning checkpoints sometimes store nested dicts as Python `repr()` strings; `json.dump(..., default=str)`
+/// then embeds those as JSON strings. Coerce dict/array-looking strings back to objects before serde runs.
+fn parse_json_or_python_literal(s: &str) -> Result<serde_json::Value> {
+    let t = s.trim();
+    if t.is_empty() {
+        anyhow::bail!("empty");
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
+        return Ok(v);
+    }
+    let normalized = t
+        .replace("False", "false")
+        .replace("True", "true")
+        .replace("None", "null");
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&normalized) {
+        return Ok(v);
+    }
+    json5::from_str::<serde_json::Value>(&normalized).context("json5 parse of Python-style literal")
+}
+
+fn normalize_stringified_nested_dicts(v: &mut serde_json::Value) -> Result<()> {
+    let Some(obj) = v.as_object_mut() else {
+        return Ok(());
+    };
+    let keys: Vec<String> = obj.keys().cloned().collect();
+    for key in keys {
+        let Some(entry) = obj.get_mut(&key) else {
+            continue;
+        };
+        let serde_json::Value::String(s) = entry.clone() else {
+            continue;
+        };
+        let trimmed = s.trim();
+        if !(trimmed.starts_with('{') || trimmed.starts_with('[')) {
+            continue;
+        }
+        match parse_json_or_python_literal(trimmed) {
+            Ok(parsed) => {
+                *entry = parsed;
+            }
+            Err(e) => {
+                if key == "pairformer_args" {
+                    return Err(e).context(format!(
+                        "pairformer_args is a string that could not be parsed as JSON/object: {}",
+                        trimmed.chars().take(120).collect::<String>()
+                    ));
+                }
+                tracing::warn!(
+                    key = %key,
+                    error = %e,
+                    "boltz2_hparams: could not parse stringified nested value; keeping string"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Boltz2Hparams {
     /// Parse from JSON bytes (exported by the Python script).
     pub fn from_json_slice(bytes: &[u8]) -> Result<Self> {
-        let v: serde_json::Value = serde_json::from_slice(bytes)?;
+        let mut v: serde_json::Value = serde_json::from_slice(bytes)?;
+        normalize_stringified_nested_dicts(&mut v)?;
         Ok(serde_json::from_value(v)?)
     }
 
@@ -194,5 +253,18 @@ mod tests {
         let a = Boltz2Hparams::from_json_slice(j).unwrap();
         let b = Boltz2Hparams::from_lightning_hyper_parameters_json(j).unwrap();
         assert_eq!(a.resolved_token_s(), b.resolved_token_s());
+    }
+
+    /// `json.dump(..., default=str)` can turn nested dicts into Python repr strings inside JSON.
+    #[test]
+    fn parses_pairformer_args_embedded_as_python_repr_string() {
+        let inner = "{'num_blocks': 64, 'num_heads': 16, 'dropout': 0.25, 'post_layer_norm': False, 'activation_checkpointing': True, 'use_trifast': True}";
+        let j = serde_json::json!({
+            "token_s": 384,
+            "pairformer_args": inner
+        })
+        .to_string();
+        let h = Boltz2Hparams::from_json_slice(j.as_bytes()).expect("coerce + parse");
+        assert_eq!(h.resolved_num_pairformer_blocks(), Some(64));
     }
 }

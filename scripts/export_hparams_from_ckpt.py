@@ -40,11 +40,26 @@ def main() -> int:
         hparams = {}
 
     def default(o):
+        if o is None or isinstance(o, (bool, int, float, str)):
+            return o
+        if isinstance(o, dict):
+            return {k: default(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [default(x) for x in o]
         if hasattr(o, "item"):
             try:
                 return o.item()
             except Exception:
-                return str(o)
+                pass
+        try:
+            from collections.abc import Mapping
+
+            if isinstance(o, Mapping) and not isinstance(o, (str, bytes)):
+                return {str(k): default(v) for k, v in o.items()}
+        except ImportError:
+            pass
+        if hasattr(o, "__dict__") and not isinstance(o, type):
+            return default(vars(o))
         return str(o)
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
