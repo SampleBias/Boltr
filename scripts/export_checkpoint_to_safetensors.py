@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Export a Lightning Boltz `.ckpt` state dict to Safetensors for Rust (`boltr-backend-tch`) loading.
 
-Requires: `pip install torch safetensors` (Lightning `.ckpt` unpickling also needs `omegaconf`).
+Requires: `pip install torch safetensors numpy` (Lightning `.ckpt` unpickling also needs `omegaconf`).
 
 Example:
   python scripts/export_checkpoint_to_safetensors.py \\
