@@ -222,37 +222,10 @@ async fn boltr_doctor_json() -> Result<Value, String> {
 }
 
 async fn resolve_boltr_binary_async() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("BOLTR") {
-        let pb = PathBuf::from(p);
-        if pb.is_file() {
-            return Some(pb);
-        }
-    }
-    let mut d = std::env::current_dir().ok()?;
-    for _ in 0..8 {
-        let cand = d.join("target/release/boltr");
-        if cand.is_file() {
-            return Some(cand);
-        }
-        if !d.pop() {
-            break;
-        }
-    }
-    let out = tokio::process::Command::new("sh")
-        .args(["-c", "command -v boltr 2>/dev/null"])
-        .output()
+    tokio::task::spawn_blocking(|| crate::paths::resolve_boltr_exe())
         .await
-        .ok()?;
-    if out.status.success() {
-        let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !line.is_empty() {
-            let p = PathBuf::from(line);
-            if p.is_file() {
-                return Some(p);
-            }
-        }
-    }
-    None
+        .ok()
+        .flatten()
 }
 
 fn compute_environment_ready(s: &StatusResponse) -> bool {

@@ -192,12 +192,63 @@ ___</pre>
     <div id="validateMount"></div>
   </section>
 
+  <section>
+    <h2>3. Run predict</h2>
+    <div class="help-box">
+      <p>Runs <code>boltr predict</code> on this machine (needs <code>BOLTR</code> or <code>boltr</code> on <code>PATH</code>). Uses the same <strong>cache</strong> and <strong>job folder</strong> as above. Upload a YAML <em>or</em> set a job folder (uses <code>input.yaml</code> in that folder if no file is chosen).</p>
+      <p class="notes">Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
+    </div>
+    <div class="row">
+      <label for="predictDevice">Device</label>
+      <select id="predictDevice" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
+        <option value="cpu">cpu</option>
+        <option value="cuda">cuda</option>
+        <option value="cuda:0">cuda:0</option>
+      </select>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="predictUseMsaServer" /> Use MSA server (<code>--use-msa-server</code>)</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="predictAffinity" /> Affinity (<code>--affinity</code>)</label>
+      <label><input type="checkbox" id="predictOverride" /> Override (<code>--override</code>)</label>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="predictSpikeOnly" /> Spike only (<code>--spike-only</code>)</label>
+      <label><input type="checkbox" id="predictFullPae" /> Full PAE (<code>--write-full-pae</code>)</label>
+    </div>
+    <div class="row">
+      <span class="tag">diffusion_samples</span>
+      <input type="text" id="predictDiffusionSamples" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+      <span class="tag">sampling_steps</span>
+      <input type="text" id="predictSamplingSteps" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+    </div>
+    <div class="row">
+      <button type="button" id="btnPredict" disabled>Run predict</button>
+      <span class="pill" id="predictPill"></span>
+    </div>
+    <div class="bar-wrap">
+      <progress id="predictBar" max="100" value="0"></progress>
+    </div>
+    <pre id="predictLog" class="notes" style="max-height:14rem;overflow:auto;min-height:4rem;"></pre>
+    <p id="predictDownloadWrap" class="row" style="display:none;">
+      <a id="predictDownloadLink" href="#" download>Download output (.tar.gz)</a>
+    </p>
+  </section>
+
   <script>
     const $ = (id) => document.getElementById(id);
     const statusMount = $("statusMount");
     const validateMount = $("validateMount");
     const cachePill = $("cachePill");
     const uploadBar = $("uploadBar");
+    const predictLog = $("predictLog");
+    const predictBar = $("predictBar");
+
+    function updatePredictButton() {
+      const ok = $("yamlFile").files.length > 0 || $("jobDir").value.trim().length > 0;
+      $("btnPredict").disabled = !ok;
+    }
 
     function esc(s) {
       return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -281,7 +332,9 @@ ___</pre>
 
     $("yamlFile").onchange = () => {
       $("btnValidate").disabled = !$("yamlFile").files.length;
+      updatePredictButton();
     };
+    $("jobDir").addEventListener("input", updatePredictButton);
 
     $("btnValidate").onclick = () => {
       const f = $("yamlFile").files[0];
@@ -317,6 +370,89 @@ ___</pre>
       xhr.send(fd);
     };
 
+    $("btnPredict").onclick = async () => {
+      const f = $("yamlFile").files[0];
+      const jd = $("jobDir").value.trim();
+      if (!f && !jd) {
+        alert("Pick a YAML file or set job folder (for on-disk YAML).");
+        return;
+      }
+      predictLog.textContent = "";
+      $("predictDownloadWrap").style.display = "none";
+      const fd = new FormData();
+      if (f) fd.append("file", f, f.name);
+      const c = $("cacheDir").value.trim();
+      if (c) fd.append("cache_dir", c);
+      if (jd) fd.append("job_dir", jd);
+      fd.append("device", $("predictDevice").value);
+      if ($("predictUseMsaServer").checked) fd.append("use_msa_server", "1");
+      if ($("predictAffinity").checked) fd.append("affinity", "1");
+      if ($("predictOverride").checked) fd.append("override", "1");
+      if ($("predictSpikeOnly").checked) fd.append("spike_only", "1");
+      if ($("predictFullPae").checked) fd.append("write_full_pae", "1");
+      const ds = $("predictDiffusionSamples").value.trim();
+      if (ds) fd.append("diffusion_samples", ds);
+      const ss = $("predictSamplingSteps").value.trim();
+      if (ss) fd.append("sampling_steps", ss);
+
+      predictBar.value = 0;
+      try { predictBar.indeterminate = true; } catch (e) {}
+
+      let r;
+      try {
+        r = await fetch("/api/predict", { method: "POST", body: fd });
+      } catch (e) {
+        predictBar.indeterminate = false;
+        predictLog.textContent = String(e);
+        return;
+      }
+      const text = await r.text();
+      if (!r.ok) {
+        predictBar.indeterminate = false;
+        predictLog.textContent = text;
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        predictBar.indeterminate = false;
+        predictLog.textContent = text;
+        return;
+      }
+      const jobId = data.job_id;
+      $("predictPill").textContent = "job " + jobId;
+      $("predictPill").className = "pill ready";
+
+      const url = "/api/predict/" + encodeURIComponent(jobId) + "/stream";
+      const es = new EventSource(url);
+      es.onmessage = (ev) => {
+        predictLog.textContent += ev.data + "\n";
+        predictLog.scrollTop = predictLog.scrollHeight;
+        if (ev.data.indexOf("stream end") >= 0) {
+          es.close();
+          predictBar.indeterminate = false;
+          predictBar.value = 100;
+          fetch("/api/predict/" + encodeURIComponent(jobId))
+            .then((res) => res.json())
+            .then((st) => {
+              if (st.success) {
+                $("predictDownloadWrap").style.display = "block";
+                const a = $("predictDownloadLink");
+                a.href = "/api/predict/" + encodeURIComponent(jobId) + "/download";
+                a.setAttribute("download", "boltr-predict-" + jobId + ".tar.gz");
+              }
+            })
+            .catch(() => {});
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        predictBar.indeterminate = false;
+      };
+    };
+
+    updatePredictButton();
     fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
   </script>
 </body>
