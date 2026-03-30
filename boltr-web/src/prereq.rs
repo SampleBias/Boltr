@@ -136,7 +136,11 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
     let cache_ready = files.iter().filter(|f| f.required).all(|f| f.present);
     let venv_python_present = find_venv_python().is_some();
 
-    notes.push("Set BOLTR=/path/to/tch-enabled boltr so status can run `boltr doctor --json`.".to_string());
+    notes.push(
+        "Set BOLTR to your tch-enabled `target/release/boltr` for status (`boltr doctor --json`). \
+         The server prepends the dev venv's `torch/lib` to LD_LIBRARY_PATH when probing."
+            .to_string(),
+    );
 
     StatusResponse {
         cache_dir: cache.display().to_string(),
@@ -201,11 +205,12 @@ async fn boltr_doctor_json() -> Result<Value, String> {
     let exe = resolve_boltr_binary_async().await.ok_or_else(|| {
         "boltr not found (set BOLTR, use repo target/release/boltr, or add boltr to PATH)".to_string()
     })?;
+    let py = resolve_python_for_torch_probe();
+    let mut cmd = tokio::process::Command::new(&exe);
+    crate::paths::prepend_torch_wheel_lib_to_ld_path(&mut cmd, &py);
     let out = tokio::time::timeout(
         Duration::from_secs(12),
-        tokio::process::Command::new(&exe)
-            .args(["doctor", "--json"])
-            .output(),
+        cmd.args(["doctor", "--json"]).output(),
     )
     .await
     .map_err(|_| "timeout running boltr doctor".to_string())?

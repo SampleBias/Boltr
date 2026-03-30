@@ -35,6 +35,7 @@ weights/
 *.pth
 *.safetensors
 !boltr-io/tests/fixtures/**/*.safetensors
+!boltr-backend-tch/tests/fixtures/**/*.safetensors
 
 # Data and outputs
 data/

@@ -15,7 +15,8 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tracing::{error, info};
 
-use crate::prereq::resolve_cache_dir;
+use crate::paths::prepend_torch_wheel_lib_to_ld_path;
+use crate::prereq::{find_venv_python, resolve_cache_dir};
 
 /// `BOLTR_WEB_ENABLE_PREDICT=0` disables predict endpoints (default: enabled).
 #[must_use]
@@ -310,7 +311,10 @@ pub async fn run_predict_job(
     )
     .await;
 
-    let mut child = match Command::new(&boltr)
+    let py = find_venv_python().unwrap_or_else(|| PathBuf::from("python3"));
+    let mut cmd = Command::new(&boltr);
+    prepend_torch_wheel_lib_to_ld_path(&mut cmd, &py);
+    let mut child = match cmd
         .args(&argv)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

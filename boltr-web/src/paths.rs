@@ -1,6 +1,56 @@
 //! Shared path resolution for `boltr` binary (doctor, predict).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
+
+/// `site-packages/torch/lib` for the given interpreter (contains `libtorch_cpu.so` / `libtorch_cuda.so`).
+///
+/// Matches [`scripts/with_dev_venv.sh`](../../scripts/with_dev_venv.sh): CUDA wheels need this on
+/// `LD_LIBRARY_PATH` when running `boltr` outside that wrapper.
+#[must_use]
+pub fn torch_wheel_lib_dir(py: &Path) -> Option<PathBuf> {
+    let out = StdCommand::new(py)
+        .args([
+            "-c",
+            "import pathlib, torch; print(pathlib.Path(torch.__file__).resolve().parent / 'lib')",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(s);
+    if p.is_dir() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// Prepend the PyTorch wheel `lib/` directory to `LD_LIBRARY_PATH` so a `tch`/`boltr` binary
+/// finds `libtorch_cuda.so` (or CPU libs) when the dev venv uses `LIBTORCH_USE_PYTORCH=1`.
+#[cfg(unix)]
+pub fn prepend_torch_wheel_lib_to_ld_path(cmd: &mut tokio::process::Command, py: &Path) {
+    if let Some(lib) = torch_wheel_lib_dir(py) {
+        let key = "LD_LIBRARY_PATH";
+        let merged = match std::env::var(key) {
+            Ok(existing) if !existing.is_empty() => format!("{}:{}", lib.display(), existing),
+            _ => lib.display().to_string(),
+        };
+        cmd.env(key, merged);
+    }
+}
+
+#[cfg(not(unix))]
+pub fn prepend_torch_wheel_lib_to_ld_path(
+    _cmd: &mut tokio::process::Command,
+    _py: &Path,
+) {
+}
 
 /// Resolve the `boltr` executable: `BOLTR` env → walk to `target/release/boltr` → `command -v boltr`.
 #[must_use]
