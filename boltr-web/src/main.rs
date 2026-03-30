@@ -19,7 +19,7 @@ use clap::Parser;
 use serde::Deserialize;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use crate::prereq::{gather_status, resolve_cache_dir, validate_yaml_at};
+use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 
 #[derive(Clone)]
 struct AppState {
@@ -65,6 +65,7 @@ async fn post_validate(
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut cache_override: Option<PathBuf> = None;
     let mut job_dir: Option<PathBuf> = None;
+    let mut assume_msa_server = false;
 
     while let Some(field) = multipart
         .next_field()
@@ -97,6 +98,14 @@ async fn post_validate(
             if !t.is_empty() {
                 job_dir = Some(PathBuf::from(t));
             }
+        } else if name == "assume_msa_server" {
+            let t = field
+                .text()
+                .await
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            let t = t.trim();
+            assume_msa_server =
+                t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("on");
         }
     }
 
@@ -153,7 +162,7 @@ async fn post_validate(
         .map(|p| resolve_cache_dir(Some(p.as_path())))
         .unwrap_or_else(|| state.default_cache.clone());
 
-    let v = validate_yaml_at(&yaml_path, &text, &cache);
+    let v = validate_yaml_at(&yaml_path, &text, &cache, assume_msa_server);
     let json = serde_json::to_value(&v).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

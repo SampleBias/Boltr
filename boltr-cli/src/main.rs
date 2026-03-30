@@ -1,6 +1,6 @@
 //! `boltr` CLI — Rust-native Boltz2 inference.
 //!
-//! Commands: `predict`, `download`, `eval`, `msa-to-npz`, `tokens-to-npz`.
+//! Commands: `predict`, `download`, `doctor`, `eval`, `msa-to-npz`, `tokens-to-npz`.
 //!
 //! The `predict` command mirrors the upstream `boltz predict` interface and output layout
 //! ([boltz-reference/docs/prediction.md](../../boltz-reference/docs/prediction.md)).
@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::Parser;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+mod doctor;
 
 #[cfg(feature = "tch")]
 mod collate_predict_bridge;
@@ -200,6 +202,13 @@ enum Commands {
         cache_dir: Option<PathBuf>,
     },
 
+    /// Check LibTorch / tch linkage (CPU tensor smoke). Use `--json` for machine-readable output.
+    Doctor {
+        /// Print JSON (for boltr-web and scripts).
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Structure benchmark evaluation (not implemented; see boltz-reference docs).
     Eval {
         /// Test directory label (reserved for future use).
@@ -345,6 +354,13 @@ async fn main() -> Result<()> {
             for p in paths {
                 tracing::info!(path = %p.display(), "saved");
             }
+            if version.to_lowercase() == "boltz2" || version == "2" {
+                try_export_safetensors_after_download(&cache);
+            }
+        }
+
+        Commands::Doctor { json } => {
+            doctor::run(json)?;
         }
 
         // =======================================================================
@@ -608,6 +624,87 @@ fn predict_backend_note() -> &'static str {
     #[cfg(not(feature = "tch"))]
     {
         "rebuild with: cargo build -p boltr-cli --features tch (LibTorch required)"
+    }
+}
+
+/// Locate repo root containing `scripts/export_checkpoint_to_safetensors.py` (cwd, then exe ancestors).
+fn boltr_repo_root() -> Option<PathBuf> {
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut d = cwd;
+        for _ in 0..12 {
+            if d.join("scripts/export_checkpoint_to_safetensors.py").is_file() {
+                return Some(d);
+            }
+            if !d.pop() {
+                break;
+            }
+        }
+    }
+    let mut d = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    for _ in 0..12 {
+        if d.join("scripts/export_checkpoint_to_safetensors.py").is_file() {
+            return Some(d);
+        }
+        if !d.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Best-effort `.ckpt` → `.safetensors` after `boltr download` (warn-only on failure).
+fn try_export_safetensors_after_download(cache: &Path) {
+    let Some(repo) = boltr_repo_root() else {
+        tracing::warn!(
+            "could not locate Boltr repo (scripts/export_checkpoint_to_safetensors.py); \
+             skipping automatic safetensors export. Export manually:\n  \
+             python scripts/export_checkpoint_to_safetensors.py {} {}",
+            cache.join("boltz2_conf.ckpt").display(),
+            cache.join("boltz2_conf.safetensors").display()
+        );
+        return;
+    };
+    let script = repo.join("scripts/export_checkpoint_to_safetensors.py");
+    let py = if repo.join(".venv/bin/python").is_file() {
+        repo.join(".venv/bin/python")
+    } else {
+        PathBuf::from("python3")
+    };
+    for (ckpt_name, sf_name) in [
+        ("boltz2_conf.ckpt", "boltz2_conf.safetensors"),
+        ("boltz2_aff.ckpt", "boltz2_aff.safetensors"),
+    ] {
+        let ckpt = cache.join(ckpt_name);
+        let out = cache.join(sf_name);
+        if !ckpt.is_file() {
+            continue;
+        }
+        let status = std::process::Command::new(&py)
+            .arg(&script)
+            .arg(&ckpt)
+            .arg(&out)
+            .status();
+        match status {
+            Ok(s) if s.success() => {
+                tracing::info!(path = %out.display(), "exported safetensors after download");
+            }
+            Ok(s) => {
+                tracing::warn!(
+                    code = ?s.code(),
+                    ckpt = %ckpt.display(),
+                    out = %out.display(),
+                    "export_checkpoint_to_safetensors failed; run manually (see DEVELOPMENT.md)"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    py = %py.display(),
+                    "could not run Python for safetensors export; use repo .venv or: python scripts/export_checkpoint_to_safetensors.py"
+                );
+                return;
+            }
+        }
     }
 }
 

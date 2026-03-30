@@ -18,6 +18,7 @@ LibTorch tests: use [`cargo-tch`](cargo-tch) so `torch-sys` finds Python’s tor
 
 | Script | Purpose |
 |--------|---------|
+| [`bootstrap_webui_env.sh`](bootstrap_webui_env.sh) | One-shot: dev venv, `boltr` + `boltr-web` with `tch`, `boltr download`, `.ckpt` → `.safetensors`, `boltr doctor` (see [`QUICKSTART.md`](../QUICKSTART.md)) |
 | [`export_checkpoint_to_safetensors.py`](export_checkpoint_to_safetensors.py) | Lightning `.ckpt` → `.safetensors` for `boltr-backend-tch` |
 | [`export_hparams_from_ckpt.py`](export_hparams_from_ckpt.py) | Hyperparameters JSON from checkpoint |
 | [`compare_ckpt_safetensors_counts.py`](compare_ckpt_safetensors_counts.py) | Diff key counts ckpt vs safetensors (Makefile helper) |

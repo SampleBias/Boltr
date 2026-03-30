@@ -172,11 +172,13 @@ If you have no `python3.12` (or 3.11 / 3.10) binary: on **Arch Linux** there is 
 
 ### Checkpoint export for Rust
 
-Lightning `.ckpt` files are not loaded directly in Rust. Use:
+Lightning `.ckpt` files are not loaded directly in Rust. After `boltr download`, the CLI **attempts** a best-effort export when it can find this repo and a Python with `torch` + `safetensors` (warnings only on failure). Otherwise use:
 
 ```bash
 python scripts/export_checkpoint_to_safetensors.py ~/.cache/boltr/boltz2_conf.ckpt ~/.cache/boltr/boltz2_conf.safetensors
 ```
+
+**LibTorch smoke:** `boltr doctor` / `boltr doctor --json` (needs `--features tch` for a real CPU tensor probe; without `tch`, JSON reports `tch_feature: false`).
 
 (Optional: `--strip-prefix model.` if keys are nested.) See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md).
 

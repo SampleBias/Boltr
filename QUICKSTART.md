@@ -24,6 +24,28 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 
 Or set `LIBTORCH` / `LIBTORCH_USE_PYTORCH=1` and build as above. Details: **[`DEVELOPMENT.md`](DEVELOPMENT.md)**.
 
+## Web UI + full native cache (one script)
+
+[`scripts/bootstrap_webui_env.sh`](scripts/bootstrap_webui_env.sh) sets up the dev venv, builds **`boltr`** and **`boltr-web`** with `--features tch`, runs **`boltr download --version boltz2`**, exports **`boltz2_conf.ckpt` → `boltz2_conf.safetensors`** (and affinity), and prints **`boltr doctor --json`**.
+
+```bash
+bash scripts/bootstrap_webui_env.sh
+```
+
+Run the Web UI (use [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh) so LibTorch shared libraries resolve; point **`BOLTR`** at the tch-enabled binary for status probes):
+
+```bash
+export BOLTR="$PWD/target/release/boltr"
+bash scripts/with_dev_venv.sh ./target/release/boltr-web
+```
+
+Check LibTorch / `tch` linkage anytime:
+
+```bash
+bash scripts/with_dev_venv.sh ./target/release/boltr doctor
+./target/release/boltr doctor --json
+```
+
 ## Smoke tests
 
 ```bash
@@ -35,7 +57,8 @@ bash scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib
 
 ```
 Boltr/
-├── boltr-cli/           # boltr binary: download, predict, msa-to-npz, tokens-to-npz
+├── boltr-cli/           # boltr binary: download, predict, doctor, msa-to-npz, tokens-to-npz
+├── boltr-web/           # Local prerequisites + YAML validation UI
 ├── boltr-io/            # YAML, featurizer, collate, writers (no LibTorch)
 ├── boltr-backend-tch/   # Boltz2Model, tch (optional feature)
 ├── boltz-reference/     # Vendored Boltz *model* Python (trimmed; see README there)
@@ -55,6 +78,8 @@ Boltr/
 
 ```bash
 boltr download --version boltz2
+# After download, Boltr tries (warn-only) to run export_checkpoint_to_safetensors when a repo
+# checkout + Python with torch/safetensors is found; otherwise export manually (DEVELOPMENT.md).
 # Full model path (needs LibTorch — see build section above):
 # bash scripts/cargo-tch build --release -p boltr-cli --features tch
 boltr predict input.yaml --output ./out --device cpu

@@ -144,8 +144,9 @@ ___</pre>
   <section>
     <h2>1. Model cache</h2>
     <div class="help-box">
-      <p>Where <code>boltr download</code> / checkpoints live (<code>boltz2_conf.*</code>, <code>ccd.pkl</code>, <code>mols.tar</code>, …). Same as <code>boltr predict --cache-dir</code>.</p>
+      <p>Where <code>boltr download</code> / checkpoints live (<code>boltz2_conf.safetensors</code>, <code>ccd.pkl</code>, <code>mols.tar</code>, …). Same as <code>boltr predict --cache-dir</code>.</p>
       <p><strong>Blank</strong> → <code>BOLTZ_CACHE</code>, else <code>~/.cache/boltr</code>.</p>
+      <p><strong>LibTorch probe:</strong> set <code>BOLTR</code> to your tch-enabled <code>boltr</code> binary (e.g. <code>…/target/release/boltr</code>) so status can run <code>boltr doctor --json</code>, or install <code>boltr</code> on <code>PATH</code>.</p>
       <pre class="example" tabindex="0">/home/YOURUSER/.cache/boltr</pre>
     </div>
     <div class="row">
@@ -157,6 +158,8 @@ ___</pre>
     <div class="row">
       <button type="button" id="btnRefresh">Refresh status</button>
       <span class="pill" id="cachePill"></span>
+      <span class="pill" id="cacheReadyPill"></span>
+      <span class="pill" id="envPill"></span>
     </div>
     <div id="statusMount"></div>
   </section>
@@ -168,12 +171,16 @@ ___</pre>
       <p><strong>Blank</strong> → upload only; paths like <code>./msa.a3m</code> won’t resolve.</p>
       <pre class="example" tabindex="0">/home/YOURUSER/Boltr/my-case</pre>
       <p class="notes" style="margin-top:0.45rem">Pick the same YAML file below; with a job folder set, validation reads that path on disk.</p>
+      <p><strong>Assume MSA server</strong> — relax missing local <code>msa:</code> files (still blocks missing templates, bad manifest, cache).</p>
     </div>
     <div class="row">
       <label for="jobDir">Job folder</label>
     </div>
     <div class="row">
       <input type="text" class="path-wide" id="jobDir" placeholder="optional" autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="assumeMsaServer" /> Assume MSA server</label>
     </div>
     <div class="row">
       <input type="file" id="yamlFile" accept=".yaml,.yml,text/yaml" />
@@ -205,12 +212,29 @@ ___</pre>
       const notes = (data.notes || []).map((n) => `<p class="notes">${esc(n)}</p>`).join("");
       cachePill.textContent = data.native_structure_checkpoint_ok ? ".safetensors ✓" : "need .safetensors";
       cachePill.className = "pill " + (data.native_structure_checkpoint_ok ? "ready" : "not-ready");
-      statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${notes}`;
+      const cr = $("cacheReadyPill");
+      if (cr) {
+        cr.textContent = data.cache_ready ? "cache ✓" : "cache …";
+        cr.className = "pill " + (data.cache_ready ? "ready" : "not-ready");
+      }
+      const ep = $("envPill");
+      if (ep) {
+        ep.textContent = data.environment_ready ? "env ✓" : "env …";
+        ep.className = "pill " + (data.environment_ready ? "ready" : "not-ready");
+      }
+      let probe = "";
+      if (data.torch_import_ok === true) probe += `<p class="notes ok">torch import: yes</p>`;
+      else if (data.torch_import_ok === false) probe += `<p class="notes no">torch import: no ${esc(data.torch_import_error || "")}</p>`;
+      if (data.boltr_doctor_error) probe += `<p class="notes">${esc(data.boltr_doctor_error)}</p>`;
+      else if (data.boltr_doctor) probe += `<pre class="notes">${esc(JSON.stringify(data.boltr_doctor, null, 2))}</pre>`;
+      statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${probe}${notes}`;
     }
 
     function renderValidate(data) {
-      const ready = data.ready_to_run_native;
-      const head = `<p class="row"><span class="pill ${ready ? "ready" : "not-ready"}">${ready ? "Ready" : "Blocked"}</span></p>`;
+      const jobReady = data.job_ready_for_native;
+      const relaxed = data.yaml_ready_relaxed;
+      const cacheReady = data.cache_ready;
+      const head = `<p class="row"><span class="pill ${jobReady ? "ready" : "not-ready"}">Job (strict): ${jobReady ? "ready" : "blocked"}</span> <span class="pill ${relaxed ? "ready" : "not-ready"}">YAML+cache (relaxed): ${relaxed ? "ready" : "blocked"}</span> <span class="pill ${cacheReady ? "ready" : "not-ready"}">cache: ${cacheReady ? "ok" : "…"}</span></p>`;
       const blockers = (data.blockers || []).length
         ? `<h2 style="margin-top:1rem">Issues</h2><pre>${esc((data.blockers || []).join("\n"))}</pre>`
         : "";
@@ -268,6 +292,7 @@ ___</pre>
       if (c) fd.append("cache_dir", c);
       const jd = $("jobDir").value.trim();
       if (jd) fd.append("job_dir", jd);
+      if ($("assumeMsaServer").checked) fd.append("assume_msa_server", "1");
       uploadBar.value = 0;
       validateMount.innerHTML = "";
       const xhr = new XMLHttpRequest();

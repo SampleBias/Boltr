@@ -118,3 +118,19 @@ fn download_help() {
     assert!(stdout.contains("cache-dir") || stdout.contains("cache"));
     assert!(stdout.contains("boltz2"));
 }
+
+#[test]
+fn doctor_json_without_tch_feature() {
+    let output = Command::new(boltr_bin())
+        .args(["doctor", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(v["tch_feature"], false);
+    assert!(v["libtorch_runtime_ok"].is_null());
+}

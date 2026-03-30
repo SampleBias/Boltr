@@ -1,10 +1,12 @@
 //! Cache + YAML checks aligned with `boltr predict` / `predict_tch` expectations.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use boltr_io::config::BoltzInput;
 use boltr_io::parse_manifest_path;
 use serde::Serialize;
+use serde_json::Value;
 
 /// Resolve cache directory: same rules as `boltr` CLI.
 pub fn resolve_cache_dir(cli_cache: Option<&Path>) -> PathBuf {
@@ -37,6 +39,21 @@ pub struct StatusResponse {
     pub files: Vec<FileCheck>,
     /// `true` when `boltz2_conf.safetensors` exists (Rust-native load path).
     pub native_structure_checkpoint_ok: bool,
+    /// All required cache entries present (`boltz2_conf.safetensors`, `ccd.pkl`, `mols.tar`).
+    pub cache_ready: bool,
+    /// Repo `.venv/bin/python` exists (optional dev signal).
+    pub venv_python_present: bool,
+    /// `python -c "import torch"` succeeded (venv python first, else `python3`).
+    pub torch_import_ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub torch_import_error: Option<String>,
+    /// Parsed output of `boltr doctor --json` when the binary is found (`BOLTR` or PATH).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boltr_doctor: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boltr_doctor_error: Option<String>,
+    /// Cache + torch import + `boltr doctor` reports tch + LibTorch runtime OK.
+    pub environment_ready: bool,
     /// `true` when preprocess bridge inputs could work (manifest + npz checks are per-upload).
     pub notes: Vec<String>,
 }
@@ -116,14 +133,162 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
         },
     ];
 
-    notes.push("Inference needs LibTorch and `boltr` with `--features tch`.".to_string());
+    let cache_ready = files.iter().filter(|f| f.required).all(|f| f.present);
+    let venv_python_present = find_venv_python().is_some();
+
+    notes.push("Set BOLTR=/path/to/tch-enabled boltr so status can run `boltr doctor --json`.".to_string());
 
     StatusResponse {
         cache_dir: cache.display().to_string(),
         files,
         native_structure_checkpoint_ok,
+        cache_ready,
+        venv_python_present,
+        torch_import_ok: None,
+        torch_import_error: None,
+        boltr_doctor: None,
+        boltr_doctor_error: None,
+        environment_ready: false,
         notes,
     }
+}
+
+/// Walk cwd / `BOLTR_REPO` for `.venv/bin/python`.
+pub fn find_venv_python() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("BOLTR_REPO") {
+        let v = PathBuf::from(p).join(".venv/bin/python");
+        if v.is_file() {
+            return Some(v);
+        }
+    }
+    let mut d = std::env::current_dir().ok()?;
+    for _ in 0..12 {
+        let v = d.join(".venv/bin/python");
+        if v.is_file() {
+            return Some(v);
+        }
+        if !d.pop() {
+            break;
+        }
+    }
+    None
+}
+
+async fn probe_import_torch(py: &Path) -> (Option<bool>, Option<String>) {
+    let fut = tokio::process::Command::new(py)
+        .args(["-c", "import torch; print(torch.__version__)"])
+        .output();
+    let res = tokio::time::timeout(Duration::from_secs(8), fut).await;
+    match res {
+        Ok(Ok(out)) if out.status.success() => (Some(true), None),
+        Ok(Ok(out)) => (
+            Some(false),
+            Some(format!(
+                "stderr: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )),
+        ),
+        Ok(Err(e)) => (Some(false), Some(e.to_string())),
+        Err(_) => (Some(false), Some("timeout waiting for python".to_string())),
+    }
+}
+
+fn resolve_python_for_torch_probe() -> PathBuf {
+    find_venv_python().unwrap_or_else(|| PathBuf::from("python3"))
+}
+
+async fn boltr_doctor_json() -> Result<Value, String> {
+    let exe = resolve_boltr_binary_async().await.ok_or_else(|| {
+        "boltr not found (set BOLTR, use repo target/release/boltr, or add boltr to PATH)".to_string()
+    })?;
+    let out = tokio::time::timeout(
+        Duration::from_secs(12),
+        tokio::process::Command::new(&exe)
+            .args(["doctor", "--json"])
+            .output(),
+    )
+    .await
+    .map_err(|_| "timeout running boltr doctor".to_string())?
+    .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "boltr doctor exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    let s = String::from_utf8(out.stdout).map_err(|e| e.to_string())?;
+    serde_json::from_str(&s).map_err(|e| format!("doctor JSON: {e}"))
+}
+
+async fn resolve_boltr_binary_async() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("BOLTR") {
+        let pb = PathBuf::from(p);
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    let mut d = std::env::current_dir().ok()?;
+    for _ in 0..8 {
+        let cand = d.join("target/release/boltr");
+        if cand.is_file() {
+            return Some(cand);
+        }
+        if !d.pop() {
+            break;
+        }
+    }
+    let out = tokio::process::Command::new("sh")
+        .args(["-c", "command -v boltr 2>/dev/null"])
+        .output()
+        .await
+        .ok()?;
+    if out.status.success() {
+        let line = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !line.is_empty() {
+            let p = PathBuf::from(line);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+fn compute_environment_ready(s: &StatusResponse) -> bool {
+    if !s.cache_ready {
+        return false;
+    }
+    if s.torch_import_ok != Some(true) {
+        return false;
+    }
+    let Some(ref doc) = s.boltr_doctor else {
+        return false;
+    };
+    doc.get("tch_feature").and_then(|v| v.as_bool()) == Some(true)
+        && doc.get("libtorch_runtime_ok").and_then(|v| v.as_bool()) == Some(true)
+}
+
+/// Async probes: torch import + `boltr doctor --json`.
+pub async fn enrich_status(mut s: StatusResponse) -> StatusResponse {
+    let py = resolve_python_for_torch_probe();
+    s.venv_python_present = find_venv_python().is_some();
+    let (tok_ok, tok_err) = probe_import_torch(&py).await;
+    s.torch_import_ok = tok_ok;
+    s.torch_import_error = tok_err;
+
+    match boltr_doctor_json().await {
+        Ok(v) => {
+            s.boltr_doctor = Some(v);
+            s.boltr_doctor_error = None;
+        }
+        Err(e) => {
+            s.boltr_doctor = None;
+            s.boltr_doctor_error = Some(e);
+        }
+    }
+    s.environment_ready = compute_environment_ready(&s);
+    s
 }
 
 #[derive(Debug, Serialize)]
@@ -153,8 +318,13 @@ pub struct ValidateResponse {
     pub proteins_missing_msa: Vec<String>,
     pub preprocess: PreprocessProbe,
     pub cache: StatusResponse,
-    /// Overall: YAML parses, required paths exist, cache has safetensors + ccd + mols, preprocess bridge complete when manifest exists.
+    /// Strict: YAML + all referenced paths + cache + preprocess when manifest exists.
+    pub job_ready_for_native: bool,
+    /// Same as `job_ready_for_native` (legacy name).
     pub ready_to_run_native: bool,
+    /// YAML parses, cache ready, and no remaining blockers (with `assume_msa_server`, missing local MSA paths are warnings).
+    pub yaml_ready_relaxed: bool,
+    pub cache_ready: bool,
     pub blockers: Vec<String>,
     /// Non-fatal issues (e.g. MSA not inlined — `boltr predict --use-msa-server` may still work).
     pub warnings: Vec<String>,
@@ -171,8 +341,10 @@ pub fn validate_yaml_at(
     yaml_path: &Path,
     yaml_text: &str,
     cache: &Path,
+    assume_msa_server: bool,
 ) -> ValidateResponse {
     let cache_status = gather_status(cache);
+    let cache_ready = cache_status.cache_ready;
     let mut blockers: Vec<String> = Vec::new();
 
     let parsed: Result<BoltzInput, _> = serde_yaml::from_str(yaml_text);
@@ -214,10 +386,14 @@ pub fn validate_yaml_at(
                 exists,
             });
             if !exists {
-                push_blocker(
-                    &mut blockers,
-                    format!("MSA file missing: {}", p.display()),
-                );
+                let msg = format!("MSA file missing: {}", p.display());
+                if assume_msa_server {
+                    warnings.push(format!(
+                        "{msg} (not blocking while \"assume MSA server\" is enabled)"
+                    ));
+                } else {
+                    push_blocker(&mut blockers, msg);
+                }
             }
         }
 
@@ -304,8 +480,8 @@ pub fn validate_yaml_at(
         }
     }
 
-    let ready_to_run_native = yaml_ok
-        && blockers.is_empty();
+    let job_ready_for_native = yaml_ok && blockers.is_empty();
+    let yaml_ready_relaxed = yaml_ok && cache_ready && blockers.is_empty();
 
     ValidateResponse {
         yaml_ok,
@@ -322,7 +498,10 @@ pub fn validate_yaml_at(
             npz_path,
         },
         cache: cache_status,
-        ready_to_run_native,
+        job_ready_for_native,
+        ready_to_run_native: job_ready_for_native,
+        yaml_ready_relaxed,
+        cache_ready,
         blockers,
         warnings,
     }
