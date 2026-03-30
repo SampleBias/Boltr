@@ -51,10 +51,73 @@ Supporting assets:
 
 ## Prerequisites
 
-- **Rust**: stable toolchain, **edition 2021** (see workspace `Cargo.toml`).
+- **Rust**: stable toolchain, **edition 2021** (see workspace [`Cargo.toml`](Cargo.toml)).
 - **Default build** (`cargo build -p boltr-cli`): **no** LibTorch — I/O and CLI compile for fast iteration.
 - **Inference backend** (`boltr-backend-tch`): **LibTorch** matching your `tch` version — set `LIBTORCH`, or `LIBTORCH_USE_PYTORCH=1` with a Python env that has `torch`, or use [`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh) + [`scripts/cargo-tch`](scripts/cargo-tch) (see [`DEVELOPMENT.md`](DEVELOPMENT.md)).
 - **CUDA** (optional): CUDA build of LibTorch; CLI `--device cuda` / `BOLTR_DEVICE=cuda`.
+
+---
+
+## Dependencies (summary)
+
+Everything below is spelled out in [`DEVELOPMENT.md`](DEVELOPMENT.md) and [`QUICKSTART.md`](QUICKSTART.md); this table is the single index.
+
+### Rust workspace
+
+| Item | Notes |
+|------|--------|
+| **Edition** | **2021** (all crates). |
+| **Resolver** | Cargo **workspace** `resolver = "2"` ([`Cargo.toml`](Cargo.toml)). |
+| **Crates** | [`boltr-io`](boltr-io/Cargo.toml), [`boltr-backend-tch`](boltr-backend-tch/Cargo.toml), [`boltr-cli`](boltr-cli/Cargo.toml), [`boltr-web`](boltr-web/Cargo.toml). |
+| **Key libs** | `tokio`, `serde` / `serde_json` / `serde_yaml`, `clap`, `anyhow`, `tracing`, `ndarray`, `reqwest`, `safetensors`, `flate2`, `tar`, `dirs`, `rand`, `numpy` (crate), `itertools` — versions pinned in **workspace** `[workspace.dependencies]`. |
+| **`tch`** | **`0.16`** (optional; enables LibTorch when `--features tch` on `boltr-cli` or `tch-backend` on `boltr-backend-tch`). |
+| **`boltr-web`** | `axum` 0.7 (HTTP + multipart), `tokio`, same serde stack as the rest of the workspace. |
+
+### LibTorch / `tch` (native inference)
+
+| Item | Notes |
+|------|--------|
+| **`tch` crate** | **0.16** — must match **LibTorch C++ API ~2.3.x** (see [`boltr-cli/Cargo.toml`](boltr-cli/Cargo.toml)). |
+| **Standalone LibTorch** | Download **2.3.x** CPU or CUDA zips from PyTorch; **do not** use unversioned “latest” LibTorch ([`DEVELOPMENT.md`](DEVELOPMENT.md) Path A). |
+| **PyTorch wheel** | **`torch==2.3.0`** in the dev venv so `torch-sys` compiles against matching headers ([`scripts/bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh), `BOLTR_TORCH_VERSION`). |
+| **Build env** | Set **`LIBTORCH`** (Path A) **or** **`LIBTORCH_USE_PYTORCH=1`** (Path B). Optional: **`LIBTORCH_BYPASS_VERSION_CHECK=1`** when pip’s torch reports a newer *string* than libtch expects ([`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh)). |
+| **GPU** | CUDA LibTorch matching the same **2.3.x** line; `LD_LIBRARY_PATH` must include PyTorch’s `lib/` when using CUDA wheels ([`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh)). |
+
+### Python (scripts + optional venv — not used for Rust `predict` at runtime)
+
+| Item | Notes |
+|------|--------|
+| **Interpreter** | **3.10, 3.11, or 3.12** for [`bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh). **Avoid 3.13+** for that script (wheel / header mismatch with `tch` 0.16). Override pick with **`BOLTR_VENV_PYTHON`**. |
+| **Packages** | **`torch==2.3.0`**, **`safetensors`**, **`setuptools`**, **`wheel`** (installed by bootstrap). |
+| **Uses** | Checkpoint **`.ckpt` → `.safetensors`** ([`scripts/export_checkpoint_to_safetensors.py`](scripts/export_checkpoint_to_safetensors.py)), golden generators, optional post-`download` export in **`boltr download`**, and **`torch-sys`** discovery when **`LIBTORCH_USE_PYTORCH=1`**. |
+| **Arch / PEP 668** | Do not `pip install` into system Python; use the repo **`.venv`** ([`DEVELOPMENT.md`](DEVELOPMENT.md)). |
+
+### System / OS
+
+| Item | Notes |
+|------|--------|
+| **Build tools** | A normal Rust toolchain pulls in `cc`; **`torch-sys`** may need **`cmake`**, **`pkg-config`**, and a **C++ compiler** — see build errors in [`DEVELOPMENT.md`](DEVELOPMENT.md). |
+| **AUR / large builds** | If **`/tmp`** is a small **tmpfs**, set **`TMPDIR`** and **`BUILDDIR`** under `$HOME` for `makepkg` / `yay` so builds do not hit quota ([`DEVELOPMENT.md`](DEVELOPMENT.md) / Arch notes). |
+| **Network** | **`boltr download`** uses **HTTPS** (reqwest) to fetch checkpoints and assets. |
+
+### Runtime directories and env vars
+
+| Variable | Purpose |
+|----------|---------|
+| **`BOLTZ_CACHE`** | Model cache directory (default: `~/.cache/boltr`). Same idea as **`boltr --cache-dir`**. |
+| **`BOLTR`** | Absolute path to the **`boltr`** binary for **`boltr-web`** status (`boltr doctor --json`) and tooling. |
+| **`BOLTR_REPO`** | Optional; helps tools find **`.venv/bin/python`** when probing from **`boltr-web`**. |
+| **`BOLTR_DEVICE`** | Overrides CLI **`--device`** if set. |
+| **`LIBTORCH`** | Root of unpacked standalone LibTorch (Path A). |
+| **`LIBTORCH_USE_PYTORCH`** | Set to **`1`** when linking against PyTorch’s LibTorch (Path B). |
+
+### One-shot full stack (venv + download + safetensors + `boltr` + `boltr-web`)
+
+```bash
+bash scripts/bootstrap_webui_env.sh
+```
+
+See [`QUICKSTART.md`](QUICKSTART.md) for **`boltr doctor`**, **`BOLTR`**, and **`with_dev_venv.sh`** when running **`boltr-web`**.
 
 ---
 
@@ -92,10 +155,12 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 
 | Command | Notes |
 |---------|--------|
-| `boltr download --version boltz2` | Checkpoints + CCD + mols into cache (URLs aligned with upstream Boltz). |
+| `boltr download --version boltz2` | Checkpoints + CCD + mols into cache (URLs aligned with upstream Boltz). Best-effort **`.ckpt` → `.safetensors`** when repo + Python `torch`/`safetensors` are available; else export manually ([`DEVELOPMENT.md`](DEVELOPMENT.md)). |
+| `boltr doctor` / `boltr doctor --json` | LibTorch / **`tch`** smoke (needs **`--features tch`** build for a real CPU tensor probe). |
 | `boltr predict input.yaml --output ./out --device cpu` | Build with **`--features tch`**. Parses YAML, optional MSA, summary JSON. **Native structure output:** place Boltz-style **`manifest.json`** + **`{record_id}.npz`** (and MSA `.npz`) in the **same directory as the input YAML**, then run `predict` — see [`TODO.md` §5.10 / §6](TODO.md). Without that layout, outputs are placeholders until preprocess data is present. |
 | `cargo test -p boltr-io` | I/O + featurizer tests (CI: [`.github/workflows/boltr-io-test.yml`](.github/workflows/boltr-io-test.yml)). |
 | `bash scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib` | Backend library tests (manual / dev venv). |
+| `cargo build -p boltr-web && ./target/release/boltr-web` | Local **Axum** UI for cache status + YAML validation; export **`BOLTR`** to a **`tch`**-enabled `boltr` for **`doctor`** probes ([`QUICKSTART.md`](QUICKSTART.md)). |
 
 ---
 
