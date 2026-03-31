@@ -258,6 +258,7 @@ ___</pre>
       <progress id="predictBar" max="100" value="0"></progress>
     </div>
     <pre id="predictLog" class="notes" style="max-height:14rem;overflow:auto;min-height:4rem;"></pre>
+    <div id="predictStructureWrap" class="notes" style="display:none;max-width:48rem;border:1px solid var(--border);padding:0.5rem 0.65rem;margin-top:0.35rem;"></div>
     <p id="predictDownloadWrap" class="row" style="display:none;">
       <a id="predictDownloadLink" href="#" download>Download output (.tar.gz)</a>
     </p>
@@ -453,6 +454,8 @@ ___</pre>
       }
       predictLog.textContent = "";
       $("predictDownloadWrap").style.display = "none";
+      $("predictStructureWrap").style.display = "none";
+      $("predictStructureWrap").textContent = "";
       const fd = new FormData();
       if (f) fd.append("file", f, f.name);
       const c = $("cacheDir").value.trim();
@@ -504,23 +507,43 @@ ___</pre>
 
       const url = "/api/predict/" + encodeURIComponent(jobId) + "/stream";
       const es = new EventSource(url);
+      function applyPredictStructurePanel(st, jobId) {
+        predictBar.indeterminate = false;
+        predictBar.value = 100;
+        const wrap = $("predictStructureWrap");
+        const so = st.structure_output || {};
+        const paths = so.structure_paths || [];
+        const msg = so.structure_message || "";
+        let html = "<strong>Structure output</strong> — " + esc(msg);
+        if (paths.length) {
+          html += "<ul style=\"margin:0.35rem 0 0 1rem;padding:0;\">";
+          for (let i = 0; i < paths.length; i++) {
+            html += "<li><code style=\"word-break:break-all;\">" + esc(paths[i]) + "</code></li>";
+          }
+          html += "</ul>";
+        }
+        wrap.innerHTML = html;
+        wrap.style.display = "block";
+        if (!paths.length && st.done) {
+          wrap.style.borderColor = "#a63";
+        } else {
+          wrap.style.borderColor = "var(--border)";
+        }
+        if (st.success) {
+          $("predictDownloadWrap").style.display = "block";
+          const a = $("predictDownloadLink");
+          a.href = "/api/predict/" + encodeURIComponent(jobId) + "/download";
+          a.setAttribute("download", "boltr-predict-" + jobId + ".tar.gz");
+        }
+      }
       es.onmessage = (ev) => {
         predictLog.textContent += ev.data + "\n";
         predictLog.scrollTop = predictLog.scrollHeight;
         if (ev.data.indexOf("stream end") >= 0) {
           es.close();
-          predictBar.indeterminate = false;
-          predictBar.value = 100;
           fetch("/api/predict/" + encodeURIComponent(jobId))
             .then((res) => res.json())
-            .then((st) => {
-              if (st.success) {
-                $("predictDownloadWrap").style.display = "block";
-                const a = $("predictDownloadLink");
-                a.href = "/api/predict/" + encodeURIComponent(jobId) + "/download";
-                a.setAttribute("download", "boltr-predict-" + jobId + ".tar.gz");
-              }
-            })
+            .then((st) => applyPredictStructurePanel(st, jobId))
             .catch(() => {});
         }
       };

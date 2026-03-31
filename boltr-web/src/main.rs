@@ -32,9 +32,9 @@ use serde::Serialize;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::predict_job::{
-    build_predict_argv, cache_from_form_override, parse_preprocess_mode, path_under_job_dir,
-    predict_enabled, preprocess_preflight, run_predict_job, tarball_out_dir, JobStore,
-    PredictCliOptions, PredictJob,
+    build_predict_argv, cache_from_form_override, inspect_predict_output, parse_preprocess_mode,
+    path_under_job_dir, predict_enabled, preprocess_preflight, run_predict_job, tarball_out_dir,
+    JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 use crate::paths::resolve_boltr_exe;
@@ -488,6 +488,8 @@ struct PredictStatusJson {
     exit_code: i32,
     success: bool,
     log_tail: Vec<String>,
+    /// Paths to `.cif` / `.pdb` plus a human-readable assessment (see [`PredictOutputInspect`]).
+    structure_output: PredictOutputInspect,
 }
 
 async fn get_predict_status(
@@ -504,12 +506,18 @@ async fn get_predict_status(
         let n = g.len().min(200);
         g[g.len().saturating_sub(n)..].to_vec()
     };
+    let structure_output = if job.done.load(Ordering::SeqCst) {
+        inspect_predict_output(&job.out_dir)
+    } else {
+        PredictOutputInspect::job_running()
+    };
     Ok(Json(PredictStatusJson {
         job_id,
         done: job.done.load(Ordering::SeqCst),
         exit_code: job.exit_code.load(Ordering::SeqCst),
         success: job.success.load(Ordering::SeqCst),
         log_tail: tail,
+        structure_output,
     }))
 }
 

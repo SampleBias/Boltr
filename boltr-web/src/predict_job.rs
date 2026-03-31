@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use serde::Serialize;
 use tar::Builder;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -515,6 +516,193 @@ impl JobStore {
     }
 }
 
+/// Result of scanning a finished job's `--output` directory for structures + completion metadata.
+#[derive(Debug, Clone, Serialize)]
+pub struct PredictOutputInspect {
+    /// Canonical absolute paths to each `.cif` / `.pdb` found under `out_dir`.
+    pub structure_paths: Vec<String>,
+    /// One short paragraph for UI: success summary, or why no structure file was found.
+    pub structure_message: String,
+    /// `status` from `boltr_predict_complete.txt` when present.
+    pub completion_status: Option<String>,
+    /// `note` from `boltr_predict_complete.txt` when present.
+    pub completion_note: Option<String>,
+}
+
+impl PredictOutputInspect {
+    /// Placeholder while the subprocess is still running.
+    pub fn job_running() -> Self {
+        Self {
+            structure_paths: Vec::new(),
+            structure_message:
+                "Job still running; structure paths and completion details appear when the job finishes."
+                    .to_string(),
+            completion_status: None,
+            completion_note: None,
+        }
+    }
+}
+
+fn collect_structure_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_structure_files(&p, out);
+        } else if let Some(ext) = p.extension().and_then(|x| x.to_str()) {
+            if ext.eq_ignore_ascii_case("cif") || ext.eq_ignore_ascii_case("pdb") {
+                out.push(p);
+            }
+        }
+    }
+}
+
+fn collect_named_files(dir: &Path, filename: &str, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_named_files(&p, filename, out);
+        } else if p.file_name().and_then(|n| n.to_str()) == Some(filename) {
+            out.push(p);
+        }
+    }
+}
+
+fn parse_completion_json(path: &Path) -> Option<(String, String)> {
+    let txt = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&txt).ok()?;
+    let status = v
+        .get("status")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let note = v
+        .get("note")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    if status.is_empty() && note.is_empty() {
+        return None;
+    }
+    Some((status, note))
+}
+
+fn build_structure_message(
+    paths: &[String],
+    completion_status: Option<&str>,
+    completion_note: Option<&str>,
+) -> String {
+    if !paths.is_empty() {
+        let mut s = format!(
+            "Found {} structure file(s) (.cif / .pdb) under the job output directory.",
+            paths.len()
+        );
+        if paths.len() == 1 {
+            s.push_str(" Full path is listed in structure_paths.");
+        } else {
+            s.push_str(" All paths are listed in structure_paths.");
+        }
+        return s;
+    }
+
+    let mut s = "No .cif (mmCIF) or .pdb file was found under the output directory."
+        .to_string();
+
+    match completion_status {
+        Some("predict_step_complete") => {
+            s.push_str(
+                " Logs report diffusion completed, but no structure files are present (unexpected).",
+            );
+        }
+        Some("preprocess_reference_structure") => {
+            s.push_str(
+                " A preprocess-only reference export was expected; if files are missing, check permissions or logs.",
+            );
+        }
+        Some("pipeline_complete") => {
+            s.push_str(
+                " Boltr exited without writing a sampled structure: ",
+            );
+            if let Some(n) = completion_note.filter(|x| !x.is_empty()) {
+                s.push_str(n);
+            } else {
+                s.push_str(
+                    "usually `manifest.json` + preprocess `.npz` must sit next to the input YAML (enable preprocess auto/boltz/native), and you need a tch-enabled `boltr` build for diffusion.",
+                );
+            }
+        }
+        Some(other) => {
+            s.push_str(&format!(" Completion status: {other}."));
+            if let Some(n) = completion_note.filter(|x| !x.is_empty()) {
+                s.push(' ');
+                s.push_str(n);
+            }
+        }
+        None => {
+            s.push_str(
+                " No `boltr_predict_complete.txt` JSON was parsed, or the run did not reach the structure writer (see log_tail).",
+            );
+        }
+    }
+    s
+}
+
+/// Scan `out_dir` after a predict run for mmCIF/PDB outputs and `boltr_predict_complete.txt`.
+pub fn inspect_predict_output(out_dir: &Path) -> PredictOutputInspect {
+    if !out_dir.is_dir() {
+        return PredictOutputInspect {
+            structure_paths: Vec::new(),
+            structure_message: "Output directory is missing or not a directory.".to_string(),
+            completion_status: None,
+            completion_note: None,
+        };
+    }
+
+    let mut raw_paths = Vec::new();
+    collect_structure_files(out_dir, &mut raw_paths);
+    raw_paths.sort();
+    let structure_paths: Vec<String> = raw_paths
+        .into_iter()
+        .filter_map(|p| {
+            p.canonicalize()
+                .ok()
+                .map(|c| c.to_string_lossy().into_owned())
+        })
+        .collect();
+
+    let mut markers = Vec::new();
+    collect_named_files(out_dir, "boltr_predict_complete.txt", &mut markers);
+    markers.sort();
+
+    let mut completion_status = None;
+    let mut completion_note = None;
+    for m in &markers {
+        if let Some((st, note)) = parse_completion_json(m) {
+            completion_status = Some(st);
+            completion_note = Some(note);
+            break;
+        }
+    }
+
+    let structure_message = build_structure_message(
+        &structure_paths,
+        completion_status.as_deref(),
+        completion_note.as_deref(),
+    );
+
+    PredictOutputInspect {
+        structure_paths,
+        structure_message,
+        completion_status,
+        completion_note,
+    }
+}
+
 /// Create `out_dir` as `.tar.gz` bytes (top-level folder `output/` in archive).
 pub fn tarball_out_dir(out_dir: &Path) -> anyhow::Result<Vec<u8>> {
     let enc = GzEncoder::new(Vec::new(), Compression::default());
@@ -753,5 +941,32 @@ mod tests {
             ..Default::default()
         };
         assert!(preprocess_preflight(Path::new("/no/such/file.yaml"), &mut opts).is_ok());
+    }
+
+    #[test]
+    fn inspect_predict_output_finds_cif() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rec = tmp.path().join("rec1");
+        std::fs::create_dir_all(&rec).unwrap();
+        std::fs::write(rec.join("rec1_model_0.cif"), b"data_x").unwrap();
+        let i = inspect_predict_output(tmp.path());
+        assert_eq!(i.structure_paths.len(), 1);
+        assert!(i.structure_message.contains("Found 1"));
+    }
+
+    #[test]
+    fn inspect_predict_output_pipeline_complete_explains_missing_structure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rec = tmp.path().join("rec1");
+        std::fs::create_dir_all(&rec).unwrap();
+        std::fs::write(
+            rec.join("boltr_predict_complete.txt"),
+            r#"{"status":"pipeline_complete","note":"test note"}"#,
+        )
+        .unwrap();
+        let i = inspect_predict_output(tmp.path());
+        assert!(i.structure_paths.is_empty());
+        assert_eq!(i.completion_status.as_deref(), Some("pipeline_complete"));
+        assert!(i.structure_message.contains("test note"));
     }
 }
