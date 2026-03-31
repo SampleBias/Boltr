@@ -70,6 +70,49 @@ fn command_is_runnable(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
 
+/// Repo root from `BOLTR_REPO` or from `BOLTR` pointing at `…/target/release/boltr`.
+fn repo_root_hint() -> Option<PathBuf> {
+    if let Ok(r) = std::env::var("BOLTR_REPO") {
+        let p = PathBuf::from(r);
+        if p.join("Cargo.toml").is_file() {
+            return Some(p);
+        }
+    }
+    if let Ok(b) = std::env::var("BOLTR") {
+        let p = PathBuf::from(b);
+        let repo = p.parent()?.parent()?.parent()?;
+        if repo.join("Cargo.toml").is_file() {
+            return Some(repo.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Run `shutil.which('boltz')` with `venv/bin` prepended to `PATH` (finds console scripts when boltr-web's PATH omits the venv).
+fn shutil_which_boltz_with_venv_bin(py: &Path) -> Option<PathBuf> {
+    let bin_dir = py.parent()?;
+    let path = std::env::var("PATH").unwrap_or_default();
+    let combined = format!("{}:{}", bin_dir.display(), path);
+    let out = std::process::Command::new(py)
+        .env("PATH", combined)
+        .args(["-c", "import shutil; print(shutil.which('boltz') or '')"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from(&s);
+    if p.is_file() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
 /// Search common install locations when `boltz` is not on `PATH` (repo `.venv`, pip user, conda, etc.).
 fn discover_boltz_executable() -> Option<PathBuf> {
     if let Some(h) = dirs::home_dir() {
@@ -90,11 +133,17 @@ fn discover_boltz_executable() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    if let Ok(repo) = std::env::var("BOLTR_REPO") {
+    if let Some(repo) = repo_root_hint() {
         for sub in [".venv/bin/boltz", "venv/bin/boltz"] {
-            let p = PathBuf::from(&repo).join(sub);
+            let p = repo.join(sub);
             if p.is_file() {
                 return Some(p);
+            }
+        }
+        let py = repo.join(".venv/bin/python");
+        if py.is_file() {
+            if let Some(b) = shutil_which_boltz_with_venv_bin(&py) {
+                return Some(b);
             }
         }
     }
@@ -108,6 +157,11 @@ fn discover_boltz_executable() -> Option<PathBuf> {
         }
         if !d.pop() {
             break;
+        }
+    }
+    if let Some(py) = find_venv_python() {
+        if let Some(b) = shutil_which_boltz_with_venv_bin(&py) {
+            return Some(b);
         }
     }
     None
@@ -133,7 +187,7 @@ fn resolve_boltz_for_preprocess(opts: &mut PredictCliOptions) -> Result<(), Stri
         }
     }
     Err(
-        "Boltz preprocess: could not find the upstream `boltz` executable (checked PATH, ~/.local/bin/boltz, $CONDA_PREFIX/bin, $VIRTUAL_ENV/bin, BOLTR_REPO .venv, and .venv/venv walking up from cwd). Install with pip/conda, activate the env, or set BOLTR_BOLTZ_COMMAND or the Web UI Bolt command field.".to_string(),
+        "Boltz preprocess: could not find the upstream `boltz` executable. Install: `pip install boltz` (or conda) into your dev venv, then ensure `BOLTR` points at `…/target/release/boltr` so the server can locate `…/repo/.venv/bin/boltz`, or set `BOLTR_REPO` to the repo root, or set `BOLTR_BOLTZ_COMMAND` / Web UI Bolt command to the full path to `boltz`.".to_string(),
     )
 }
 
