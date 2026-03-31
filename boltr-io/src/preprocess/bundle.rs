@@ -9,6 +9,21 @@ use anyhow::{bail, Context, Result};
 
 use crate::inference_dataset::{msa_id_for_path, msa_id_is_active, parse_manifest_path};
 
+/// Structure `.npz` next to `manifest.json` (legacy) or under `structures/` (current upstream Boltz).
+fn structure_npz_path(manifest_parent: &Path, record_id: &str) -> Option<PathBuf> {
+    let flat = manifest_parent.join(format!("{record_id}.npz"));
+    if flat.is_file() {
+        return Some(flat);
+    }
+    let nested = manifest_parent
+        .join("structures")
+        .join(format!("{record_id}.npz"));
+    if nested.is_file() {
+        return Some(nested);
+    }
+    None
+}
+
 /// Copy (or symlink) preprocess files from `manifest_parent` (directory containing `manifest.json`)
 /// into `dest_dir`. Includes structure `{id}.npz`, MSA `{msa_id}.npz`, optional `{id}_{template}.npz`,
 /// optional constraints `{id}.npz`.
@@ -32,8 +47,7 @@ pub fn copy_flat_preprocess_bundle(
 
     for rec in &manifest.records {
         let id = &rec.id;
-        let structure = manifest_parent.join(format!("{id}.npz"));
-        if structure.is_file() {
+        if let Some(structure) = structure_npz_path(manifest_parent, id) {
             copy_or_link(
                 &structure,
                 &dest_dir.join(format!("{id}.npz")),
@@ -46,7 +60,12 @@ pub fn copy_flat_preprocess_bundle(
                 continue;
             }
             let fname = msa_id_for_path(&chain.msa_id)?;
-            let msa_src = manifest_parent.join(format!("{fname}.npz"));
+            let flat = manifest_parent.join(format!("{fname}.npz"));
+            let msa_src = if flat.is_file() {
+                flat
+            } else {
+                manifest_parent.join("msa").join(format!("{fname}.npz"))
+            };
             if msa_src.is_file() {
                 copy_or_link(
                     &msa_src,
@@ -58,11 +77,17 @@ pub fn copy_flat_preprocess_bundle(
 
         if let Some(templates) = &rec.templates {
             for t in templates {
-                let tmpl = manifest_parent.join(format!("{}_{}.npz", rec.id, t.name));
+                let name = format!("{}_{}.npz", rec.id, t.name);
+                let flat = manifest_parent.join(&name);
+                let tmpl = if flat.is_file() {
+                    flat
+                } else {
+                    manifest_parent.join("templates").join(&name)
+                };
                 if tmpl.is_file() {
                     copy_or_link(
                         &tmpl,
-                        &dest_dir.join(format!("{}_{}.npz", rec.id, t.name)),
+                        &dest_dir.join(&name),
                         use_symlink,
                     )?;
                 }
@@ -107,9 +132,16 @@ fn copy_or_link(src: &Path, dst: &Path, symlink: bool) -> Result<()> {
 }
 
 /// Search `staging_dir` for a `manifest.json` that belongs to `yaml_stem` (input file stem).
-/// Preference order: `processed/{stem}/manifest.json`, then any `processed/**/manifest.json` whose parent ends with `stem`,
-/// then first `manifest.json` found under `staging_dir` with a sibling `{record_id}.npz` for the first record.
+/// Preference order: `boltz_results_{stem}/processed/manifest.json` (upstream Boltz ≥2 layout),
+/// `processed/{stem}/manifest.json`, then any `processed/**/manifest.json` with a structure `.npz`,
+/// then first `manifest.json` found under `staging_dir` with structure npz for the first record.
 pub fn find_boltz_manifest_path(staging_dir: &Path, yaml_stem: &str) -> Result<PathBuf> {
+    let boltz_results = staging_dir.join(format!("boltz_results_{yaml_stem}"));
+    let br_manifest = boltz_results.join("processed").join("manifest.json");
+    if br_manifest.is_file() {
+        return Ok(br_manifest);
+    }
+
     let direct = staging_dir.join("processed").join(yaml_stem).join("manifest.json");
     if direct.is_file() {
         return Ok(direct);
@@ -158,7 +190,7 @@ fn find_manifest_with_structure_npz_inner(
             if let Ok(m) = parse_manifest_path(&p) {
                 if let Some(r) = m.records.first() {
                     let parent = p.parent().unwrap();
-                    if parent.join(format!("{}.npz", r.id)).is_file() {
+                    if structure_npz_path(parent, &r.id).is_some() {
                         return Ok(Some(p));
                     }
                 }
