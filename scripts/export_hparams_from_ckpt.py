@@ -3,7 +3,7 @@
 
 Deserializes into boltr-backend-tch Boltz2Hparams (unknown top-level keys go to serde flatten other).
 
-Requires: `pip install torch`
+Requires: `pip install torch`. Checkpoints that store **`omegaconf.DictConfig`** need **`pip install omegaconf`** (Boltz does); we convert those with `OmegaConf.to_container` before JSON.
 
 Example:
   python3 scripts/export_hparams_from_ckpt.py ~/.cache/boltz/boltz2_conf.ckpt \\
@@ -42,6 +42,13 @@ def main() -> int:
     def default(o):
         if o is None or isinstance(o, (bool, int, float, str)):
             return o
+        try:
+            from omegaconf import OmegaConf
+
+            if OmegaConf.is_config(o):
+                return default(OmegaConf.to_container(o, resolve=True))
+        except ImportError:
+            pass
         if isinstance(o, dict):
             return {k: default(v) for k, v in o.items()}
         if isinstance(o, (list, tuple)):
@@ -51,15 +58,13 @@ def main() -> int:
                 return o.item()
             except Exception:
                 pass
-        try:
-            from collections.abc import Mapping
+        from collections.abc import Mapping
 
-            if isinstance(o, Mapping) and not isinstance(o, (str, bytes)):
+        if isinstance(o, Mapping) and not isinstance(o, (str, bytes)):
+            try:
                 return {str(k): default(v) for k, v in o.items()}
-        except ImportError:
-            pass
-        if hasattr(o, "__dict__") and not isinstance(o, type):
-            return default(vars(o))
+            except RecursionError:
+                return str(o)
         return str(o)
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)

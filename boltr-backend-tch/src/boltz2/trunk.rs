@@ -441,7 +441,9 @@ impl TrunkV2 {
 
     /// Copy exported `s_init.weight` into this trunk (`[token_s, token_s]`).
     pub fn load_s_init_weight(&mut self, w: &Tensor) {
-        self.s_init.ws.copy_(w);
+        tch::no_grad(|| {
+            let _ = self.s_init.ws.copy_(w);
+        });
     }
 }
 
