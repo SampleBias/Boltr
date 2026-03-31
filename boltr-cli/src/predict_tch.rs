@@ -51,7 +51,7 @@ fn tensor_xyz_to_vec(t: &Tensor) -> Vec<[f32; 3]> {
     v
 }
 
-/// When `manifest.json` + preprocess `.npz` live next to the the input YAML, run collate → `predict_step` → structure writer.
+/// When `manifest.json` + preprocess `.npz` live next to the input YAML, run collate → `predict_step` → structure writer.
 fn try_predict_from_preprocess(
     input_path: &Path,
     out_dir: &Path,
@@ -61,61 +61,13 @@ fn try_predict_from_preprocess(
     affinity: bool,
     use_potentials: bool,
 ) -> Result<Option<String>> {
-    // Check for manifest in multiple locations: parent of input YAML AND staging directory
-    let yaml_parent = match input_path.parent() {
-        Some(p) => p,
-        None => Path::new("."),
+    let Some(parent) = input_path.parent() else {
+        return Ok(None);
     };
-    
-    // Try parent directory of input YAML first
-    let manifest_path = yaml_parent.join("manifest.json");
-    if manifest_path.is_file() {
-        tracing::info!(
-            yaml_parent = %yaml_parent.display(),
-            "found manifest.json in input YAML directory"
-        );
-    return try_predict_from_bundle_path(
-            &yaml_parent,
-            out_dir,
-            output_format,
-            model,
-            resolved,
-            affinity,
-            use_potentials,
-        );
+    let manifest_path = parent.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Ok(None);
     }
-    
-    // Try staging directory (where Boltz writes when --preprocess is used)
-    let staging_dir = match &resolved {
-        Ok(args) => args.preprocess_staging.as_deref().map(PathBuf::from),
-        None => {
-            // No staging dir from YAML args; don't search
-            return Ok(None);
-        }
-    };
-    
-    let manifest_path = staging_dir.join("manifest.json");
-    if manifest_path.is_file() {
-        tracing::info!(
-            staging_dir = %staging_dir.display(),
-            "found manifest.json in staging directory"
-        );
-        return try_predict_from_bundle_path(
-            &staging_dir,
-            out_dir,
-            output_format,
-            model,
-            resolved,
-            affinity,
-            use_potentials,
-        );
-    }
-    
-    tracing::warn!(
-        "manifest.json not found in input parent directory or staging directory; \
-         input.yaml: {} (input_path.display())",
-    );
-    Ok(None)
     if affinity {
         tracing::info!(
             "--affinity: native preprocess bridge expects non-affinity `{{id}}.npz`; skipping bridge"
@@ -404,7 +356,7 @@ fn resolve_affinity_checkpoint(
 fn write_prediction_outputs(
     out_dir: &Path,
     record_id: &str,
-    output_format: OutputFormat,
+    _output_format: OutputFormat,
     _write_full_pae: bool,
     _write_full_pde: bool,
 ) -> Result<()> {
@@ -535,7 +487,7 @@ async fn try_model_spike(
         }
     }
 
-    let token_z = model.token_z();
+    let _token_z = model.token_z();
 
     // --- forward_s_init probe ---
     let probe = Tensor::randn(&[2, token_s], (Kind::Float, device));
@@ -639,7 +591,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         step_scale: _,
         output_format,
         max_msa_seqs: _,
-        num_samples,
+        num_samples: _,
         checkpoint,
         affinity_checkpoint,
         affinity_mw_correction: _,
