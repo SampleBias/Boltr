@@ -418,7 +418,15 @@ pub fn build_predict_argv(
 }
 
 async fn push_log(logs: &Arc<Mutex<Vec<String>>>, line: String) {
-    let line = line.trim_end_matches('\n').to_string();
+    // SSE `data:` fields and some clients reject embedded CR/LF; `lines()` keeps `\r` from CRLF.
+    let line: String = line
+        .chars()
+        .map(|c| match c {
+            '\n' | '\r' => ' ',
+            _ => c,
+        })
+        .collect();
+    let line = line.trim_end().to_string();
     if line.is_empty() {
         return;
     }
