@@ -23,9 +23,9 @@ use crate::prereq::{find_venv_python, resolve_cache_dir};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PreprocessMode {
     /// No bundle generation.
-    #[default]
     Off,
     /// Rust native when eligible, else Boltz if available.
+    #[default]
     Auto,
     /// Upstream Boltz subprocess + copy bundle next to YAML.
     Boltz,
@@ -324,7 +324,7 @@ pub fn build_predict_argv(
     }
     if let Some(ref f) = opts.output_format {
         let f = f.trim().to_lowercase();
-        if f == "mmcif" || f == "pdb" {
+        if f == "mmcif" || f == "pdb" || f == "both" {
             args.push("--output-format".to_string());
             args.push(f);
         }
@@ -842,6 +842,7 @@ mod tests {
     fn build_predict_argv_minimal() {
         let opts = PredictCliOptions {
             device: "cpu".to_string(),
+            preprocess: PreprocessMode::Off,
             ..Default::default()
         };
         let args = build_predict_argv(
@@ -863,6 +864,22 @@ mod tests {
                 "/cache",
             ]
         );
+    }
+
+    #[test]
+    fn build_predict_argv_default_includes_preprocess_auto() {
+        let opts = PredictCliOptions {
+            device: "cpu".to_string(),
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in/a.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        let i = args.iter().position(|a| a == "--preprocess").unwrap();
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("auto"));
     }
 
     #[test]
@@ -893,6 +910,7 @@ mod tests {
     fn build_predict_argv_preprocess_off_omits_flag() {
         let opts = PredictCliOptions {
             device: "cpu".to_string(),
+            preprocess: PreprocessMode::Off,
             ..Default::default()
         };
         let args = build_predict_argv(

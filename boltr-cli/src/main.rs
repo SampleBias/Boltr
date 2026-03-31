@@ -67,13 +67,13 @@ impl Default for OutputFormat {
     }
 }
 
-/// Optional preprocess before `predict` when `manifest.json` is missing next to the YAML.
+/// Optional preprocess before `predict` when the bundle beside the YAML is missing or incomplete.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
 enum PreprocessCli {
     /// Do not generate a preprocess bundle.
-    #[default]
     Off,
     /// Prefer Rust native bundle for protein-only YAML; else try upstream Boltz if on `PATH`.
+    #[default]
     Auto,
     /// Run upstream `boltz predict` in a staging dir and copy `manifest.json` + `.npz` next to the YAML.
     Boltz,
@@ -210,8 +210,8 @@ enum Commands {
         #[arg(long)]
         spike_only: bool,
 
-        /// When `manifest.json` is missing next to the input YAML, generate a preprocess bundle first.
-        #[arg(long, value_enum, default_value_t = PreprocessCli::Off)]
+        /// When the preprocess bundle beside the YAML is missing or incomplete, generate it first (recommended for structure output).
+        #[arg(long, value_enum, default_value_t = PreprocessCli::Auto)]
         preprocess: PreprocessCli,
 
         /// Upstream Boltz executable for `--preprocess boltz` / `--preprocess auto` fallback.

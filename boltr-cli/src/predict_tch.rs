@@ -177,6 +177,8 @@ fn try_write_preprocess_reference_structure(
         }
     };
 
+    // `--affinity` expects `pre_affinity_{id}.npz`; native/Boltz preprocess usually emits flat `{id}.npz`.
+    // Fall back to the flat bundle so users still get a reference .cif/.pdb when affinity layout is absent.
     let inference_input = match load_input(
         record,
         &preprocess_dir,
@@ -187,6 +189,41 @@ fn try_write_preprocess_reference_structure(
         affinity,
     ) {
         Ok(i) => i,
+        Err(e) if affinity => {
+            let flat = preprocess_dir.join(format!("{}.npz", record.id));
+            if !flat.is_file() {
+                tracing::warn!(
+                    error = %e,
+                    dir = %preprocess_dir.display(),
+                    record_id = %record.id,
+                    "preprocess reference export: load_input failed (affinity expects pre_affinity npz; no flat structure npz for fallback)",
+                );
+                return Ok(None);
+            }
+            tracing::info!(
+                record_id = %record.id,
+                "preprocess reference export: using flat preprocess bundle (--affinity without pre_affinity npz)"
+            );
+            match load_input(
+                record,
+                &preprocess_dir,
+                &preprocess_dir,
+                None,
+                None,
+                None,
+                false,
+            ) {
+                Ok(i) => i,
+                Err(e2) => {
+                    tracing::warn!(
+                        error = %e2,
+                        dir = %preprocess_dir.display(),
+                        "preprocess reference export: load_input failed after affinity fallback"
+                    );
+                    return Ok(None);
+                }
+            }
+        }
         Err(e) => {
             tracing::warn!(
                 error = %e,

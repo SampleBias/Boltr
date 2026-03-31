@@ -1,0 +1,35 @@
+{
+  "records": [
+    {
+      "id": "minimal_protein",
+      "structure": {
+        "resolution": null,
+        "method": null,
+        "deposited": null,
+        "released": null,
+        "revised": null,
+        "num_chains": null,
+        "num_interfaces": null,
+        "pH": null,
+        "temperature": null
+      },
+      "chains": [
+        {
+          "chain_id": 0,
+          "chain_name": "A",
+          "mol_type": 0,
+          "cluster_id": 0,
+          "msa_id": 0,
+          "num_residues": 1,
+          "valid": true,
+          "entity_id": null
+        }
+      ],
+      "interfaces": [],
+      "inference_options": null,
+      "templates": null,
+      "md": null,
+      "affinity": null
+    }
+  ]
+}
