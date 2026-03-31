@@ -117,6 +117,8 @@ Everything below is spelled out in [`DEVELOPMENT.md`](DEVELOPMENT.md) and [`QUIC
 bash scripts/bootstrap_webui_env.sh
 ```
 
+**Extended bootstrap** (runs the above, optional VarStore verify, cargo tests, and writes `boltr_go_bootstrap.json` for **boltr-web**): `./Boltr_Boltz_bootstrap` from the repo root (alias: `./Boltr_go`). This stages **Boltz2 model weights** in `BOLTZ_CACHE`; it does **not** install the Python **`boltz`** CLI used for `--preprocess boltz` (templates/constraints).
+
 See [`QUICKSTART.md`](QUICKSTART.md) for **`boltr doctor`**, **`BOLTR`**, and **`with_dev_venv.sh`** when running **`boltr-web`**.
 
 ---

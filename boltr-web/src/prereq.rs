@@ -33,7 +33,7 @@ pub struct FileCheck {
     pub note: Option<String>,
 }
 
-/// Written by [`scripts/write_boltr_go_bootstrap_json.py`] after `./Boltr_go` completes.
+/// Written by `scripts/write_boltr_go_bootstrap_json.py` after repo-root `Boltr_Boltz_bootstrap` completes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoltrGoBootstrap {
     #[serde(default)]
@@ -84,7 +84,7 @@ pub struct StatusResponse {
     pub environment_ready: bool,
     /// `true` when preprocess bridge inputs could work (manifest + npz checks are per-upload).
     pub notes: Vec<String>,
-    /// Present when `./Boltr_go` (or the writer script) left `boltr_go_bootstrap.json` in the cache dir.
+    /// Present when `./Boltr_Boltz_bootstrap` / `./Boltr_go` (or the writer script) left `boltr_go_bootstrap.json` in the cache dir.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boltr_go_bootstrap: Option<BoltrGoBootstrap>,
 }

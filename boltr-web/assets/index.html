@@ -147,7 +147,7 @@ ___</pre>
       <p>Where <code>boltr download</code> / checkpoints live (<code>boltz2_conf.safetensors</code>, <code>ccd.pkl</code>, <code>mols.tar</code>, …). Same as <code>boltr predict --cache-dir</code>.</p>
       <p><strong>Blank</strong> → <code>BOLTZ_CACHE</code>, else <code>~/.cache/boltr</code>.</p>
       <p><strong>LibTorch probe:</strong> set <code>BOLTR</code> to your tch-enabled <code>boltr</code> binary (e.g. <code>…/target/release/boltr</code>) so status can run <code>boltr doctor --json</code>, or install <code>boltr</code> on <code>PATH</code>.</p>
-      <p><strong>Boltr_go:</strong> running <code>./Boltr_go</code> downloads assets, exports safetensors, optionally verifies keys and runs tests, then writes <code>boltr_go_bootstrap.json</code> in the cache dir. Refresh status below to see that record.</p>
+      <p><strong>Boltz model bootstrap (<code>Boltr_Boltz_bootstrap</code>):</strong> run <code>./Boltr_Boltz_bootstrap</code> (or legacy <code>./Boltr_go</code>) from the repo root to download Boltz2 weights into the cache, export safetensors, optionally verify keys and run tests, then write <code>boltr_go_bootstrap.json</code>. This is <em>not</em> the Python <code>boltz</code> preprocessor for templates/constraints; install that CLI separately for <code>--preprocess boltz</code>. Refresh status below to see the bootstrap record.</p>
       <pre class="example" tabindex="0">/home/YOURUSER/.cache/boltr</pre>
     </div>
     <div class="row">
@@ -161,7 +161,7 @@ ___</pre>
       <span class="pill" id="cachePill"></span>
       <span class="pill" id="cacheReadyPill"></span>
       <span class="pill" id="envPill"></span>
-      <span class="pill" id="bootstrapPill" title="Boltr_go bootstrap status (see below)"></span>
+      <span class="pill" id="bootstrapPill" title="Boltr_Boltz_bootstrap status (see below)"></span>
     </div>
     <div id="statusMount"></div>
   </section>
@@ -304,14 +304,14 @@ ___</pre>
         if (data.boltr_go_bootstrap) {
           const b = data.boltr_go_bootstrap;
           const t = (b.completed_at || "").replace("T", " ").slice(0, 19);
-          bsp.textContent = t ? "Boltr_go " + t + " UTC" : "Boltr_go ✓";
+          bsp.textContent = t ? "Boltz bootstrap " + t + " UTC" : "Boltz bootstrap ✓";
           const stepsOk =
             b.download_ok &&
             (b.verify_skipped || b.verify_safetensors_ok === true) &&
             (b.tests_skipped || b.tests_ok === true);
           bsp.className = "pill " + (stepsOk ? "ready" : "not-ready");
         } else {
-          bsp.textContent = "no Boltr_go record";
+          bsp.textContent = "no bootstrap record";
           bsp.className = "pill not-ready";
         }
       }
@@ -330,7 +330,7 @@ ___</pre>
         if (b.tests_skipped) bits.push("tests skipped");
         else if (b.tests_ok) bits.push("cargo tests");
         bootstrapHtml =
-          `<div class="help-box" style="margin-top:0.5rem"><p class="notes"><strong>Boltr_go</strong> — <code>${esc(b.completed_at)}</code>` +
+          `<div class="help-box" style="margin-top:0.5rem"><p class="notes"><strong>Boltr_Boltz_bootstrap</strong> - <code>${esc(b.completed_at)}</code>` +
           (b.repo_root ? ` · repo <code>${esc(b.repo_root)}</code>` : "") +
           `</p><p class="notes">Steps: ${esc(bits.join(", "))}. Status file: <code>${esc(data.cache_dir + "/boltr_go_bootstrap.json")}</code></p></div>`;
       }

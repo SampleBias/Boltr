@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Boltz2 model cache + dev env bootstrap for Boltr (Rust inference).
+#
+# This downloads Boltz2 checkpoints into BOLTZ_CACHE, exports .safetensors, runs verify/tests,
+# and writes boltr_go_bootstrap.json for boltr-web. It does NOT install the Python "boltz" CLI
+# used for --preprocess boltz (templates/constraints); install that separately on PATH or
+# use WebUI "Bolt command" with the full path to the boltz executable.
+#
+# From repo root:
+#   chmod +x Boltr_Boltz_bootstrap && ./Boltr_Boltz_bootstrap
+#   # Legacy alias: ./Boltr_go
+#
+# Uses POSIX [ tests so `sh ./Boltr_Boltz_bootstrap` works (no bash [[ required).
+#
+# Env:
+#   BOLTZ_CACHE          - model cache (default: ~/.cache/boltr); same as boltr --cache-dir
+#   BOLTR_GO_SKIP_TESTS  - set to 1 to skip cargo tests (faster iteration after first run)
+#   BOLTR_GO_SKIP_VERIFY - set to 1 to skip verify_boltz2_safetensors (if checkpoint flags differ)
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
+export BOLTZ_CACHE="$CACHE"
+mkdir -p "$CACHE"
+CONF_SF="$CACHE/boltz2_conf.safetensors"
+
+echo "==> Boltr_Boltz_bootstrap: model cache directory: $CACHE"
+if [ ! -f "$CACHE/boltz2_conf.ckpt" ] && [ ! -f "$CACHE/boltz2_conf.safetensors" ]; then
+  echo "    (no boltz2 checkpoints in cache yet - bootstrap will download and export)"
+elif [ -f "$CACHE/boltz2_conf.ckpt" ] && [ ! -f "$CONF_SF" ]; then
+  echo "    (found .ckpt - bootstrap will export .safetensors if needed)"
+else
+  echo "    (cache already has boltz2 assets; bootstrap still runs download/export steps)"
+fi
+
+echo "==> Boltr_Boltz_bootstrap: prerequisite hints (non-fatal)"
+bash scripts/check_tch_prereqs.sh || true
+
+echo
+echo "==> Boltr_Boltz_bootstrap: venv, build, download, Lightning -> safetensors, boltr doctor"
+bash scripts/bootstrap_webui_env.sh
+
+VERIFY_OK=0
+VERIFY_SKIP=0
+TESTS_OK=0
+TESTS_SKIP=0
+
+if [ "${BOLTR_GO_SKIP_VERIFY:-}" = "1" ]; then
+  echo
+  echo "==> Boltr_Boltz_bootstrap: skipping verify (BOLTR_GO_SKIP_VERIFY=1)"
+  VERIFY_SKIP=1
+elif [ ! -f "$CONF_SF" ]; then
+  echo
+  echo "==> Boltr_Boltz_bootstrap: VarStore verify skipped - missing $CONF_SF (re-run boltr download or export manually)" >&2
+  VERIFY_SKIP=1
+else
+  echo
+  echo "==> Boltr_Boltz_bootstrap: VarStore keys vs $CONF_SF"
+  # Defaults match Boltz-2 trunk export; add --bond-type-feature / --blocks if your ckpt differs (DEVELOPMENT.md).
+  scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- "$CONF_SF"
+  VERIFY_OK=1
+fi
+
+if [ "${BOLTR_GO_SKIP_TESTS:-}" != "1" ]; then
+  echo
+  echo "==> Boltr_Boltz_bootstrap: boltr-io tests (no LibTorch)"
+  cargo test -p boltr-io
+
+  echo
+  echo "==> Boltr_Boltz_bootstrap: boltr-cli integration tests (default features; exercises predict/doctor/msa/tokens CLIs)"
+  cargo test -p boltr-cli
+
+  echo
+  echo "==> Boltr_Boltz_bootstrap: boltr-backend-tch library tests (tch)"
+  scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib
+  TESTS_OK=1
+else
+  echo
+  echo "==> Boltr_Boltz_bootstrap: skipping tests (BOLTR_GO_SKIP_TESTS=1)"
+  TESTS_SKIP=1
+fi
+
+echo
+python3 "$ROOT/scripts/write_boltr_go_bootstrap_json.py" \
+  --cache-dir "$CACHE" \
+  --repo-root "$ROOT" \
+  --download-ok 1 \
+  --verify-ok "${VERIFY_OK:-0}" \
+  --verify-skipped "${VERIFY_SKIP:-0}" \
+  --tests-ok "${TESTS_OK:-0}" \
+  --tests-skipped "${TESTS_SKIP:-0}"
+
+echo
+echo "Boltr_Boltz_bootstrap finished OK."
+echo "  Status JSON: $CACHE/boltr_go_bootstrap.json (shown in boltr-web after Refresh status)"
+echo "  boltr:     $ROOT/target/release/boltr"
+echo "  boltr-web: $ROOT/scripts/with_dev_venv.sh $ROOT/target/release/boltr-web"
+echo "  export BOLTR=$ROOT/target/release/boltr   # for boltr-web status probes"
