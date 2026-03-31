@@ -26,6 +26,7 @@ pub mod msa;
 pub mod msa_csv;
 pub mod msa_npz;
 pub mod pad;
+pub mod preprocess;
 pub mod parser;
 pub mod ref_atoms;
 pub mod residue_constraints;
@@ -126,6 +127,10 @@ pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EX
 pub use msa::{write_a3m, MsaProcessor};
 pub use parser::parse_input_path as parse_input;
 pub use parser::{parse_input_path, parse_input_str};
+pub use preprocess::{
+    copy_flat_preprocess_bundle, find_boltz_manifest_path, validate_native_eligible,
+    write_native_preprocess_bundle, NativePreprocessError,
+};
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
 pub use write::{
     confidence_json_filename, pae_npz_filename, pde_npz_filename, plddt_npz_filename,

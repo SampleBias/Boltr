@@ -1,6 +1,7 @@
 //! `boltr` CLI — Rust-native Boltz2 inference.
 //!
-//! Commands: `predict`, `download`, `doctor`, `eval`, `msa-to-npz`, `tokens-to-npz`.
+//! Commands: `predict`, `download`, `doctor`, `eval`, `msa-to-npz`, `tokens-to-npz`,
+//! `preprocess` (Boltz Tier 1 or native Tier 2 bundle next to YAML).
 //!
 //! The `predict` command mirrors the upstream `boltz predict` interface and output layout
 //! ([boltz-reference/docs/prediction.md](../../boltz-reference/docs/prediction.md)).
@@ -17,6 +18,8 @@ mod doctor;
 mod collate_predict_bridge;
 #[cfg(feature = "tch")]
 mod predict_tch;
+
+mod preprocess_cmd;
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -59,6 +62,20 @@ impl Default for OutputFormat {
     fn default() -> Self {
         OutputFormat::Mmcif
     }
+}
+
+/// Optional preprocess before `predict` when `manifest.json` is missing next to the YAML.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+enum PreprocessCli {
+    /// Do not generate a preprocess bundle.
+    #[default]
+    Off,
+    /// Prefer Rust native bundle for protein-only YAML; else try upstream Boltz if on `PATH`.
+    Auto,
+    /// Run upstream `boltz predict` in a staging dir and copy `manifest.json` + `.npz` next to the YAML.
+    Boltz,
+    /// Rust-only protein-only bundle (placeholder coordinates); see `docs/PREPROCESS_NATIVE.md`.
+    Native,
 }
 
 #[derive(Parser, Debug)]
@@ -189,6 +206,34 @@ enum Commands {
         /// Only run trunk/weight smoke test (`predict_step_trunk`); skip diffusion + writers.
         #[arg(long)]
         spike_only: bool,
+
+        /// When `manifest.json` is missing next to the input YAML, generate a preprocess bundle first.
+        #[arg(long, value_enum, default_value_t = PreprocessCli::Off)]
+        preprocess: PreprocessCli,
+
+        /// Upstream Boltz executable for `--preprocess boltz` / `--preprocess auto` fallback.
+        #[arg(long, default_value = "boltz")]
+        bolt_command: String,
+
+        /// Staging directory for `--preprocess boltz` (default: temp dir under `std::env::temp_dir()`).
+        #[arg(long)]
+        preprocess_staging: Option<PathBuf>,
+
+        /// Keep Boltz staging directory after `--preprocess boltz`.
+        #[arg(long, default_value_t = false)]
+        preprocess_keep_staging: bool,
+
+        /// Symlink instead of copy when materializing preprocess files next to the YAML.
+        #[arg(long, default_value_t = false)]
+        preprocess_symlink: bool,
+
+        /// Extra arguments forwarded to `boltz predict` (repeat flag for multiple args).
+        #[arg(long = "preprocess-bolt-arg")]
+        preprocess_bolt_arg: Vec<String>,
+
+        /// Record id for `--preprocess native` (`manifest.records[0].id`); default: YAML stem.
+        #[arg(long)]
+        preprocess_record_id: Option<String>,
     },
 
     /// Download model weights and static assets.
@@ -246,6 +291,55 @@ enum Commands {
         #[arg(long)]
         affinity_asym_id: Option<i32>,
     },
+
+    /// Generate Boltz-style preprocess bundle (`manifest.json` + `.npz`) next to a YAML file.
+    Preprocess {
+        /// Input `.yaml` / `.yml` (same directory receives the bundle).
+        input: PathBuf,
+
+        /// `boltz`: Tier 1 subprocess to upstream Boltz. `native`: Tier 2 Rust-only (proteins only).
+        #[arg(long, value_enum, default_value_t = PreprocessBundleMode::Boltz)]
+        mode: PreprocessBundleMode,
+
+        /// Boltz executable when `mode=boltz`.
+        #[arg(long, default_value = "boltz")]
+        bolt_command: String,
+
+        /// Staging directory for Boltz output (default: ephemeral temp dir).
+        #[arg(long)]
+        staging: Option<PathBuf>,
+
+        /// Keep staging directory after success.
+        #[arg(long, default_value_t = false)]
+        keep_staging: bool,
+
+        /// Symlink preprocess files instead of copying.
+        #[arg(long, default_value_t = false)]
+        symlink: bool,
+
+        /// Forward `--use_msa_server` to Boltz when `mode=boltz`.
+        #[arg(long, default_value_t = false)]
+        use_msa_server: bool,
+
+        /// Extra args for `boltz predict`.
+        #[arg(long = "bolt-arg")]
+        bolt_arg: Vec<String>,
+
+        /// Record id for `mode=native` (`manifest.records[0].id`).
+        #[arg(long)]
+        record_id: Option<String>,
+
+        /// Max MSA sequences when parsing `.a3m` for `mode=native`.
+        #[arg(long)]
+        max_msa_seqs: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+enum PreprocessBundleMode {
+    #[default]
+    Boltz,
+    Native,
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +400,13 @@ async fn main() -> Result<()> {
             write_full_pae,
             write_full_pde,
             spike_only,
+            preprocess,
+            bolt_command,
+            preprocess_staging,
+            preprocess_keep_staging,
+            preprocess_symlink,
+            preprocess_bolt_arg,
+            preprocess_record_id,
         } => {
             let cache = resolve_cache_dir(cache_dir.as_deref());
             let out_dir = Path::new(&output).to_path_buf();
@@ -339,6 +440,13 @@ async fn main() -> Result<()> {
                 write_full_pae,
                 write_full_pde,
                 spike_only,
+                preprocess,
+                bolt_command,
+                preprocess_staging,
+                preprocess_keep_staging,
+                preprocess_symlink,
+                preprocess_bolt_arg,
+                preprocess_record_id,
             })
             .await?;
         }
@@ -404,6 +512,37 @@ async fn main() -> Result<()> {
                 affinity_asym_id,
             )?;
         }
+
+        Commands::Preprocess {
+            input,
+            mode,
+            bolt_command,
+            staging,
+            keep_staging,
+            symlink,
+            use_msa_server,
+            bolt_arg,
+            record_id,
+            max_msa_seqs,
+        } => {
+            match mode {
+                PreprocessBundleMode::Boltz => preprocess_cmd::run_boltz_preprocess(
+                    &input,
+                    &bolt_command,
+                    staging,
+                    use_msa_server,
+                    &bolt_arg,
+                    symlink,
+                    keep_staging,
+                )?,
+                PreprocessBundleMode::Native => preprocess_cmd::run_native_preprocess(
+                    &input,
+                    record_id.as_deref(),
+                    max_msa_seqs,
+                    None,
+                )?,
+            }
+        }
     }
 
     Ok(())
@@ -442,6 +581,13 @@ struct PredictFlowArgs {
     write_full_pae: bool,
     write_full_pde: bool,
     spike_only: bool,
+    preprocess: PreprocessCli,
+    bolt_command: String,
+    preprocess_staging: Option<PathBuf>,
+    preprocess_keep_staging: bool,
+    preprocess_symlink: bool,
+    preprocess_bolt_arg: Vec<String>,
+    preprocess_record_id: Option<String>,
 }
 
 async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
@@ -473,6 +619,13 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         write_full_pae,
         write_full_pde,
         spike_only,
+        preprocess,
+        bolt_command,
+        preprocess_staging,
+        preprocess_keep_staging,
+        preprocess_symlink,
+        preprocess_bolt_arg,
+        preprocess_record_id,
     } = args;
 
     // 1. Parse input (YAML / FASTA / directory)
@@ -485,6 +638,11 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
 
     if affinity {
         tracing::info!("--affinity: affinity inference path active");
+        if matches!(preprocess, PreprocessCli::Native) {
+            tracing::warn!(
+                "--preprocess native does not emit pre_affinity npz; use Boltz preprocess or omit --affinity"
+            );
+        }
     }
     if use_potentials {
         if affinity {
@@ -500,6 +658,17 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     // 2. Create output directory
     tokio::fs::create_dir_all(&out_dir).await?;
 
+    let yaml_parent = input_path.parent().unwrap_or_else(|| Path::new("."));
+    let manifest_beside_yaml = yaml_parent.join("manifest.json");
+    let manifest_missing = !manifest_beside_yaml.is_file();
+    let msa_under_yaml_for_native = manifest_missing
+        && matches!(
+            preprocess,
+            PreprocessCli::Native | PreprocessCli::Auto
+        )
+        && use_msa_server
+        && boltr_io::validate_native_eligible(&parsed).is_ok();
+
     // 3. Optional MSA server fetch
     if use_msa_server {
         let need = parsed.protein_sequences_for_msa();
@@ -508,11 +677,80 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             let seqs: Vec<String> = need.iter().map(|(_, s)| s.clone()).collect();
             tracing::info!(n = seqs.len(), "fetching MSAs from server");
             let msas = proc.fetch_msas(&seqs, true, true).await?;
-            let msa_dir = out_dir.join("msa");
+            let msa_dir = if msa_under_yaml_for_native {
+                yaml_parent.join("msa")
+            } else {
+                out_dir.join("msa")
+            };
+            tokio::fs::create_dir_all(&msa_dir).await?;
             for ((chain_id, _), a3m) in need.iter().zip(msas.iter()) {
                 let path = msa_dir.join(format!("{chain_id}.a3m"));
                 boltr_io::write_a3m(&path, a3m)?;
                 tracing::info!(path = %path.display(), "wrote MSA");
+            }
+        }
+    }
+
+    // 3b. Optional preprocess bundle next to YAML (for `boltr predict` + `load_input` bridge)
+    if manifest_missing && preprocess != PreprocessCli::Off {
+        match preprocess {
+            PreprocessCli::Off => {}
+            PreprocessCli::Native => {
+                tracing::info!("--preprocess native: writing manifest + npz next to YAML");
+                let fetched = if use_msa_server {
+                    Some(yaml_parent.join("msa"))
+                } else {
+                    None
+                };
+                preprocess_cmd::run_native_preprocess(
+                    input_path,
+                    preprocess_record_id.as_deref(),
+                    Some(max_msa_seqs),
+                    fetched.as_deref(),
+                )?;
+            }
+            PreprocessCli::Boltz => {
+                tracing::info!("--preprocess boltz: running upstream Boltz");
+                preprocess_cmd::run_boltz_preprocess(
+                    input_path,
+                    &bolt_command,
+                    preprocess_staging.clone(),
+                    use_msa_server,
+                    &preprocess_bolt_arg,
+                    preprocess_symlink,
+                    preprocess_keep_staging,
+                )?;
+            }
+            PreprocessCli::Auto => {
+                if boltr_io::validate_native_eligible(&parsed).is_ok() {
+                    tracing::info!("--preprocess auto: using native protein-only bundle");
+                    let fetched = if use_msa_server {
+                        Some(yaml_parent.join("msa"))
+                    } else {
+                        None
+                    };
+                    preprocess_cmd::run_native_preprocess(
+                        input_path,
+                        preprocess_record_id.as_deref(),
+                        Some(max_msa_seqs),
+                        fetched.as_deref(),
+                    )?;
+                } else if which::which(&bolt_command).is_ok() {
+                    preprocess_cmd::run_boltz_preprocess(
+                        input_path,
+                        &bolt_command,
+                        preprocess_staging.clone(),
+                        use_msa_server,
+                        &preprocess_bolt_arg,
+                        preprocess_symlink,
+                        preprocess_keep_staging,
+                    )?;
+                } else {
+                    tracing::warn!(
+                        "--preprocess auto: YAML not native-eligible and `{bolt_command}` not runnable; \
+                         continue without preprocess bundle"
+                    );
+                }
             }
         }
     }

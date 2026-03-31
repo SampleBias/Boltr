@@ -172,6 +172,7 @@ ___</pre>
       <pre class="example" tabindex="0">/home/YOURUSER/Boltr/my-case</pre>
       <p class="notes" style="margin-top:0.45rem">Pick the same YAML file below; with a job folder set, validation reads that path on disk.</p>
       <p><strong>Assume MSA server</strong> — relax missing local <code>msa:</code> files (still blocks missing templates, bad manifest, cache).</p>
+      <p><strong>Preprocess bundle:</strong> run <code>boltr preprocess --mode native</code> or <code>--mode boltz</code> on the same machine so <code>manifest.json</code> + <code>.npz</code> sit next to your YAML, then point the job folder here. See <code>docs/PREPROCESS_NATIVE.md</code> in the repo.</p>
     </div>
     <div class="row">
       <label for="jobDir">Job folder</label>

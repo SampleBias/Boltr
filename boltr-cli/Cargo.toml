@@ -25,6 +25,7 @@ boltr-io = { path = "../boltr-io" }
 boltr-backend-tch = { path = "../boltr-backend-tch", optional = true }
 tch = { version = "0.16", optional = true }
 dirs.workspace = true
+which = "6"
 
 [features]
 # Enable `tch` for LibTorch-backed inference (requires LIBTORCH or LIBTORCH_USE_PYTORCH=1).

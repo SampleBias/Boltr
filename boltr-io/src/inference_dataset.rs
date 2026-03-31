@@ -277,7 +277,7 @@ impl TokenizeBoltz2Input for Boltz2Tokenizer {
     }
 }
 
-fn msa_id_for_path(msa_id: &Value) -> Result<String> {
+pub(crate) fn msa_id_for_path(msa_id: &Value) -> Result<String> {
     match msa_id {
         Value::Number(n) => Ok(n.to_string()),
         Value::String(s) => Ok(s.clone()),
@@ -285,7 +285,7 @@ fn msa_id_for_path(msa_id: &Value) -> Result<String> {
     }
 }
 
-fn msa_id_is_active(msa_id: &Value) -> bool {
+pub(crate) fn msa_id_is_active(msa_id: &Value) -> bool {
     match msa_id {
         Value::Number(n) => n.as_i64() != Some(-1),
         Value::String(s) => s != "-1",
