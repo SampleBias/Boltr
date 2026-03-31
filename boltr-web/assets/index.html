@@ -283,7 +283,7 @@ ___</pre>
       const m = $("predictPreprocess").value;
       if (m === "boltz" || m === "auto") {
         el.style.display = "block";
-        el.innerHTML = "<strong>Boltz CLI:</strong> needs the upstream <em>Python</em> <code>boltz</code> on this machine. Usually automatic if <code>boltz</code> is on <code>PATH</code> for <code>boltr-web</code>, or if the server sets env <code>BOLTR_BOLTZ_COMMAND</code> to its full path (no field to fill). Otherwise paste the path here. Not the Rust <code>boltr</code> binary.";
+        el.innerHTML = "<strong>Boltz CLI:</strong> the server tries <code>boltz</code> on <code>PATH</code>, then common install paths (venv next to the repo, conda, pip user, etc.). If still missing, set env <code>BOLTR_BOLTZ_COMMAND</code> or paste the path here. Not the Rust <code>boltr</code> binary.";
       } else if (m === "native") {
         el.style.display = "block";
         el.innerHTML = "<strong>Native:</strong> only for protein-only YAML with empty or absent <code>templates:</code>/<code>constraints:</code>. Complexes with real templates/constraints need <code>boltz</code> + Bolt command above.";

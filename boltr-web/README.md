@@ -17,7 +17,7 @@ scripts/with_dev_venv.sh ./target/release/boltr-web
 
 Set **`BOLTR=/path/to/target/release/boltr`** so status checks and predict use the same binary.
 
-For **`--preprocess boltz` / `auto`** (Python upstream Boltz), users normally need the `boltz` executable on `PATH` or the Web UI “Bolt command” field. To avoid per-user config, set once on the server: **`BOLTR_BOLTZ_COMMAND=/path/to/venv/bin/boltz`** (used when the form leaves Bolt command blank).
+For **`--preprocess boltz` / `auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv/bin/boltz`, and walking parents for `.venv/bin/boltz`). If found, it sets `--bolt-command` automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** once on the server or use the Web UI “Bolt command” field.
 
 ## API
 

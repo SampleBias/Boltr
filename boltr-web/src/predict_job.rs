@@ -70,19 +70,75 @@ fn command_is_runnable(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
 
-fn boltz_cli_available(opts: &PredictCliOptions) -> Result<(), String> {
+/// Search common install locations when `boltz` is not on `PATH` (repo `.venv`, pip user, conda, etc.).
+fn discover_boltz_executable() -> Option<PathBuf> {
+    if let Some(h) = dirs::home_dir() {
+        let p = h.join(".local/bin/boltz");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    if let Ok(v) = std::env::var("CONDA_PREFIX") {
+        let p = PathBuf::from(v).join("bin/boltz");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    if let Ok(v) = std::env::var("VIRTUAL_ENV") {
+        let p = PathBuf::from(v).join("bin/boltz");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    if let Ok(repo) = std::env::var("BOLTR_REPO") {
+        for sub in [".venv/bin/boltz", "venv/bin/boltz"] {
+            let p = PathBuf::from(&repo).join(sub);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    let mut d = std::env::current_dir().ok()?;
+    for _ in 0..12 {
+        for sub in [".venv/bin/boltz", "venv/bin/boltz"] {
+            let p = d.join(sub);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        if !d.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// Ensure upstream Boltz CLI can be spawned: use `PATH`, explicit `--bolt-command`, or auto-discover.
+fn resolve_boltz_for_preprocess(opts: &mut PredictCliOptions) -> Result<(), String> {
     let cmd = opts.bolt_command.as_deref().unwrap_or("boltz");
     if command_is_runnable(cmd) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Cannot run Boltz preprocess: nothing executable at {cmd:?}. Install upstream Boltz (PyPI/conda), put `boltz` on the server PATH, or set the Web UI \"Bolt command\" field to the full path (e.g. …/venv/bin/boltz). This is separate from the Boltr Rust binary."
-        ))
+        return Ok(());
     }
+    if opts.bolt_command.is_some() {
+        return Err(format!(
+            "Boltz preprocess: nothing executable at {cmd:?} (from form or BOLTR_BOLTZ_COMMAND). Fix the path or install upstream Boltz."
+        ));
+    }
+    if let Some(p) = discover_boltz_executable() {
+        let s = p.display().to_string();
+        opts.bolt_command = Some(s.clone());
+        if command_is_runnable(&s) {
+            info!(path = %s, "boltr-web: auto-selected boltz for --bolt-command");
+            return Ok(());
+        }
+    }
+    Err(
+        "Boltz preprocess: could not find the upstream `boltz` executable (checked PATH, ~/.local/bin/boltz, $CONDA_PREFIX/bin, $VIRTUAL_ENV/bin, BOLTR_REPO .venv, and .venv/venv walking up from cwd). Install with pip/conda, activate the env, or set BOLTR_BOLTZ_COMMAND or the Web UI Bolt command field.".to_string(),
+    )
 }
 
 /// Validate preprocess choices before spawning `boltr predict` (clear 400 instead of failing mid-job).
-pub fn preprocess_preflight(input_path: &Path, opts: &PredictCliOptions) -> Result<(), String> {
+pub fn preprocess_preflight(input_path: &Path, opts: &mut PredictCliOptions) -> Result<(), String> {
     match opts.preprocess {
         PreprocessMode::Off => Ok(()),
         PreprocessMode::Native => {
@@ -94,14 +150,14 @@ pub fn preprocess_preflight(input_path: &Path, opts: &PredictCliOptions) -> Resu
                 )
             })
         }
-        PreprocessMode::Boltz => boltz_cli_available(opts),
+        PreprocessMode::Boltz => resolve_boltz_for_preprocess(opts),
         PreprocessMode::Auto => {
             let input = boltr_io::parse_input_path(input_path)
                 .map_err(|e| format!("parse YAML: {e}"))?;
             if boltr_io::validate_native_eligible(&input).is_ok() {
                 return Ok(());
             }
-            boltz_cli_available(opts)
+            resolve_boltz_for_preprocess(opts)
         }
     }
 }
@@ -630,10 +686,10 @@ mod tests {
 
     #[test]
     fn preprocess_preflight_off_skips_checks() {
-        let opts = PredictCliOptions {
+        let mut opts = PredictCliOptions {
             preprocess: PreprocessMode::Off,
             ..Default::default()
         };
-        assert!(preprocess_preflight(Path::new("/no/such/file.yaml"), &opts).is_ok());
+        assert!(preprocess_preflight(Path::new("/no/such/file.yaml"), &mut opts).is_ok());
     }
 }

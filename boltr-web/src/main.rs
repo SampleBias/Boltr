@@ -454,7 +454,7 @@ async fn post_predict(
         }
     }
 
-    if let Err(msg) = preprocess_preflight(&input_path, &opts) {
+    if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
         let _ = tokio::fs::remove_dir_all(&base).await;
         return Err((StatusCode::BAD_REQUEST, msg));
     }
