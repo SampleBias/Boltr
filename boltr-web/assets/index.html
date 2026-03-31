@@ -198,7 +198,7 @@ ___</pre>
     <div class="help-box">
       <p>Runs <code>boltr predict</code> on this machine (needs <code>BOLTR</code> or <code>boltr</code> on <code>PATH</code>). Uses the same <strong>cache</strong> and <strong>job folder</strong> as above. Upload a YAML <em>or</em> set a job folder (uses <code>input.yaml</code> in that folder if no file is chosen).</p>
       <p><strong>Preprocess</strong> — if <code>manifest.json</code> is missing next to the YAML, choose <code>auto</code>, <code>native</code>, or <code>boltz</code> to generate a bundle first (same as <code>boltr predict --preprocess …</code>). <code>native</code> does not support affinity; use <code>boltz</code> or an existing preprocess bundle for <code>--affinity</code>.</p>
-      <p class="notes">Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
+      <p class="notes"><strong>Output format</strong> — structures are written as <code>.cif</code> (mmCIF) or <code>.pdb</code> per <code>boltr predict --output-format</code>. Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
     </div>
     <div class="row">
       <label for="predictDevice">Device</label>
@@ -215,6 +215,13 @@ ___</pre>
         <option value="auto">auto</option>
         <option value="native">native</option>
         <option value="boltz">boltz</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="predictOutputFormat">Output format</label>
+      <select id="predictOutputFormat" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
+        <option value="mmcif">mmcif (.cif)</option>
+        <option value="pdb">pdb</option>
       </select>
     </div>
     <div class="row">
@@ -397,6 +404,7 @@ ___</pre>
       if (jd) fd.append("job_dir", jd);
       fd.append("device", $("predictDevice").value);
       fd.append("preprocess", $("predictPreprocess").value);
+      fd.append("output_format", $("predictOutputFormat").value);
       if ($("predictUseMsaServer").checked) fd.append("use_msa_server", "1");
       if ($("predictAffinity").checked) fd.append("affinity", "1");
       if ($("predictOverride").checked) fd.append("override", "1");
