@@ -223,7 +223,7 @@ ___</pre>
       <label for="predictBoltCommand">Bolt command</label>
     </div>
     <div class="row">
-      <input type="text" id="predictBoltCommand" class="path-wide" placeholder="/path/to/venv/bin/boltz if boltz is not on PATH" autocomplete="off" spellcheck="false" title="--bolt-command: full path to upstream Boltz CLI (Python), not the boltr Rust binary" />
+      <input type="text" id="predictBoltCommand" class="path-wide" placeholder="optional if PATH or BOLTR_BOLTZ_COMMAND is set" autocomplete="off" spellcheck="false" title="--bolt-command: upstream Python boltz; admins can set env BOLTR_BOLTZ_COMMAND instead" />
     </div>
     <p id="predictPreprocessHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
@@ -283,7 +283,7 @@ ___</pre>
       const m = $("predictPreprocess").value;
       if (m === "boltz" || m === "auto") {
         el.style.display = "block";
-        el.innerHTML = "<strong>Boltz CLI:</strong> preprocess <code>boltz</code> / <code>auto</code> (when native cannot run) needs the upstream <em>Python</em> <code>boltz</code> executable on this machine. If <code>command -v boltz</code> fails in the shell where you start <code>boltr-web</code>, paste the full path here (e.g. <code>…/venv/bin/boltz</code>). This is not the Rust <code>boltr</code> binary.";
+        el.innerHTML = "<strong>Boltz CLI:</strong> needs the upstream <em>Python</em> <code>boltz</code> on this machine. Usually automatic if <code>boltz</code> is on <code>PATH</code> for <code>boltr-web</code>, or if the server sets env <code>BOLTR_BOLTZ_COMMAND</code> to its full path (no field to fill). Otherwise paste the path here. Not the Rust <code>boltr</code> binary.";
       } else if (m === "native") {
         el.style.display = "block";
         el.innerHTML = "<strong>Native:</strong> only for protein-only YAML with empty or absent <code>templates:</code>/<code>constraints:</code>. Complexes with real templates/constraints need <code>boltz</code> + Bolt command above.";

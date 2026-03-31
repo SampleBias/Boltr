@@ -417,6 +417,14 @@ async fn post_predict(
             opts.bolt_command = Some(t.to_string());
         }
     }
+    if opts.bolt_command.is_none() {
+        if let Ok(v) = std::env::var("BOLTR_BOLTZ_COMMAND") {
+            let t = v.trim();
+            if !t.is_empty() {
+                opts.bolt_command = Some(t.to_string());
+            }
+        }
+    }
     if let Some(p) = field_map.get("preprocess_staging") {
         let t = p.trim();
         if !t.is_empty() {
