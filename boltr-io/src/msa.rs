@@ -210,20 +210,20 @@ fn query_id_from_a3m_header(line: &str) -> Option<i32> {
 
 fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
     let mut current_m: Option<i32> = None;
-    let mut update_m = true;
     for mut line in text.lines() {
         if line.contains('\0') {
             line = line.trim_end_matches('\0');
-            update_m = true;
         }
         if line.is_empty() {
             continue;
         }
         let line_with_nl = format!("{line}\n");
-        if line.starts_with('>') && update_m {
+        // Every FASTA/A3M header line starts a new query block. The ColabFold API often
+        // returns multiple queries (101, 102, …) in one `uniref.a3m`; a previous `update_m`
+        // gate incorrectly treated only the first `>` as a header and merged the rest into 101.
+        if line.starts_with('>') {
             let id = query_id_from_a3m_header(line).unwrap_or(-1);
             current_m = Some(id);
-            update_m = false;
             out.entry(id).or_default().push(line_with_nl);
         } else if let Some(m) = current_m {
             out.entry(m).or_default().push(line_with_nl);
@@ -263,5 +263,19 @@ mod tests {
             m.contains_key(&102),
             "expected query id 102 when header has pipe-separated description"
         );
+    }
+
+    #[test]
+    fn parse_a3m_map_multi_query_one_uniref_file() {
+        // ColabFold tar often contains one `uniref.a3m` with multiple query blocks (PPI: 101 + 102).
+        let text = ">101\nACDE\n>102\nFGHI\n";
+        let mut m = HashMap::new();
+        parse_a3m_into_map(text, &mut m);
+        assert!(m.contains_key(&101));
+        assert!(m.contains_key(&102));
+        let s101 = m[&101].concat();
+        let s102 = m[&102].concat();
+        assert!(s101.contains(">101") && s101.contains("ACDE"));
+        assert!(s102.contains(">102") && s102.contains("FGHI"));
     }
 }
