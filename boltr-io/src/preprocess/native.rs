@@ -34,7 +34,10 @@ impl std::fmt::Display for NativePreprocessError {
             Self::LigandOrNucleicAcid => write!(f, "ligand/dna/rna entries are not supported"),
             Self::Modifications => write!(f, "protein `modifications:` are not supported"),
             Self::TemplatesOrConstraintsInYaml => {
-                write!(f, "`templates:` or `constraints:` blocks are not supported in native mode")
+                write!(
+                    f,
+                    "non-empty `templates:` or `constraints:` blocks are not supported in native mode; use Boltz preprocess or remove them"
+                )
             }
             Self::NoProteinChains => write!(f, "no protein sequences found"),
         }
@@ -45,10 +48,10 @@ impl std::error::Error for NativePreprocessError {}
 
 /// Validate YAML for native preprocess.
 pub fn validate_native_eligible(input: &BoltzInput) -> std::result::Result<(), NativePreprocessError> {
-    if input.templates.is_some() {
+    if input.templates.as_ref().is_some_and(|v| !v.is_empty()) {
         return Err(NativePreprocessError::TemplatesOrConstraintsInYaml);
     }
-    if input.constraints.is_some() {
+    if input.constraints.as_ref().is_some_and(|v| !v.is_empty()) {
         return Err(NativePreprocessError::TemplatesOrConstraintsInYaml);
     }
     let mut any_protein = false;

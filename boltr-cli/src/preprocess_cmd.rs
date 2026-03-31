@@ -59,7 +59,9 @@ pub fn run_boltz_preprocess(
     info!(?cmd, "spawning Boltz preprocess");
     let status = cmd
         .status()
-        .with_context(|| format!("failed to spawn {bolt_command} — is Boltz installed and on PATH?"))?;
+        .with_context(|| format!(
+            "failed to spawn {bolt_command} — install Boltz on PATH or pass --bolt-command with the full path to the boltz executable"
+        ))?;
     if !status.success() {
         bail!("{bolt_command} predict exited with {status}");
     }

@@ -2,8 +2,8 @@
 
 use std::fs;
 use boltr_io::{
-    copy_flat_preprocess_bundle, find_boltz_manifest_path, parse_manifest_path,
-    write_native_preprocess_bundle,
+    copy_flat_preprocess_bundle, find_boltz_manifest_path, parse_input_path, parse_manifest_path,
+    validate_native_eligible, write_native_preprocess_bundle,
 };
 
 #[test]
@@ -41,6 +41,25 @@ fn copy_flat_bundle_copies_npz() {
     assert!(dst.join("manifest.json").is_file());
     assert_eq!(fs::read(dst.join("r1.npz")).unwrap(), b"npz");
     assert_eq!(fs::read(dst.join("0.npz")).unwrap(), b"msa");
+}
+
+#[test]
+fn validate_native_eligible_accepts_empty_templates_and_constraints() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml = tmp.path().join("x.yaml");
+    fs::write(
+        &yaml,
+        r#"sequences:
+  - protein:
+      id: A
+      sequence: "A"
+templates: []
+constraints: []
+"#,
+    )
+    .unwrap();
+    let parsed = parse_input_path(&yaml).unwrap();
+    assert!(validate_native_eligible(&parsed).is_ok());
 }
 
 #[test]

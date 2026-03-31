@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -552,6 +552,15 @@ async fn main() -> Result<()> {
 // predict flow
 // ---------------------------------------------------------------------------
 
+/// True if `cmd` is an existing file path, or resolves via [`which::which`].
+fn command_is_runnable(cmd: &str) -> bool {
+    let p = Path::new(cmd);
+    if p.is_absolute() || cmd.contains('/') {
+        return p.is_file();
+    }
+    which::which(cmd).is_ok()
+}
+
 /// All arguments for the predict flow, collected into a single struct for clarity.
 struct PredictFlowArgs {
     input: String,
@@ -735,7 +744,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
                         Some(max_msa_seqs),
                         fetched.as_deref(),
                     )?;
-                } else if which::which(&bolt_command).is_ok() {
+                } else if command_is_runnable(&bolt_command) {
                     preprocess_cmd::run_boltz_preprocess(
                         input_path,
                         &bolt_command,
@@ -746,9 +755,9 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
                         preprocess_keep_staging,
                     )?;
                 } else {
-                    tracing::warn!(
-                        "--preprocess auto: YAML not native-eligible and `{bolt_command}` not runnable; \
-                         continue without preprocess bundle"
+                    bail!(
+                        "--preprocess auto: input is not eligible for native preprocess (e.g. non-empty templates/constraints, ligands, …) \
+                         and `{bolt_command}` not found on PATH. Install upstream Boltz or pass --bolt-command to its executable, or use --preprocess off with an existing manifest.json beside the YAML."
                     );
                 }
             }
