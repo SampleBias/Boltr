@@ -40,7 +40,7 @@ The original Boltz models are described in the [Boltz-1](https://doi.org/10.1101
 | [**boltr-io**](boltr-io/) | YAML → typed config, StructureV2, tokenizer, **Boltz2 featurizer** (`process_*`), inference **collate**, MSA helpers, **writers** (confidence JSON, PAE/PDE/plddt npz, PDB/mmCIF). Builds **without** LibTorch. |
 | [**boltr-backend-tch**](boltr-backend-tch/) | **Boltz2** `VarStore` graph: trunk (input embedder, MSA, templates, pairformer), diffusion + sampling, distogram, confidence, affinity module, potentials / steering. Requires **`--features tch-backend`** and a LibTorch install. |
 | [**boltr-cli**](boltr-cli/) | **`boltr`** binary: `download`, `predict` (YAML + optional MSA), **`preprocess`** (Boltz subprocess or **native** protein-only bundle; see [`docs/PREPROCESS_NATIVE.md`](docs/PREPROCESS_NATIVE.md)), `doctor` (LibTorch smoke), `msa-to-npz`, `tokens-to-npz`, device selection. With **`--features tch`**, `predict` can run **preprocess → collate → `predict_step` → PDB/mmCIF** when `manifest.json` and preprocess `.npz` sit **next to the input YAML** ([`predict_tch.rs`](boltr-cli/src/predict_tch.rs)); use **`--preprocess native|boltz|auto`** to generate that bundle first. Otherwise it writes the usual summary + placeholder dirs (see checklist). |
-| [**boltr-web**](boltr-web/) | Local **Axum** UI: cache / `boltr doctor`–style status, YAML validation, optional “assume MSA server” relaxed checks. See [`QUICKSTART.md`](QUICKSTART.md) (`bootstrap_webui_env.sh`). |
+| [**boltr-web**](boltr-web/) | Local **Axum** UI: cache / `boltr doctor`–style status, YAML validation, **`boltr predict`** jobs, log SSE, tarball download, and **`structure_output`** in job status (paths to `.cif`/`.pdb` + explanation when missing). See [`boltr-web/README.md`](boltr-web/README.md) and [`QUICKSTART.md`](QUICKSTART.md). |
 
 Supporting assets:
 
@@ -107,6 +107,7 @@ Everything below is spelled out in [`DEVELOPMENT.md`](DEVELOPMENT.md) and [`QUIC
 | **`BOLTZ_CACHE`** | Model cache directory (default: `~/.cache/boltr`). Same idea as **`boltr --cache-dir`**. |
 | **`BOLTR`** | Absolute path to the **`boltr`** binary for **`boltr-web`** status (`boltr doctor --json`) and tooling. |
 | **`BOLTR_REPO`** | Optional; helps tools find **`.venv/bin/python`** when probing from **`boltr-web`**. |
+| **`BOLTR_BOLTZ_COMMAND`** | Full path to upstream Python **`boltz`** for **`boltr predict --preprocess boltz`** / **`auto`** when `boltz` is not on `PATH` (also settable in **boltr-web** “Bolt command”). |
 | **`BOLTR_DEVICE`** | Overrides CLI **`--device`** if set. |
 | **`LIBTORCH`** | Root of unpacked standalone LibTorch (Path A). |
 | **`LIBTORCH_USE_PYTORCH`** | Set to **`1`** when linking against PyTorch’s LibTorch (Path B). |
@@ -162,10 +163,49 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 |---------|--------|
 | `boltr download --version boltz2` | Checkpoints + CCD + mols into cache (URLs aligned with upstream Boltz). Best-effort **`.ckpt` → `.safetensors`** when repo + Python `torch`/`safetensors` are available; else export manually ([`DEVELOPMENT.md`](DEVELOPMENT.md)). |
 | `boltr doctor` / `boltr doctor --json` | LibTorch / **`tch`** smoke (needs **`--features tch`** build for a real CPU tensor probe). |
-| `boltr predict input.yaml --output ./out --device cpu` | Build with **`--features tch`**. Parses YAML, optional MSA, summary JSON. **Native structure output:** place Boltz-style **`manifest.json`** + **`{record_id}.npz`** (and MSA `.npz`) in the **same directory as the input YAML**, then run `predict` — see [`TODO.md` §5.10 / §6](TODO.md). Without that layout, outputs are placeholders until preprocess data is present. |
+| `boltr predict input.yaml --output ./out --device cpu --preprocess auto` | Build with **`--features tch`**. **Structure files** (mmCIF/PDB) require a Boltz-style preprocess bundle **`manifest.json` + `.npz` files next to the input YAML** — generate them with **`--preprocess auto`**, **`native`**, or **`boltz`** (see [**Predict: preprocess and structure output**](#predict-preprocess-and-structure-output) below). Without that bundle, the run completes with summary JSON only (no sampled coordinates). |
 | `cargo test -p boltr-io` | I/O + featurizer tests (CI: [`.github/workflows/boltr-io-test.yml`](.github/workflows/boltr-io-test.yml)). |
 | `bash scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib` | Backend library tests (manual / dev venv). |
 | `cargo build -p boltr-web && ./target/release/boltr-web` | Local **Axum** UI for cache status + YAML validation; export **`BOLTR`** to a **`tch`**-enabled `boltr` for **`doctor`** probes ([`QUICKSTART.md`](QUICKSTART.md)). |
+
+---
+
+## Predict: preprocess and structure output
+
+`boltr predict` with **`--features tch`** can write **mmCIF (`.cif`)** or **PDB** under `--output` **only when** a valid **preprocess bundle** sits **in the same directory as the input YAML**:
+
+- `manifest.json`
+- Structure and MSA **`.npz`** files as referenced by that manifest (Boltz-compatible layout)
+
+### Generating the bundle
+
+| Flag | Behavior |
+|------|----------|
+| **`--preprocess off`** | No bundle generation. Unless you **manually** place `manifest.json` + npz next to the YAML, you will **not** get main-line structure files from the Rust bridge. |
+| **`--preprocess native`** | Rust-only **protein-only** bundle (no ligands/DNA/RNA; templates/constraints must be empty/absent per validation). Does **not** use the Python `boltz` CLI. |
+| **`--preprocess boltz`** | Runs upstream **`boltz predict`** into a staging dir, then copies the bundle next to your YAML. Requires the **`boltz`** executable (`pip install boltz` or conda; use **`--bolt-command`** if it is not on `PATH`). |
+| **`--preprocess auto`** | Tries **native** when eligible, otherwise **`boltz`** if runnable. |
+
+**Important:** [`Boltr_Boltz_bootstrap`](./Boltr_Boltz_bootstrap) / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build **`boltr`** — they do **not** install the Python **`boltz`** CLI. For **`--preprocess boltz`** / **`auto`** fallback to Boltz, install **`boltz`** in a venv and ensure **`boltz`** is on `PATH`, or pass **`--bolt-command`** with the full path to the `boltz` executable.
+
+Upstream Boltz writes preprocess artifacts under a **`boltz_results_<yaml_stem>/`** directory; Boltr discovers **`manifest.json`** under `processed/` and copies structure/MSA npz from **`structures/`**, **`msa/`**, etc., into the flat layout next to your YAML.
+
+### What gets written on success
+
+With a valid bundle and a successful diffusion bridge, coordinates are written as:
+
+- `{output}/{record_id}/{record_id}_model_0.cif` (mmCIF) or `.pdb`, depending on **`--output-format`**.
+
+`boltr_predict_complete.txt` in that folder records **`status`**: e.g. **`predict_step_complete`** (diffusion), **`preprocess_reference_structure`** (reference coordinates only if diffusion did not run but the bundle loaded), or **`pipeline_complete`** when no structure file was produced (missing bundle or `load_input` failure). See [`boltr-cli/src/predict_tch.rs`](boltr-cli/src/predict_tch.rs).
+
+### Troubleshooting: no `.cif` / `.pdb`
+
+1. Confirm **`manifest.json`** exists **next to the YAML** you pass to `boltr predict` (same folder).
+2. Use **`--preprocess auto`** or **`boltz`** (not **`off`**) unless you pre-generated the bundle.
+3. For complexes with templates, ligands, or non–protein-only inputs, prefer **`boltz`** and a working **`boltz`** CLI.
+4. Ensure **`boltr` was built with `--features tch`** and LibTorch is available.
+
+For the **web UI**, see [`boltr-web/README.md`](boltr-web/README.md): job status includes **`structure_output`** (paths + a short message before download).
 
 ---
 
