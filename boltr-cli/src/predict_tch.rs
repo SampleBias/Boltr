@@ -5,8 +5,9 @@
 //! 2. Build `Boltz2Model` from hparams on the requested device
 //! 3. Load weights (safetensors)
 //! 4. When `manifest.json` + preprocess `.npz` sit next to the input YAML: `load_input` → collate → `predict_step` → PDB/mmCIF
-//! 5. Otherwise (or on failure): placeholder output dirs + completion marker
-//! 6. Confidence / affinity / PAE npz when those heads are loaded and wired (see `boltr-io` writers)
+//! 5. If diffusion does not run (e.g. `--affinity`, bridge error): export preprocess reference coordinates to PDB/mmCIF when the bundle exists
+//! 6. Otherwise: placeholder completion marker (no structure file)
+//! 7. Confidence / affinity / PAE npz when those heads are loaded and wired (see `boltr-io` writers)
 //!
 //! Reference: [boltz-reference/docs/prediction.md](../../../boltz-reference/docs/prediction.md)
 
@@ -127,6 +128,75 @@ fn try_predict_from_preprocess(
         "wrote predicted structure (preprocess dir + predict_step)"
     );
 
+    Ok(Some(record_id))
+}
+
+/// Write mmCIF/PDB from preprocess `StructureV2` only (reference/input geometry, no diffusion).
+/// Used when [`try_predict_from_preprocess`] did not write a sampled structure but `manifest.json`
+/// + `.npz` exist beside the YAML.
+fn try_write_preprocess_reference_structure(
+    input_path: &Path,
+    out_dir: &Path,
+    output_format: OutputFormat,
+    affinity: bool,
+) -> Result<Option<String>> {
+    let Some(parent) = input_path.parent() else {
+        return Ok(None);
+    };
+    let manifest_path = parent.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+
+    let manifest = match parse_manifest_path(&manifest_path) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "preprocess reference export: manifest parse failed");
+            return Ok(None);
+        }
+    };
+    let record = match manifest.records.first() {
+        Some(r) => r,
+        None => {
+            tracing::warn!("preprocess reference export: manifest has no records");
+            return Ok(None);
+        }
+    };
+
+    let inference_input = match load_input(
+        record,
+        parent,
+        parent,
+        None,
+        None,
+        None,
+        affinity,
+    ) {
+        Ok(i) => i,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                dir = %parent.display(),
+                "preprocess reference export: load_input failed"
+            );
+            return Ok(None);
+        }
+    };
+
+    let record_id = record.id.clone();
+    write_structure_file(
+        out_dir,
+        &record_id,
+        0,
+        output_format,
+        &inference_input.structure,
+    )?;
+
+    tracing::info!(
+        record_id = %record_id,
+        affinity,
+        "wrote preprocess reference structure (no diffusion sampling)"
+    );
     Ok(Some(record_id))
 }
 
@@ -662,9 +732,31 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "preprocess predict_step bridge failed; falling back to placeholder outputs"
+                "preprocess predict_step bridge failed; trying preprocess reference export"
             );
         }
+    }
+
+    // 5b. Reference geometry from preprocess bundle (no diffusion) — always attempt when bundle exists
+    if let Ok(Some(rid)) =
+        try_write_preprocess_reference_structure(&input_path, &out_dir, output_format, affinity)
+    {
+        let record_dir = out_dir.join(&rid);
+        let marker = record_dir.join("boltr_predict_complete.txt");
+        let predict_args = resolved.as_ref().ok();
+        let info = serde_json::json!({
+            "record_id": rid,
+            "status": "preprocess_reference_structure",
+            "affinity": affinity,
+            "use_potentials": use_potentials,
+            "predict_args": predict_args,
+            "output_format": output_format.to_string(),
+            "note": "Structure exported from preprocess bundle (reference/input coordinates). Not a diffusion sample; use predict_step_complete when the full bridge runs."
+        });
+        let j = serde_json::to_string_pretty(&info)?;
+        tokio::fs::write(&marker, j).await?;
+        tracing::info!(path = %marker.display(), "predict pipeline complete (preprocess reference structure)");
+        return Ok(());
     }
 
     // 6. Placeholder path when no manifest/preprocess next to the input YAML
@@ -696,7 +788,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         "use_potentials": use_potentials,
         "predict_args": predict_args,
         "output_format": output_format.to_string(),
-        "note": "Place `manifest.json` + `{{record_id}}.npz` next to the input YAML to run the native preprocess → predict_step → structure writer bridge, or use --spike-only for trunk smoke."
+        "note": "No structure file: missing `manifest.json` + preprocess `.npz` next to the input YAML (enable `--preprocess auto|native|boltz`), or load_input failed. With a bundle present, a reference `.cif` is written when diffusion does not run."
     });
     let j = serde_json::to_string_pretty(&info)?;
     tokio::fs::write(&marker, j).await?;

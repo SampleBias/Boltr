@@ -404,7 +404,7 @@ async fn post_predict(
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    let preprocess_raw = field_map.get("preprocess").map(String::as_str).unwrap_or("off");
+    let preprocess_raw = field_map.get("preprocess").map(String::as_str).unwrap_or("auto");
     opts.preprocess = parse_preprocess_mode(preprocess_raw).map_err(|msg| {
         (
             StatusCode::BAD_REQUEST,
