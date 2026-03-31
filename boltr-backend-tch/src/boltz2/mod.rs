@@ -10,6 +10,7 @@ mod confidence_utils;
 pub mod contact_conditioning;
 pub mod diffusion;
 pub mod diffusion_conditioning;
+pub mod diffusion_geometry;
 pub mod distogram;
 pub mod encoders;
 pub mod featurizer_bridge;
@@ -19,7 +20,6 @@ pub mod msa_module;
 pub mod potentials;
 pub mod relative_position;
 pub mod steering;
-pub mod diffusion_geometry;
 pub mod template_module;
 pub mod transformers;
 pub mod trunk;
@@ -44,9 +44,9 @@ pub use input_embedder::{
 pub use model::{
     Boltz2DiffusionArgs, Boltz2Model, PredictStepFeats, PredictStepOutput, BOND_TYPE_EMBEDDING_NUM,
 };
-pub use potentials::{get_potentials_boltz2, Potential, PotentialBatchFeats};
-pub use steering::SteeringParams;
 pub use msa_module::{MsaFeatures, MsaModule};
+pub use potentials::{get_potentials_boltz2, Potential, PotentialBatchFeats};
 pub use relative_position::{RelPosFeatures, RelativePositionEncoder};
+pub use steering::SteeringParams;
 pub use template_module::{TemplateFeatures, TemplateModule, TemplateV2Module};
 pub use trunk::TrunkV2;

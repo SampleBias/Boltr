@@ -137,11 +137,7 @@ pub fn structure_v2_to_pdb(t: &StructureV2Tables, per_atom_plddt_01: Option<&[f3
         if should_ter {
             lines.push(format!(
                 "{:<6}{:5}      {:3} {:1}{:4}",
-                "TER",
-                atom_index,
-                last_res3,
-                chain_tag,
-                last_residue_index
+                "TER", atom_index, last_res3, chain_tag, last_residue_index
             ));
             atom_index += 1;
         }

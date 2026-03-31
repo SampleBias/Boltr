@@ -47,6 +47,8 @@ pub enum OutputFormat {
     Mmcif,
     /// PDB format.
     Pdb,
+    /// Write both `.pdb` and `.cif` for the same model.
+    Both,
 }
 
 impl std::fmt::Display for OutputFormat {
@@ -54,6 +56,7 @@ impl std::fmt::Display for OutputFormat {
         match self {
             OutputFormat::Mmcif => write!(f, "mmcif"),
             OutputFormat::Pdb => write!(f, "pdb"),
+            OutputFormat::Both => write!(f, "both"),
         }
     }
 }
@@ -155,7 +158,7 @@ enum Commands {
         #[arg(long, default_value_t = 1.638)]
         step_scale: f64,
 
-        /// Output structure format.
+        /// Output structure format (`both` writes PDB and mmCIF).
         #[arg(long, value_enum, default_value_t = OutputFormat::Mmcif)]
         output_format: OutputFormat,
 
@@ -524,25 +527,23 @@ async fn main() -> Result<()> {
             bolt_arg,
             record_id,
             max_msa_seqs,
-        } => {
-            match mode {
-                PreprocessBundleMode::Boltz => preprocess_cmd::run_boltz_preprocess(
-                    &input,
-                    &bolt_command,
-                    staging,
-                    use_msa_server,
-                    &bolt_arg,
-                    symlink,
-                    keep_staging,
-                )?,
-                PreprocessBundleMode::Native => preprocess_cmd::run_native_preprocess(
-                    &input,
-                    record_id.as_deref(),
-                    max_msa_seqs,
-                    None,
-                )?,
-            }
-        }
+        } => match mode {
+            PreprocessBundleMode::Boltz => preprocess_cmd::run_boltz_preprocess(
+                &input,
+                &bolt_command,
+                staging,
+                use_msa_server,
+                &bolt_arg,
+                symlink,
+                keep_staging,
+            )?,
+            PreprocessBundleMode::Native => preprocess_cmd::run_native_preprocess(
+                &input,
+                record_id.as_deref(),
+                max_msa_seqs,
+                None,
+            )?,
+        },
     }
 
     Ok(())
@@ -667,14 +668,13 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     // 2. Create output directory
     tokio::fs::create_dir_all(&out_dir).await?;
 
-    let yaml_parent = input_path.parent().unwrap_or_else(|| Path::new("."));
-    let manifest_beside_yaml = yaml_parent.join("manifest.json");
-    let manifest_missing = !manifest_beside_yaml.is_file();
+    // Canonical YAML parent matches preprocess writers (`canonicalize`); relative CLI paths
+    // still resolve to the same `manifest.json` + `.npz` directory as the predict bridge.
+    let yaml_parent = boltr_io::canonical_yaml_parent(input_path)?;
+    let bundle_ready = boltr_io::preprocess_bundle_ready(input_path, affinity)?;
+    let manifest_missing = !bundle_ready;
     let msa_under_yaml_for_native = manifest_missing
-        && matches!(
-            preprocess,
-            PreprocessCli::Native | PreprocessCli::Auto
-        )
+        && matches!(preprocess, PreprocessCli::Native | PreprocessCli::Auto)
         && use_msa_server
         && boltr_io::validate_native_eligible(&parsed).is_ok();
 
@@ -879,7 +879,9 @@ fn boltr_repo_root() -> Option<PathBuf> {
     if let Ok(cwd) = std::env::current_dir() {
         let mut d = cwd;
         for _ in 0..12 {
-            if d.join("scripts/export_checkpoint_to_safetensors.py").is_file() {
+            if d.join("scripts/export_checkpoint_to_safetensors.py")
+                .is_file()
+            {
                 return Some(d);
             }
             if !d.pop() {
@@ -889,7 +891,9 @@ fn boltr_repo_root() -> Option<PathBuf> {
     }
     let mut d = std::env::current_exe().ok()?.parent()?.to_path_buf();
     for _ in 0..12 {
-        if d.join("scripts/export_checkpoint_to_safetensors.py").is_file() {
+        if d.join("scripts/export_checkpoint_to_safetensors.py")
+            .is_file()
+        {
             return Some(d);
         }
         if !d.pop() {

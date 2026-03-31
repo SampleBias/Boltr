@@ -62,8 +62,7 @@ impl SteeringParams {
     /// `true` when `get_potentials(..., boltz2=True)` returns a non-empty list.
     #[must_use]
     pub fn needs_potential_list(self) -> bool {
-        self.fk_steering
-            || self.physical_guidance_update
-            || (self.contact_guidance_update) // Boltz2 branch uses fk OR contact
+        self.fk_steering || self.physical_guidance_update || (self.contact_guidance_update)
+        // Boltz2 branch uses fk OR contact
     }
 }

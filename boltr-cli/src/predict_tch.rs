@@ -15,15 +15,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
-    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
-    RelPosFeatures, SteeringParams, resolve_predict_args,
+    resolve_predict_args, Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
+    RelPosFeatures, SteeringParams,
 };
-use tch::{self, Kind, Tensor};
 use boltr_io::config::BoltzInput;
 use boltr_io::{
-    collate_inference_batches, load_input, parse_manifest_path,
-    trunk_smoke_feature_batch_from_inference_input,
+    canonical_yaml_parent, collate_inference_batches, copy_msa_a3m_to_output, load_input,
+    parse_manifest_path, trunk_smoke_feature_batch_from_inference_input,
 };
+use tch::{self, Kind, Tensor};
 
 use crate::OutputFormat;
 
@@ -61,10 +61,14 @@ fn try_predict_from_preprocess(
     affinity: bool,
     use_potentials: bool,
 ) -> Result<Option<String>> {
-    let Some(parent) = input_path.parent() else {
-        return Ok(None);
+    let preprocess_dir = match canonical_yaml_parent(input_path) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "preprocess bridge: could not resolve YAML directory");
+            return Ok(None);
+        }
     };
-    let manifest_path = parent.join("manifest.json");
+    let manifest_path = preprocess_dir.join("manifest.json");
     if !manifest_path.is_file() {
         return Ok(None);
     }
@@ -82,14 +86,19 @@ fn try_predict_from_preprocess(
         .context("manifest.json has no records")?;
     let mut inference_input = load_input(
         record,
-        parent,
-        parent,
+        &preprocess_dir,
+        &preprocess_dir,
         None,
         None,
         None,
         false,
     )
-    .with_context(|| format!("load_input from preprocess dir {}", parent.display()))?;
+    .with_context(|| {
+        format!(
+            "load_input from preprocess dir {}",
+            preprocess_dir.display()
+        )
+    })?;
 
     let template_dim = 4_usize;
     let fb = trunk_smoke_feature_batch_from_inference_input(&inference_input, template_dim);
@@ -122,6 +131,7 @@ fn try_predict_from_preprocess(
         output_format,
         &inference_input.structure,
     )?;
+    copy_msa_a3m_to_output(&preprocess_dir, out_dir).context("copy MSA .a3m into output dir")?;
 
     tracing::info!(
         record_id = %record_id,
@@ -140,10 +150,14 @@ fn try_write_preprocess_reference_structure(
     output_format: OutputFormat,
     affinity: bool,
 ) -> Result<Option<String>> {
-    let Some(parent) = input_path.parent() else {
-        return Ok(None);
+    let preprocess_dir = match canonical_yaml_parent(input_path) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(error = %e, "preprocess reference export: could not resolve YAML dir");
+            return Ok(None);
+        }
     };
-    let manifest_path = parent.join("manifest.json");
+    let manifest_path = preprocess_dir.join("manifest.json");
     if !manifest_path.is_file() {
         return Ok(None);
     }
@@ -165,8 +179,8 @@ fn try_write_preprocess_reference_structure(
 
     let inference_input = match load_input(
         record,
-        parent,
-        parent,
+        &preprocess_dir,
+        &preprocess_dir,
         None,
         None,
         None,
@@ -176,7 +190,7 @@ fn try_write_preprocess_reference_structure(
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                dir = %parent.display(),
+                dir = %preprocess_dir.display(),
                 "preprocess reference export: load_input failed"
             );
             return Ok(None);
@@ -191,6 +205,12 @@ fn try_write_preprocess_reference_structure(
         output_format,
         &inference_input.structure,
     )?;
+    if let Err(e) = copy_msa_a3m_to_output(&preprocess_dir, out_dir) {
+        tracing::warn!(
+            error = %e,
+            "preprocess reference export: could not copy MSA .a3m to output"
+        );
+    }
 
     tracing::info!(
         record_id = %record_id,
@@ -245,8 +265,8 @@ pub fn load_hparams_for_predict(cache_dir: &Path) -> Result<Boltz2Hparams> {
     }
     let candidate = cache_dir.join("boltz2_hparams.json");
     if candidate.is_file() {
-        let bytes = std::fs::read(&candidate)
-            .with_context(|| format!("read {}", candidate.display()))?;
+        let bytes =
+            std::fs::read(&candidate).with_context(|| format!("read {}", candidate.display()))?;
         return Boltz2Hparams::from_json_slice(&bytes)
             .with_context(|| format!("parse {}", candidate.display()));
     }
@@ -256,12 +276,14 @@ pub fn load_hparams_for_predict(cache_dir: &Path) -> Result<Boltz2Hparams> {
 
 /// Parse optional `predict_args:` from the input YAML file (Boltz-style).
 pub fn yaml_predict_args_from_input_path(input: &Path) -> Result<Option<serde_json::Value>> {
-    let text = std::fs::read_to_string(input)
-        .with_context(|| format!("read {}", input.display()))?;
+    let text =
+        std::fs::read_to_string(input).with_context(|| format!("read {}", input.display()))?;
     let v: serde_yaml::Value =
         serde_yaml::from_str(&text).with_context(|| format!("YAML {}", input.display()))?;
     match v.get("predict_args") {
-        Some(node) => Ok(Some(serde_json::to_value(node).unwrap_or(serde_json::Value::Null))),
+        Some(node) => Ok(Some(
+            serde_json::to_value(node).unwrap_or(serde_json::Value::Null),
+        )),
         None => Ok(None),
     }
 }
@@ -384,16 +406,23 @@ fn write_structure_file(
         OutputFormat::Pdb => {
             let p = record_dir.join(format!("{record_id}_model_{model_rank}.pdb"));
             let bytes = boltr_io::structure_v2_to_pdb(structure, None);
-            std::fs::write(&p, &bytes)
-                .with_context(|| format!("write {}", p.display()))?;
+            std::fs::write(&p, &bytes).with_context(|| format!("write {}", p.display()))?;
             p
         }
         OutputFormat::Mmcif => {
             let p = record_dir.join(format!("{record_id}_model_{model_rank}.cif"));
             let bytes = boltr_io::structure_v2_to_mmcif(structure);
-            std::fs::write(&p, &bytes)
-                .with_context(|| format!("write {}", p.display()))?;
+            std::fs::write(&p, &bytes).with_context(|| format!("write {}", p.display()))?;
             p
+        }
+        OutputFormat::Both => {
+            let pdb = record_dir.join(format!("{record_id}_model_{model_rank}.pdb"));
+            let cif = record_dir.join(format!("{record_id}_model_{model_rank}.cif"));
+            let pdb_bytes = boltr_io::structure_v2_to_pdb(structure, None);
+            let cif_bytes = boltr_io::structure_v2_to_mmcif(structure);
+            std::fs::write(&pdb, &pdb_bytes).with_context(|| format!("write {}", pdb.display()))?;
+            std::fs::write(&cif, &cif_bytes).with_context(|| format!("write {}", cif.display()))?;
+            cif
         }
     };
     tracing::debug!(path = %path.display(), "wrote structure file");

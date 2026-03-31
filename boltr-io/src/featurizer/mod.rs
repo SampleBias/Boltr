@@ -9,8 +9,8 @@
 pub mod crop_affinity;
 pub mod dummy_templates;
 pub mod msa_pairing;
-pub mod process_ensemble_features;
 pub mod process_atom_features;
+pub mod process_ensemble_features;
 pub mod process_msa_features;
 pub mod process_residue_constraint_features;
 pub mod process_symmetry_features;
@@ -29,25 +29,26 @@ pub use crop_affinity::{AffinityCropper, AffinityTokenized};
 pub use dummy_templates::{
     dummy_templates_as_feature_batch, load_dummy_templates_features, DummyTemplateTensors,
 };
+pub use process_atom_features::{
+    atom_ref_data_from_ccd_mol, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
+    AtomRefData, AtomRefDataProvider, InferenceAtomRefProvider, StandardAminoAcidRefData,
+    ZeroAtomRefData, ALA_STANDARD_HEAVY_ATOM_COUNT, ATOMS_PER_WINDOW_QUERIES,
+    ATOM_FEATURE_KEYS_ALA, ATOM_NAME_VOCAB_SIZE, DEFAULT_MAX_DIST, DEFAULT_MIN_DIST,
+    DEFAULT_NUM_BINS, NUM_BACKBONE_FEAT_CLASSES,
+};
 pub use process_ensemble_features::{
     inference_ensemble_features, process_ensemble_features, EnsembleFeatures,
 };
+pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
 pub use process_residue_constraint_features::{
-    inference_residue_constraint_features, process_residue_constraint_features, ResidueConstraintTensors,
+    inference_residue_constraint_features, process_residue_constraint_features,
+    ResidueConstraintTensors,
 };
 pub use process_symmetry_features::{
     get_amino_acids_symmetries, get_chain_symmetries, get_ligand_symmetries_empty,
     get_ligand_symmetries_for_tokens, process_symmetry_features,
     process_symmetry_features_with_ligand_symmetries, ChainSwap, SymmetryFeatures,
 };
-pub use process_atom_features::{
-    atom_ref_data_from_ccd_mol, process_atom_features, AtomFeatureConfig, AtomFeatureTensors,
-    AtomRefData, AtomRefDataProvider, InferenceAtomRefProvider, StandardAminoAcidRefData,
-    ZeroAtomRefData, ALA_STANDARD_HEAVY_ATOM_COUNT,
-    ATOMS_PER_WINDOW_QUERIES, ATOM_FEATURE_KEYS_ALA, ATOM_NAME_VOCAB_SIZE, DEFAULT_MAX_DIST,
-    DEFAULT_MIN_DIST, DEFAULT_NUM_BINS, NUM_BACKBONE_FEAT_CLASSES,
-};
-pub use process_msa_features::{process_msa_features, MsaFeatureTensors};
 pub use process_template_features::{
     pad_template_tdim, process_template_features, stack_template_feature_rows, TemplateAlignment,
 };

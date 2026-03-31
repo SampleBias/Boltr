@@ -177,15 +177,7 @@ mod tests {
         let token_z = 48_i64;
 
         let vs = VarStore::new(device);
-        let enc = RelativePositionEncoder::new(
-            vs.root(),
-            token_z,
-            None,
-            None,
-            false,
-            true,
-            device,
-        );
+        let enc = RelativePositionEncoder::new(vs.root(), token_z, None, None, false, true, device);
 
         let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
         let residue_index = Tensor::arange(n, (Kind::Int64, device))
@@ -196,9 +188,7 @@ mod tests {
         let sym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
         let mut cyc_row = vec![0_i64; n as usize];
         cyc_row[3] = 5;
-        let cyclic_period = Tensor::from_slice(&cyc_row)
-            .view([1, n])
-            .to_device(device);
+        let cyclic_period = Tensor::from_slice(&cyc_row).view([1, n]).to_device(device);
 
         let rel = RelPosFeatures {
             asym_id: &asym_id,

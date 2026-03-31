@@ -67,21 +67,15 @@ fn prepend_batch_dim(ft: &FeatureTensor) -> FeatureTensor {
 }
 
 fn f32_array_to_bytes(a: &ArrayD<f32>) -> Vec<u8> {
-    a.iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect()
+    a.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 fn i64_array_to_bytes(a: &ArrayD<i64>) -> Vec<u8> {
-    a.iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect()
+    a.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 fn i32_array_to_bytes(a: &ArrayD<i32>) -> Vec<u8> {
-    a.iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect()
+    a.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
 fn feature_tensor_to_buf(name: String, ft: &FeatureTensor) -> BufTensor {
@@ -185,7 +179,11 @@ pub fn compare_inference_collate_to_safetensors(
     }
 
     let st = SafeTensors::deserialize(golden_bytes).map_err(|e| e.to_string())?;
-    let mut golden_names: Vec<String> = st.tensors().into_iter().map(|(n, _)| n.to_string()).collect();
+    let mut golden_names: Vec<String> = st
+        .tensors()
+        .into_iter()
+        .map(|(n, _)| n.to_string())
+        .collect();
     golden_names.sort();
 
     let mut rust_names: Vec<String> = rust_map.keys().cloned().collect();

@@ -233,9 +233,8 @@ pub fn get_chain_symmetries(
     }
 
     let n_atoms = new_atom_idx;
-    let all_coords_arr = Array2::from_shape_vec((n_atoms, 3), all_coords).unwrap_or_else(|_| {
-        Array2::zeros((0, 3))
-    });
+    let all_coords_arr =
+        Array2::from_shape_vec((n_atoms, 3), all_coords).unwrap_or_else(|_| Array2::zeros((0, 3)));
     let all_resolved_arr = Array1::from(all_resolved_mask);
     let crop_map = Array1::from(crop_to_all_atom_map);
 
@@ -267,7 +266,10 @@ pub fn process_symmetry_features_with_ligand_symmetries(
 
 /// Boltz `process_symmetry_features(cropped, symmetries)`.
 #[inline]
-pub fn process_symmetry_features(structure: &StructureV2Tables, tokens: &[TokenData]) -> SymmetryFeatures {
+pub fn process_symmetry_features(
+    structure: &StructureV2Tables,
+    tokens: &[TokenData],
+) -> SymmetryFeatures {
     process_symmetry_features_with_ligand_symmetries(structure, tokens, None)
 }
 

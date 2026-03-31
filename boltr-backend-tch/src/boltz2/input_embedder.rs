@@ -95,10 +95,7 @@ impl InputEmbedder {
             false,
             flags,
         ));
-        let atom_enc_proj_z_ln = Some(layer_norm_1d(
-            path.sub("atom_enc_proj_z").sub("0"),
-            atom_z,
-        ));
+        let atom_enc_proj_z_ln = Some(layer_norm_1d(path.sub("atom_enc_proj_z").sub("0"), atom_z));
         let atom_enc_proj_z_lin = Some(linear_no_bias(
             path.sub("atom_enc_proj_z").sub("1"),
             atom_z,
@@ -195,7 +192,10 @@ impl InputEmbedder {
             .atom_enc_proj_z_ln
             .as_ref()
             .expect("atom_enc_proj_z_ln");
-        let proj = self.atom_enc_proj_z_lin.as_ref().expect("atom_enc_proj_z_lin");
+        let proj = self
+            .atom_enc_proj_z_lin
+            .as_ref()
+            .expect("atom_enc_proj_z_lin");
         let attn = self
             .atom_attention_encoder
             .as_ref()
@@ -228,7 +228,9 @@ impl InputEmbedder {
         );
         let (profile, deletion_mean) = if affinity {
             (
-                feats.profile_affinity.expect("profile_affinity when affinity=true"),
+                feats
+                    .profile_affinity
+                    .expect("profile_affinity when affinity=true"),
                 feats
                     .deletion_mean_affinity
                     .expect("deletion_mean_affinity when affinity=true"),
@@ -238,7 +240,8 @@ impl InputEmbedder {
         };
         let dm = deletion_mean.unsqueeze(-1);
         let msa_in = Tensor::cat(&[profile.shallow_clone(), dm], -1);
-        a + self.res_type_encoding.forward(feats.res_type) + self.msa_profile_encoding.forward(&msa_in)
+        a + self.res_type_encoding.forward(feats.res_type)
+            + self.msa_profile_encoding.forward(&msa_in)
     }
 
     /// Python `s = a + res_type_encoding(res_type) + msa_profile_encoding(cat(profile, deletion_mean))`.

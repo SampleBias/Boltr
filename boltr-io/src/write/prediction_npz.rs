@@ -16,7 +16,12 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::structure_v2_npz::write_npy_f32_c_order;
 
-fn write_npz_one_f32_array(path: &Path, array_key: &str, shape: &[usize], data: &[f32]) -> Result<()> {
+fn write_npz_one_f32_array(
+    path: &Path,
+    array_key: &str,
+    shape: &[usize],
+    data: &[f32],
+) -> Result<()> {
     let npy = write_npy_f32_c_order(shape, data)?;
     let inner = format!("{array_key}.npy");
     let mut file = File::create(path).with_context(|| path.display().to_string())?;
@@ -86,10 +91,8 @@ mod tests {
 
     #[test]
     fn pae_npz_has_numpy_magic_and_key() {
-        let dir = std::env::temp_dir().join(format!(
-            "boltr_pae_npz_{:016x}",
-            rand::random::<u64>()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("boltr_pae_npz_{:016x}", rand::random::<u64>()));
         std::fs::create_dir_all(&dir).unwrap();
         let a = ndarray::arr2(&[[1.0_f32, 2.0], [3.0, 4.0]]);
         let path = write_pae_npz_path(&dir, "case1", 0, a.view()).unwrap();

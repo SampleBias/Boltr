@@ -436,7 +436,10 @@ impl AtomEncoder {
             let mol_type = b
                 .mol_type
                 .expect("mol_type required when use_residue_feats_atoms");
-            let mol_oh = mol_type.to_kind(Kind::Int64).one_hot(4).to_kind(Kind::Float);
+            let mol_oh = mol_type
+                .to_kind(Kind::Int64)
+                .one_hot(4)
+                .to_kind(Kind::Float);
             let res_feats = Tensor::cat(
                 &[
                     res_type.shallow_clone(),
@@ -474,13 +477,8 @@ impl AtomEncoder {
         let h = self.atoms_per_window_keys;
         let k = n / w;
 
-        let atom_feats = self.concat_atom_feats(
-            ref_pos,
-            ref_charge,
-            ref_element,
-            atom_to_token,
-            batch,
-        );
+        let atom_feats =
+            self.concat_atom_feats(ref_pos, ref_charge, ref_element, atom_to_token, batch);
         let c = self.embed_atom_features.forward(&atom_feats);
 
         let indexing_matrix = get_indexing_matrix(k, w, h, ref_pos.device());

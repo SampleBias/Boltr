@@ -41,7 +41,11 @@ impl Default for AffinityCropper {
 
 impl AffinityCropper {
     #[must_use]
-    pub fn new(neighborhood_size: usize, max_tokens_protein: usize, max_atoms: Option<usize>) -> Self {
+    pub fn new(
+        neighborhood_size: usize,
+        max_tokens_protein: usize,
+        max_atoms: Option<usize>,
+    ) -> Self {
         Self {
             neighborhood_size,
             max_tokens_protein,
@@ -170,13 +174,11 @@ impl AffinityCropper {
                         })
                         .collect();
                 }
-                new_sel
-                    .iter()
-                    .map(|&i| token_data[i].token_idx)
-                    .collect()
+                new_sel.iter().map(|&i| token_data[i].token_idx).collect()
             };
 
-            let new_indices: HashSet<i32> = new_token_idx_set.difference(&cropped).copied().collect();
+            let new_indices: HashSet<i32> =
+                new_token_idx_set.difference(&cropped).copied().collect();
             if new_indices.is_empty() {
                 continue;
             }
@@ -190,7 +192,9 @@ impl AffinityCropper {
             let union_protein = cropped_protein.union(&new_protein).count();
 
             if new_indices.len() > max_tokens.saturating_sub(cropped.len())
-                || max_atoms.map(|ma| total_atoms + new_atoms > ma).unwrap_or(false)
+                || max_atoms
+                    .map(|ma| total_atoms + new_atoms > ma)
+                    .unwrap_or(false)
                 || union_protein > self.max_tokens_protein
             {
                 break;

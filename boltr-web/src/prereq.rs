@@ -237,7 +237,8 @@ fn resolve_python_for_torch_probe() -> PathBuf {
 
 async fn boltr_doctor_json() -> Result<Value, String> {
     let exe = resolve_boltr_binary_async().await.ok_or_else(|| {
-        "boltr not found (set BOLTR, use repo target/release/boltr, or add boltr to PATH)".to_string()
+        "boltr not found (set BOLTR, use repo target/release/boltr, or add boltr to PATH)"
+            .to_string()
     })?;
     let py = resolve_python_for_torch_probe();
     let mut cmd = tokio::process::Command::new(&exe);
@@ -363,15 +364,8 @@ pub fn validate_yaml_at(
     let (yaml_ok, parse_error, input) = match parsed {
         Ok(i) => (true, None, Some(i)),
         Err(e) => {
-            push_blocker(
-                &mut blockers,
-                format!("YAML parse error: {e}"),
-            );
-            (
-                false,
-                Some(e.to_string()),
-                None,
-            )
+            push_blocker(&mut blockers, format!("YAML parse error: {e}"));
+            (false, Some(e.to_string()), None)
         }
     };
 
@@ -415,7 +409,11 @@ pub fn validate_yaml_at(
                 let exists = p.is_file();
                 path_probes.push(PathProbe {
                     kind: "template".to_string(),
-                    chain_or_hint: if t.is_cif() { "cif".to_string() } else { "pdb".to_string() },
+                    chain_or_hint: if t.is_cif() {
+                        "cif".to_string()
+                    } else {
+                        "pdb".to_string()
+                    },
                     path: p.display().to_string(),
                     exists,
                 });
@@ -428,7 +426,11 @@ pub fn validate_yaml_at(
             }
         }
 
-        for id in input.protein_sequences_for_msa().into_iter().map(|(a, _)| a) {
+        for id in input
+            .protein_sequences_for_msa()
+            .into_iter()
+            .map(|(a, _)| a)
+        {
             proteins_missing_msa.push(id);
         }
         if !proteins_missing_msa.is_empty() {
@@ -475,10 +477,7 @@ pub fn validate_yaml_at(
             Err(e) => {
                 manifest_ok = Some(false);
                 manifest_error = Some(e.to_string());
-                push_blocker(
-                    &mut blockers,
-                    format!("manifest.json invalid: {e}"),
-                );
+                push_blocker(&mut blockers, format!("manifest.json invalid: {e}"));
             }
         }
     }

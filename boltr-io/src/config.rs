@@ -110,18 +110,10 @@ pub struct BoltzInput {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum SequenceEntry {
-    Protein {
-        protein: PolymerEntity,
-    },
-    Dna {
-        dna: PolymerEntity,
-    },
-    Rna {
-        rna: PolymerEntity,
-    },
-    Ligand {
-        ligand: LigandEntity,
-    },
+    Protein { protein: PolymerEntity },
+    Dna { dna: PolymerEntity },
+    Rna { rna: PolymerEntity },
+    Ligand { ligand: LigandEntity },
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -499,9 +491,7 @@ impl TemplateChainId {
 #[serde(untagged)]
 pub enum PropertyEntry {
     /// Affinity prediction.
-    Affinity {
-        affinity: AffinityProperty,
-    },
+    Affinity { affinity: AffinityProperty },
 }
 
 /// Affinity prediction specification.

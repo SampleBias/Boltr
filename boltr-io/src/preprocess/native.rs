@@ -47,7 +47,9 @@ impl std::fmt::Display for NativePreprocessError {
 impl std::error::Error for NativePreprocessError {}
 
 /// Validate YAML for native preprocess.
-pub fn validate_native_eligible(input: &BoltzInput) -> std::result::Result<(), NativePreprocessError> {
+pub fn validate_native_eligible(
+    input: &BoltzInput,
+) -> std::result::Result<(), NativePreprocessError> {
     if input.templates.as_ref().is_some_and(|v| !v.is_empty()) {
         return Err(NativePreprocessError::TemplatesOrConstraintsInYaml);
     }
@@ -63,7 +65,9 @@ pub fn validate_native_eligible(input: &BoltzInput) -> std::result::Result<(), N
                     return Err(NativePreprocessError::Modifications);
                 }
             }
-            SequenceEntry::Dna { .. } | SequenceEntry::Rna { .. } | SequenceEntry::Ligand { .. } => {
+            SequenceEntry::Dna { .. }
+            | SequenceEntry::Rna { .. }
+            | SequenceEntry::Ligand { .. } => {
                 return Err(NativePreprocessError::LigandOrNucleicAcid);
             }
         }
@@ -118,17 +122,18 @@ pub fn write_native_preprocess_bundle(
         };
         let chain_names = protein.id.to_vec();
         let n_ch = chain_names.len().max(1);
-        let seq: String = protein.sequence.chars().filter(|c| !c.is_whitespace()).collect();
+        let seq: String = protein
+            .sequence
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         let nres = seq.len() as i32;
 
         let msa = match protein.msa.as_deref() {
             Some(s) if s.eq_ignore_ascii_case("empty") => empty_single_sequence_msa(&seq)?,
             None => {
                 if let Some(dir) = fetched_msa_dir {
-                    let first = chain_names
-                        .first()
-                        .map(String::as_str)
-                        .unwrap_or("A");
+                    let first = chain_names.first().map(String::as_str).unwrap_or("A");
                     let p = dir.join(format!("{first}.a3m"));
                     if p.is_file() {
                         crate::parse_a3m_path(&p, max_msa_seqs)
@@ -210,7 +215,11 @@ fn build_placeholder_protein_structure_v2(input: &BoltzInput) -> Result<Structur
         let SequenceEntry::Protein { protein } = entry else {
             continue;
         };
-        let seq: String = protein.sequence.chars().filter(|c| !c.is_whitespace()).collect();
+        let seq: String = protein
+            .sequence
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         let chain_names = protein.id.to_vec();
         let n_sub = chain_names.len().max(1);
         for sub in 0..n_sub {

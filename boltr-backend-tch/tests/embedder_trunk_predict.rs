@@ -41,8 +41,14 @@ fn predict_step_trunk_from_embedder_runs() {
     let ref_space_uid = Tensor::zeros(&[b, n_atoms], (Kind::Int64, device));
     let atom_tok_idx = Tensor::zeros(&[b, n_atoms], (Kind::Int64, device));
     let atom_to_token = atom_tok_idx.one_hot(n_tok).to_kind(Kind::Float);
-    let res_type = Tensor::randn(&[b, n_tok, boltr_backend_tch::BOLTZ_NUM_TOKENS], (Kind::Float, device));
-    let profile = Tensor::randn(&[b, n_tok, boltr_backend_tch::BOLTZ_NUM_TOKENS], (Kind::Float, device));
+    let res_type = Tensor::randn(
+        &[b, n_tok, boltr_backend_tch::BOLTZ_NUM_TOKENS],
+        (Kind::Float, device),
+    );
+    let profile = Tensor::randn(
+        &[b, n_tok, boltr_backend_tch::BOLTZ_NUM_TOKENS],
+        (Kind::Float, device),
+    );
     let deletion_mean = Tensor::randn(&[b, n_tok], (Kind::Float, device));
 
     let asym_id = Tensor::zeros(&[b, n_tok], (Kind::Int64, device));

@@ -197,8 +197,8 @@ pub fn preprocess_preflight(input_path: &Path, opts: &mut PredictCliOptions) -> 
     match opts.preprocess {
         PreprocessMode::Off => Ok(()),
         PreprocessMode::Native => {
-            let input = boltr_io::parse_input_path(input_path)
-                .map_err(|e| format!("parse YAML: {e}"))?;
+            let input =
+                boltr_io::parse_input_path(input_path).map_err(|e| format!("parse YAML: {e}"))?;
             boltr_io::validate_native_eligible(&input).map_err(|e| {
                 format!(
                     "{e}. For YAML with templates/constraints (or ligands/DNA/RNA), use preprocess \"boltz\" or \"auto\" and install the Python `boltz` CLI (set \"Bolt command\" if it is not on PATH)."
@@ -207,8 +207,8 @@ pub fn preprocess_preflight(input_path: &Path, opts: &mut PredictCliOptions) -> 
         }
         PreprocessMode::Boltz => resolve_boltz_for_preprocess(opts),
         PreprocessMode::Auto => {
-            let input = boltr_io::parse_input_path(input_path)
-                .map_err(|e| format!("parse YAML: {e}"))?;
+            let input =
+                boltr_io::parse_input_path(input_path).map_err(|e| format!("parse YAML: {e}"))?;
             if boltr_io::validate_native_eligible(&input).is_ok() {
                 return Ok(());
             }
@@ -610,8 +610,7 @@ fn build_structure_message(
         return s;
     }
 
-    let mut s = "No .cif (mmCIF) or .pdb file was found under the output directory."
-        .to_string();
+    let mut s = "No .cif (mmCIF) or .pdb file was found under the output directory.".to_string();
 
     match completion_status {
         Some("predict_step_complete") => {
@@ -625,9 +624,7 @@ fn build_structure_message(
             );
         }
         Some("pipeline_complete") => {
-            s.push_str(
-                " Boltr exited without writing a sampled structure: ",
-            );
+            s.push_str(" Boltr exited without writing a sampled structure: ");
             if let Some(n) = completion_note.filter(|x| !x.is_empty()) {
                 s.push_str(n);
             } else {
@@ -761,8 +758,7 @@ pub async fn run_predict_job(
     {
         Ok(c) => c,
         Err(e) => {
-            push_log(&logs, format!("[boltr-web] spawn failed: {e}"))
-                .await;
+            push_log(&logs, format!("[boltr-web] spawn failed: {e}")).await;
             job.exit_code.store(-1, Ordering::SeqCst);
             job.success.store(false, Ordering::SeqCst);
             job.done.store(true, Ordering::SeqCst);
@@ -802,8 +798,7 @@ pub async fn run_predict_job(
         }
         Err(e) => {
             error!("wait: {e}");
-            push_log(&logs, format!("[boltr-web] wait error: {e}"))
-                .await;
+            push_log(&logs, format!("[boltr-web] wait error: {e}")).await;
             job.exit_code.store(-1, Ordering::SeqCst);
             job.success.store(false, Ordering::SeqCst);
         }

@@ -172,10 +172,7 @@ fn ligand_smiles_type() {
     assert!(lig.is_smiles());
     assert!(!lig.is_ccd());
     assert_eq!(lig.ligand_type(), LigandType::Smiles);
-    assert_eq!(
-        lig.smiles.as_deref(),
-        Some("CC(=O)OC1=CC=CC=C1C(=O)O")
-    );
+    assert_eq!(lig.smiles.as_deref(), Some("CC(=O)OC1=CC=CC=C1C(=O)O"));
     assert!(lig.ccd.is_none());
 }
 
@@ -505,7 +502,10 @@ fn full_schema_integration() {
     assert_eq!(input.version, Some(1));
 
     // Entities — 5 entries: protein(multi-chain), dna, rna, ligand(CCD), ligand(SMILES)
-    assert_eq!(input.summary_chain_ids(), vec!["A", "B", "C", "D", "E", "F"]);
+    assert_eq!(
+        input.summary_chain_ids(),
+        vec!["A", "B", "C", "D", "E", "F"]
+    );
     assert_eq!(input.proteins().len(), 1); // one protein entity with 2 chains
     assert_eq!(input.dnas().len(), 1);
     assert_eq!(input.rnas().len(), 1);
@@ -635,8 +635,14 @@ fn roundtrip_serialize_deserialize() {
     assert_eq!(back.version, input.version);
     assert_eq!(back.proteins().len(), input.proteins().len());
     assert_eq!(back.ligands().len(), input.ligands().len());
-    assert_eq!(back.bond_constraints().len(), input.bond_constraints().len());
-    assert_eq!(back.template_entries().len(), input.template_entries().len());
+    assert_eq!(
+        back.bond_constraints().len(),
+        input.bond_constraints().len()
+    );
+    assert_eq!(
+        back.template_entries().len(),
+        input.template_entries().len()
+    );
     assert_eq!(back.affinity_binder(), input.affinity_binder());
 }
 

@@ -21,10 +21,9 @@ use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
     inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
     process_atom_features, process_msa_features, process_symmetry_features,
-    process_template_features, process_token_features,
-    AffinityCropper, AffinityTokenized, AtomFeatureConfig, AtomFeatureTensors,
-    InferenceAtomRefProvider, MsaFeatureTensors, StandardAminoAcidRefData, TemplateAlignment,
-    TokenFeatureTensors,
+    process_template_features, process_token_features, AffinityCropper, AffinityTokenized,
+    AtomFeatureConfig, AtomFeatureTensors, InferenceAtomRefProvider, MsaFeatureTensors,
+    StandardAminoAcidRefData, TemplateAlignment, TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
 use crate::residue_constraints::ResidueConstraints;
@@ -534,9 +533,7 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
 
     // Residue constraint features (optional, empty tensors when None)
     let residue_constraint_features =
-        crate::featurizer::process_residue_constraint_features(
-            input.residue_constraints.as_ref(),
-        );
+        crate::featurizer::process_residue_constraint_features(input.residue_constraints.as_ref());
     batch.merge(residue_constraint_features.into_feature_batch());
 
     // Template features (real or dummy)
@@ -627,13 +624,22 @@ mod tests {
     fn trunk_smoke_batch_includes_symmetry_keys() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
         let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
-        let input =
-            load_input(&manifest.records[0], &dir, &dir, None, None, None, false).expect("load_input");
+        let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+            .expect("load_input");
         let batch = trunk_smoke_feature_batch_from_inference_input(&input, 1);
         // Symmetry keys should be present
-        assert!(batch.tensors.contains_key("all_coords"), "missing all_coords");
-        assert!(batch.tensors.contains_key("all_resolved_mask"), "missing all_resolved_mask");
-        assert!(batch.tensors.contains_key("crop_to_all_atom_map"), "missing crop_to_all_atom_map");
+        assert!(
+            batch.tensors.contains_key("all_coords"),
+            "missing all_coords"
+        );
+        assert!(
+            batch.tensors.contains_key("all_resolved_mask"),
+            "missing all_resolved_mask"
+        );
+        assert!(
+            batch.tensors.contains_key("crop_to_all_atom_map"),
+            "missing crop_to_all_atom_map"
+        );
     }
 
     #[test]

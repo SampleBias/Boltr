@@ -76,7 +76,8 @@ fn input_embedder_allclose_python_golden() {
     let ref_element = load_tensor_from_safetensors(&path, "golden.in_ref_element", device).unwrap();
     let atom_pad_mask =
         load_tensor_from_safetensors(&path, "golden.in_atom_pad_mask", device).unwrap();
-    let ref_space_uid = load_tensor_from_safetensors(&path, "golden.in_ref_space_uid", device).unwrap();
+    let ref_space_uid =
+        load_tensor_from_safetensors(&path, "golden.in_ref_space_uid", device).unwrap();
     let atom_to_token =
         load_tensor_from_safetensors(&path, "golden.in_atom_to_token", device).unwrap();
     let res_type = load_tensor_from_safetensors(&path, "golden.in_res_type", device).unwrap();

@@ -46,11 +46,7 @@ pub fn prepend_torch_wheel_lib_to_ld_path(cmd: &mut tokio::process::Command, py:
 }
 
 #[cfg(not(unix))]
-pub fn prepend_torch_wheel_lib_to_ld_path(
-    _cmd: &mut tokio::process::Command,
-    _py: &Path,
-) {
-}
+pub fn prepend_torch_wheel_lib_to_ld_path(_cmd: &mut tokio::process::Command, _py: &Path) {}
 
 /// Resolve the `boltr` executable: `BOLTR` env → walk to `target/release/boltr` → `command -v boltr`.
 #[must_use]

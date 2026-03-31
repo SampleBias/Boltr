@@ -18,11 +18,13 @@ fn diffusion_golden_requested() -> bool {
 }
 
 fn template_fixture() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/template_golden/template_module_golden.safetensors")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/template_golden/template_module_golden.safetensors")
 }
 
 fn diffusion_fixture() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/diffusion_golden/diffusion_step_golden.safetensors")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/diffusion_golden/diffusion_step_golden.safetensors")
 }
 
 #[test]

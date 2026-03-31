@@ -5,15 +5,15 @@
 // implementing the neural network architecture and tensor operations.
 
 pub mod boltz_hparams;
-pub mod predict_args;
 pub mod inference_keys;
+pub mod predict_args;
 
 pub use boltz_hparams::Boltz2Hparams;
-pub use predict_args::{
-    merge_predict_args_from_json, resolve_predict_args, Boltz2PredictArgs, PredictArgsCliOverrides,
-};
 pub use inference_keys::{
     partition_safetensors_keys_for_inference, BOLTZ2_INFERENCE_TOP_LEVEL_KEYS,
+};
+pub use predict_args::{
+    merge_predict_args_from_json, resolve_predict_args, Boltz2PredictArgs, PredictArgsCliOverrides,
 };
 
 #[cfg(feature = "tch-backend")]
@@ -46,14 +46,14 @@ pub mod model;
 pub use boltz2::{
     apply_affinity_mw_correction, get_potentials_boltz2, zeros_atom_attention_out, AffinityHead,
     AffinityModule, AffinityModuleConfig, AffinityOutput, AtomDiffusion, AtomDiffusionConfig,
-    AtomEncoderPlaceholder, BFactorModule, Boltz2Model, ConfidenceModule, ConfidenceModuleConfig,
-    ConfidenceOutput, ConfidenceV2, ContactConditioning, ContactFeatures, DiffusionConditioning,
-    DiffusionConditioningOutput, DiffusionModule, DiffusionSampleOutput, DistogramModule,
-    AtomEncoderBatchFeats, AtomEncoderFlags, InputEmbedder, InputEmbedderFeats, MsaFeatures,
-    MsaModule, Potential, PotentialBatchFeats, PredictStepFeats,
-    PredictStepOutput, RelPosFeatures, RelativePositionEncoder, SteeringParams, TemplateFeatures,
-    TemplateModule, TemplateV2Module, AFFINITY_MW_BIAS, AFFINITY_MW_COEF, AFFINITY_MW_MODEL_COEF,
-    BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
+    AtomEncoderBatchFeats, AtomEncoderFlags, AtomEncoderPlaceholder, BFactorModule, Boltz2Model,
+    ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput, ConfidenceV2, ContactConditioning,
+    ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput, DiffusionModule,
+    DiffusionSampleOutput, DistogramModule, InputEmbedder, InputEmbedderFeats, MsaFeatures,
+    MsaModule, Potential, PotentialBatchFeats, PredictStepFeats, PredictStepOutput, RelPosFeatures,
+    RelativePositionEncoder, SteeringParams, TemplateFeatures, TemplateModule, TemplateV2Module,
+    AFFINITY_MW_BIAS, AFFINITY_MW_COEF, AFFINITY_MW_MODEL_COEF, BOLTZ_MSA_PROFILE_IN,
+    BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{

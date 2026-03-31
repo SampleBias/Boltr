@@ -8,8 +8,8 @@
 
 use std::path::PathBuf;
 
-use boltr_backend_tch::Boltz2Model;
 use boltr_backend_tch::partition_safetensors_keys_for_inference;
+use boltr_backend_tch::Boltz2Model;
 use tch::Device;
 
 fn usage() -> ! {
@@ -135,7 +135,10 @@ fn main() {
             infer.len(),
             other.len()
         );
-        eprintln!("Inference top-level prefixes: {:?}", boltr_backend_tch::BOLTZ2_INFERENCE_TOP_LEVEL_KEYS);
+        eprintln!(
+            "Inference top-level prefixes: {:?}",
+            boltr_backend_tch::BOLTZ2_INFERENCE_TOP_LEVEL_KEYS
+        );
     }
 
     let n_vs = model.var_store().variables().len();

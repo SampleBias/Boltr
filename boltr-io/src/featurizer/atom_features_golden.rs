@@ -173,8 +173,7 @@ mod tests {
                     assert_golden_numeric_allclose(&view, &got, key);
                 }
                 "disto_coords_ensemble" => {
-                    let got =
-                        flatten_row_major_f32(&feat.disto_coords_ensemble.clone().into_dyn());
+                    let got = flatten_row_major_f32(&feat.disto_coords_ensemble.clone().into_dyn());
                     assert_golden_numeric_allclose(&view, &got, key);
                 }
                 "disto_target" => {

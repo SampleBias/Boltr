@@ -1,9 +1,7 @@
 //! Full [`Boltz2Model::predict_step`] smoke (random tensors, no checkpoint).
 
-use boltr_backend_tch::{
-    Boltz2Model, InputEmbedderFeats, PredictStepFeats, RelPosFeatures,
-};
 use boltr_backend_tch::boltz2::{AtomDiffusionConfig, Boltz2DiffusionArgs};
+use boltr_backend_tch::{Boltz2Model, InputEmbedderFeats, PredictStepFeats, RelPosFeatures};
 use tch::{Device, Kind, Tensor};
 
 #[test]

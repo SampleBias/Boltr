@@ -39,7 +39,10 @@ fn scatter_mean_chain(coords: &Tensor, chain_id: &Tensor, atom_pad_mask: &Tensor
     let mut sum = Tensor::zeros(&[b, max_c, 3], (kind, device));
     let mut cnt = Tensor::zeros(&[b, max_c], (kind, device));
     let w = pad.unsqueeze(-1).to_kind(kind);
-    let idx = chain_id.clamp(0, max_c - 1).unsqueeze(-1).expand(&[b, m, 3], true);
+    let idx = chain_id
+        .clamp(0, max_c - 1)
+        .unsqueeze(-1)
+        .expand(&[b, m, 3], true);
     sum = sum.scatter_reduce(-2, &idx, &(coords * w), "sum");
     let idx1 = chain_id.clamp(0, max_c - 1);
     cnt = cnt.scatter_reduce(-1, &idx1, &pad.to_kind(kind), "sum");
@@ -73,7 +76,12 @@ fn hinge_two_sided(d: &Tensor, lower: &Tensor, upper: &Tensor, k: &Tensor) -> Te
 }
 
 impl Potential {
-    pub fn compute_energy(&self, coords: &Tensor, feats: &PotentialBatchFeats<'_>, steering_t: f64) -> Tensor {
+    pub fn compute_energy(
+        &self,
+        coords: &Tensor,
+        feats: &PotentialBatchFeats<'_>,
+        steering_t: f64,
+    ) -> Tensor {
         match self {
             Potential::SymmetricChainCom { buffer, .. } => {
                 symmetric_chain_com_energy(coords, feats, buffer.compute(steering_t))
@@ -123,15 +131,33 @@ impl Potential {
     #[must_use]
     pub fn guidance_interval(&self) -> i64 {
         match self {
-            Potential::SymmetricChainCom { guidance_interval, .. }
-            | Potential::VdwOverlap { guidance_interval, .. }
-            | Potential::Connections { guidance_interval, .. }
-            | Potential::PoseBusters { guidance_interval, .. }
-            | Potential::ChiralAtom { guidance_interval, .. }
-            | Potential::StereoBond { guidance_interval, .. }
-            | Potential::PlanarBond { guidance_interval, .. }
-            | Potential::Contact { guidance_interval, .. }
-            | Potential::TemplateReference { guidance_interval, .. } => *guidance_interval,
+            Potential::SymmetricChainCom {
+                guidance_interval, ..
+            }
+            | Potential::VdwOverlap {
+                guidance_interval, ..
+            }
+            | Potential::Connections {
+                guidance_interval, ..
+            }
+            | Potential::PoseBusters {
+                guidance_interval, ..
+            }
+            | Potential::ChiralAtom {
+                guidance_interval, ..
+            }
+            | Potential::StereoBond {
+                guidance_interval, ..
+            }
+            | Potential::PlanarBond {
+                guidance_interval, ..
+            }
+            | Potential::Contact {
+                guidance_interval, ..
+            }
+            | Potential::TemplateReference {
+                guidance_interval, ..
+            } => *guidance_interval,
         }
     }
 
@@ -139,15 +165,33 @@ impl Potential {
     pub fn resampling_weight(&self, steering_t: f64) -> f64 {
         let s = |sch: &Schedule| sch.compute(steering_t);
         match self {
-            Potential::SymmetricChainCom { resampling_weight, .. } => s(resampling_weight),
-            Potential::VdwOverlap { resampling_weight, .. } => s(resampling_weight),
-            Potential::Connections { resampling_weight, .. } => s(resampling_weight),
-            Potential::PoseBusters { resampling_weight, .. } => s(resampling_weight),
-            Potential::ChiralAtom { resampling_weight, .. } => s(resampling_weight),
-            Potential::StereoBond { resampling_weight, .. } => s(resampling_weight),
-            Potential::PlanarBond { resampling_weight, .. } => s(resampling_weight),
-            Potential::Contact { resampling_weight, .. } => s(resampling_weight),
-            Potential::TemplateReference { resampling_weight, .. } => s(resampling_weight),
+            Potential::SymmetricChainCom {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::VdwOverlap {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::Connections {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::PoseBusters {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::ChiralAtom {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::StereoBond {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::PlanarBond {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::Contact {
+                resampling_weight, ..
+            } => s(resampling_weight),
+            Potential::TemplateReference {
+                resampling_weight, ..
+            } => s(resampling_weight),
         }
     }
 
@@ -155,20 +199,42 @@ impl Potential {
     pub fn guidance_weight(&self, steering_t: f64) -> f64 {
         let s = |sch: &Schedule| sch.compute(steering_t);
         match self {
-            Potential::SymmetricChainCom { guidance_weight, .. } => s(guidance_weight),
-            Potential::VdwOverlap { guidance_weight, .. } => s(guidance_weight),
-            Potential::Connections { guidance_weight, .. } => s(guidance_weight),
-            Potential::PoseBusters { guidance_weight, .. } => s(guidance_weight),
-            Potential::ChiralAtom { guidance_weight, .. } => s(guidance_weight),
-            Potential::StereoBond { guidance_weight, .. } => s(guidance_weight),
-            Potential::PlanarBond { guidance_weight, .. } => s(guidance_weight),
-            Potential::Contact { guidance_weight, .. } => s(guidance_weight),
-            Potential::TemplateReference { guidance_weight, .. } => s(guidance_weight),
+            Potential::SymmetricChainCom {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::VdwOverlap {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::Connections {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::PoseBusters {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::ChiralAtom {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::StereoBond {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::PlanarBond {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::Contact {
+                guidance_weight, ..
+            } => s(guidance_weight),
+            Potential::TemplateReference {
+                guidance_weight, ..
+            } => s(guidance_weight),
         }
     }
 }
 
-fn symmetric_chain_com_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f64) -> Tensor {
+fn symmetric_chain_com_energy(
+    coords: &Tensor,
+    feats: &PotentialBatchFeats<'_>,
+    buffer: f64,
+) -> Tensor {
     let Some(sym_idx) = feats.symmetric_chain_index else {
         return zeros_batch(coords);
     };
@@ -186,12 +252,18 @@ fn symmetric_chain_com_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, 
     }
 
     let d = pair_dist(&com, &pair);
-    let lower = Tensor::from_slice(&[buffer]).to_device(coords.device()).expand_as(&d);
+    let lower = Tensor::from_slice(&[buffer])
+        .to_device(coords.device())
+        .expand_as(&d);
     let k = Tensor::ones_like(&d);
     hinge_lower(&d, &lower, &k)
 }
 
-fn symmetric_chain_com_grad(coords: &Tensor, _feats: &PotentialBatchFeats<'_>, _buffer: f64) -> Tensor {
+fn symmetric_chain_com_grad(
+    coords: &Tensor,
+    _feats: &PotentialBatchFeats<'_>,
+    _buffer: f64,
+) -> Tensor {
     Tensor::zeros_like(coords)
 }
 
@@ -220,7 +292,9 @@ fn connections_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: 
     }
     let pair_index = conn.select(0, 0);
     let d = pair_dist(coords, &pair_index);
-    let upper = Tensor::from_slice(&[buffer]).to_device(coords.device()).expand_as(&d);
+    let upper = Tensor::from_slice(&[buffer])
+        .to_device(coords.device())
+        .expand_as(&d);
     let k = Tensor::ones_like(&d);
     hinge_upper(&d, &upper, &k)
 }
@@ -239,7 +313,9 @@ fn connections_grad(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f6
     let b = coords.index_select(-2, &i1);
     let diff = &(a - b);
     let dist = diff.norm_scalaropt_dim(2, -1, false);
-    let upper = Tensor::from_slice(&[buffer]).to_device(coords.device()).expand_as(&dist);
+    let upper = Tensor::from_slice(&[buffer])
+        .to_device(coords.device())
+        .expand_as(&dist);
     let pos = dist.gt_tensor(&upper);
     let r_hat = diff / (dist.unsqueeze(-1) + 1e-8);
     let g = r_hat * pos.unsqueeze(-1).to_kind(Kind::Float);
@@ -316,9 +392,14 @@ fn pose_busters_energy(
     );
 
     let vdw = vdw_radii_tensor(coords.device(), coords.kind());
-    let atom_vdw = ref_element.select(0, 0).to_kind(Kind::Float).matmul(&vdw.unsqueeze(-1)).squeeze_dim(-1);
+    let atom_vdw = ref_element
+        .select(0, 0)
+        .to_kind(Kind::Float)
+        .matmul(&vdw.unsqueeze(-1))
+        .squeeze_dim(-1);
     let cut = 0.35
-        + (atom_vdw.index_select(0, &pi.select(0, 0)) + atom_vdw.index_select(0, &pi.select(0, 1))) * 0.5;
+        + (atom_vdw.index_select(0, &pi.select(0, 0)) + atom_vdw.index_select(0, &pi.select(0, 1)))
+            * 0.5;
     lb = lb.where_self(&bm.logical_not(), &lb.maximum(&cut));
     ub = ub.where_self(&bm, &ub.minimum(&cut));
 
@@ -327,7 +408,13 @@ fn pose_busters_energy(
     hinge_two_sided(&d, &lb, &ub, &k)
 }
 
-fn pose_busters_grad(coords: &Tensor, _feats: &PotentialBatchFeats<'_>, _bb: f64, _ab: f64, _cb: f64) -> Tensor {
+fn pose_busters_grad(
+    coords: &Tensor,
+    _feats: &PotentialBatchFeats<'_>,
+    _bb: f64,
+    _ab: f64,
+    _cb: f64,
+) -> Tensor {
     Tensor::zeros_like(coords)
 }
 
@@ -398,9 +485,15 @@ fn stereo_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f64) 
     let phi = dihedral_phi(coords, &index).abs();
     let mut lb = Tensor::zeros_like(&phi);
     let mut ub = Tensor::zeros_like(&phi);
-    lb = lb.where_self(&o, &(Tensor::full_like(&phi, std::f64::consts::PI) - buffer));
+    lb = lb.where_self(
+        &o,
+        &(Tensor::full_like(&phi, std::f64::consts::PI) - buffer),
+    );
     ub = ub.where_self(&o, &Tensor::full_like(&phi, f64::INFINITY));
-    lb = lb.where_self(&o.logical_not(), &Tensor::full_like(&phi, f64::NEG_INFINITY));
+    lb = lb.where_self(
+        &o.logical_not(),
+        &Tensor::full_like(&phi, f64::NEG_INFINITY),
+    );
     ub = ub.where_self(&o.logical_not(), &Tensor::full_like(&phi, buffer));
     let k = Tensor::ones_like(&phi);
     hinge_two_sided(&phi, &lb, &ub, &k)
@@ -425,7 +518,9 @@ fn planar_energy(coords: &Tensor, feats: &PotentialBatchFeats<'_>, buffer: f64) 
     let improper = double_bond.index_select(-1, &imp.select(1, 0));
     let index = improper.flatten(1, 2);
     let phi = dihedral_phi(coords, &index).abs();
-    let upper = Tensor::from_slice(&[buffer]).to_device(device).expand_as(&phi);
+    let upper = Tensor::from_slice(&[buffer])
+        .to_device(device)
+        .expand_as(&phi);
     let k = Tensor::ones_like(&phi);
     hinge_upper(&phi, &upper, &k)
 }
@@ -434,7 +529,12 @@ fn planar_grad(coords: &Tensor, _feats: &PotentialBatchFeats<'_>, _buffer: f64) 
     Tensor::zeros_like(coords)
 }
 
-fn contact_energy(p: &Potential, coords: &Tensor, feats: &PotentialBatchFeats<'_>, steering_t: f64) -> Tensor {
+fn contact_energy(
+    p: &Potential,
+    coords: &Tensor,
+    feats: &PotentialBatchFeats<'_>,
+    steering_t: f64,
+) -> Tensor {
     let Potential::Contact { union_lambda, .. } = p else {
         return zeros_batch(coords);
     };
@@ -458,13 +558,23 @@ fn contact_energy(p: &Potential, coords: &Tensor, feats: &PotentialBatchFeats<'_
     let ul = union_lambda.compute(steering_t);
     let neg_exp = (-ul * &base).exp();
     let uidx = union_index.select(0, 0);
-    let z = neg_exp.scatter_reduce(-1, &uidx.expand_as(&neg_exp), &Tensor::zeros_like(&neg_exp), "sum");
+    let z = neg_exp.scatter_reduce(
+        -1,
+        &uidx.expand_as(&neg_exp),
+        &Tensor::zeros_like(&neg_exp),
+        "sum",
+    );
     let z_u = z.gather(-1, &uidx, false);
     let sm = &neg_exp / (z_u + 1e-8);
     (base * sm).sum_dim_intlist(&[-1i64][..], false, Kind::Float)
 }
 
-fn contact_grad(_p: &Potential, coords: &Tensor, _feats: &PotentialBatchFeats<'_>, _t: f64) -> Tensor {
+fn contact_grad(
+    _p: &Potential,
+    coords: &Tensor,
+    _feats: &PotentialBatchFeats<'_>,
+    _t: f64,
+) -> Tensor {
     Tensor::zeros_like(coords)
 }
 

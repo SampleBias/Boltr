@@ -25,10 +25,7 @@ fn main() -> anyhow::Result<()> {
             .join("tests/fixtures/collate_golden/trunk_smoke_collate.safetensors"),
     };
 
-    let template_dim: usize = env::args()
-        .nth(3)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(4);
+    let template_dim: usize = env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(4);
 
     let manifest = parse_manifest_path(&manifest_dir.join("manifest.json"))?;
     let record = &manifest.records[0];

@@ -12,12 +12,11 @@
 use std::path::Path;
 
 use boltr_io::{
-    atom_features_from_inference_input, collate_inference_batches,
-    load_input, msa_features_from_inference_input, parse_manifest_path,
-    process_token_features, process_symmetry_features,
-    tokenize_boltz2_inference,
-    trunk_smoke_feature_batch_from_inference_input,
-    ATOM_FEATURE_KEYS_ALA, INFERENCE_COLLATE_EXCLUDED_KEYS,
+    atom_features_from_inference_input, collate_inference_batches, load_input,
+    msa_features_from_inference_input, parse_manifest_path, process_symmetry_features,
+    process_token_features, tokenize_boltz2_inference,
+    trunk_smoke_feature_batch_from_inference_input, ATOM_FEATURE_KEYS_ALA,
+    INFERENCE_COLLATE_EXCLUDED_KEYS,
 };
 
 fn fixture_dir() -> std::path::PathBuf {
@@ -165,10 +164,7 @@ fn e2e_single_example_collate_produces_stacked_batch() {
         .expect("token_pad_mask");
     assert_eq!(token_pad_mask.shape(), &[2, 1]);
 
-    let res_type = result
-        .batch
-        .get_f32("res_type")
-        .expect("res_type");
+    let res_type = result.batch.get_f32("res_type").expect("res_type");
     assert_eq!(res_type.shape(), &[2, 1, boltr_io::NUM_TOKENS]);
 
     let atom_pad_mask = result
@@ -177,7 +173,10 @@ fn e2e_single_example_collate_produces_stacked_batch() {
         .expect("atom_pad_mask");
     assert_eq!(atom_pad_mask.shape(), &[2, 32]);
     let sum: f32 = atom_pad_mask.sum();
-    assert!((sum - 10.0).abs() < 1e-4, "two examples × 5 atoms, got {sum}");
+    assert!(
+        (sum - 10.0).abs() < 1e-4,
+        "two examples × 5 atoms, got {sum}"
+    );
 
     assert!(result.excluded.contains_key("all_coords"));
 }

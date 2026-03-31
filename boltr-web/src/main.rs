@@ -31,13 +31,13 @@ use serde::Deserialize;
 use serde::Serialize;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use crate::paths::resolve_boltr_exe;
 use crate::predict_job::{
     build_predict_argv, cache_from_form_override, inspect_predict_output, parse_preprocess_mode,
     path_under_job_dir, predict_enabled, preprocess_preflight, run_predict_job, tarball_out_dir,
     JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
-use crate::paths::resolve_boltr_exe;
 
 #[derive(Clone)]
 struct AppState {
@@ -153,12 +153,8 @@ async fn post_validate(
                 "missing file field (or set job_dir to validate YAML on disk)".to_string(),
             )
         })?;
-        let tmp = tempfile::tempdir().map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("temp dir: {e}"),
-            )
-        })?;
+        let tmp = tempfile::tempdir()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("temp dir: {e}")))?;
         let yaml_path = tmp.path().join(&name);
         std::fs::write(&yaml_path, &bytes).map_err(|e| {
             (
@@ -167,12 +163,7 @@ async fn post_validate(
             )
         })?;
         let text = std::str::from_utf8(&bytes)
-            .map_err(|e| {
-                (
-                    StatusCode::BAD_REQUEST,
-                    format!("UTF-8: {e}"),
-                )
-            })?
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("UTF-8: {e}")))?
             .to_string();
         (yaml_path, text)
     };
@@ -183,12 +174,8 @@ async fn post_validate(
         .unwrap_or_else(|| state.default_cache.clone());
 
     let v = validate_yaml_at(&yaml_path, &text, &cache, assume_msa_server);
-    let json = serde_json::to_value(&v).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            e.to_string(),
-        )
-    })?;
+    let json =
+        serde_json::to_value(&v).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json))
 }
 
@@ -249,8 +236,7 @@ async fn post_predict(
         ..Default::default()
     };
 
-    let mut field_map: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
+    let mut field_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     while let Some(field) = multipart
         .next_field()
@@ -352,9 +338,7 @@ async fn post_predict(
     opts.max_parallel_samples = field_map
         .get("max_parallel_samples")
         .and_then(|s| parse_opt_i64(s));
-    opts.step_scale = field_map
-        .get("step_scale")
-        .and_then(|s| parse_opt_f64(s));
+    opts.step_scale = field_map.get("step_scale").and_then(|s| parse_opt_f64(s));
     opts.output_format = field_map.get("output_format").cloned();
     opts.max_msa_seqs = field_map
         .get("max_msa_seqs")
@@ -404,13 +388,12 @@ async fn post_predict(
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    let preprocess_raw = field_map.get("preprocess").map(String::as_str).unwrap_or("auto");
-    opts.preprocess = parse_preprocess_mode(preprocess_raw).map_err(|msg| {
-        (
-            StatusCode::BAD_REQUEST,
-            format!("preprocess: {msg}"),
-        )
-    })?;
+    let preprocess_raw = field_map
+        .get("preprocess")
+        .map(String::as_str)
+        .unwrap_or("auto");
+    opts.preprocess = parse_preprocess_mode(preprocess_raw)
+        .map_err(|msg| (StatusCode::BAD_REQUEST, format!("preprocess: {msg}")))?;
     if let Some(p) = field_map.get("bolt_command") {
         let t = p.trim();
         if !t.is_empty() {
@@ -475,10 +458,7 @@ async fn post_predict(
         run_predict_job(jid, job, boltr, argv, sem).await;
     });
 
-    Ok((
-        StatusCode::ACCEPTED,
-        Json(PredictStartResponse { job_id }),
-    ))
+    Ok((StatusCode::ACCEPTED, Json(PredictStartResponse { job_id })))
 }
 
 #[derive(Serialize)]
@@ -575,18 +555,20 @@ async fn get_predict_download(
         return Err((StatusCode::BAD_REQUEST, "job still running".to_string()));
     }
     if !job.success.load(Ordering::SeqCst) {
-        return Err((StatusCode::BAD_REQUEST, "job did not succeed; no download".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "job did not succeed; no download".to_string(),
+        ));
     }
     if !job.out_dir.is_dir() {
-        return Err((StatusCode::NOT_FOUND, "output directory missing".to_string()));
+        return Err((
+            StatusCode::NOT_FOUND,
+            "output directory missing".to_string(),
+        ));
     }
 
-    let bytes = tarball_out_dir(&job.out_dir).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("archive: {e}"),
-        )
-    })?;
+    let bytes = tarball_out_dir(&job.out_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("archive: {e}")))?;
 
     let filename = format!("boltr-predict-{job_id}.tar.gz");
     Response::builder()

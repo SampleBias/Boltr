@@ -50,36 +50,35 @@ impl PredictionFileNames {
 
     #[must_use]
     pub fn pdb_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
-        self.struct_dir(output_dir).join(format!(
-            "{}_model_{model_rank}.pdb",
-            self.record_id
-        ))
+        self.struct_dir(output_dir)
+            .join(format!("{}_model_{model_rank}.pdb", self.record_id))
     }
 
     #[must_use]
     pub fn mmcif_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
-        self.struct_dir(output_dir).join(format!(
-            "{}_model_{model_rank}.cif",
-            self.record_id
-        ))
+        self.struct_dir(output_dir)
+            .join(format!("{}_model_{model_rank}.cif", self.record_id))
     }
 
     /// `pae_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
     #[must_use]
     pub fn pae_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
-        self.struct_dir(output_dir).join(pae_npz_filename(&self.record_id, model_rank))
+        self.struct_dir(output_dir)
+            .join(pae_npz_filename(&self.record_id, model_rank))
     }
 
     /// `pde_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
     #[must_use]
     pub fn pde_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
-        self.struct_dir(output_dir).join(pde_npz_filename(&self.record_id, model_rank))
+        self.struct_dir(output_dir)
+            .join(pde_npz_filename(&self.record_id, model_rank))
     }
 
     /// `plddt_{record_id}_model_{rank}.npz` under `output_dir / record_id /`.
     #[must_use]
     pub fn plddt_npz_path(&self, output_dir: &Path, model_rank: usize) -> PathBuf {
-        self.struct_dir(output_dir).join(plddt_npz_filename(&self.record_id, model_rank))
+        self.struct_dir(output_dir)
+            .join(plddt_npz_filename(&self.record_id, model_rank))
     }
 }
 

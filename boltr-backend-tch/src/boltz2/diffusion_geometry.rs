@@ -6,7 +6,11 @@
 use tch::{Device, Kind, Tensor};
 
 /// Random rotation matrices `(multiplicity, 3, 3)` and translation `(multiplicity, 1, 3)`.
-pub fn compute_random_augmentation(multiplicity: i64, device: Device, kind: Kind) -> (Tensor, Tensor) {
+pub fn compute_random_augmentation(
+    multiplicity: i64,
+    device: Device,
+    kind: Kind,
+) -> (Tensor, Tensor) {
     let quat = random_quaternions(multiplicity, device, kind);
     let r = quaternion_to_matrix(&quat);
     let random_tr = Tensor::randn(&[multiplicity, 1, 3], (kind, device));
@@ -71,8 +75,10 @@ pub fn weighted_rigid_align(
     let weights = weights.unsqueeze(-1);
 
     let wsum = weights.sum_dim_intlist(&[-2i64][..], true, Kind::Float);
-    let true_centroid = (true_coords * &weights).sum_dim_intlist(&[-2i64][..], true, Kind::Float) / &wsum;
-    let pred_centroid = (pred_coords * &weights).sum_dim_intlist(&[-2i64][..], true, Kind::Float) / &wsum;
+    let true_centroid =
+        (true_coords * &weights).sum_dim_intlist(&[-2i64][..], true, Kind::Float) / &wsum;
+    let pred_centroid =
+        (pred_coords * &weights).sum_dim_intlist(&[-2i64][..], true, Kind::Float) / &wsum;
 
     let true_centered = true_coords - &true_centroid;
     let pred_centered = pred_coords - &pred_centroid;

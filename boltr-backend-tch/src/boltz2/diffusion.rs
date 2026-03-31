@@ -621,19 +621,22 @@ impl AtomDiffusion {
             let mut ac = atom_coords.shallow_clone();
             let ac_mean = ac.mean_dim(&[-2i64][..], true, Kind::Float);
             ac = ac - ac_mean;
-            ac = Tensor::einsum("bmd,bds->bms", &[&ac, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
+            ac = Tensor::einsum("bmd,bds->bms", &[&ac, &random_r], None::<Vec<i64>>)
+                .to_kind(Kind::Float)
                 + &random_tr;
 
             if let Some(ref ad) = atom_coords_denoised {
                 let ad_mean = ad.mean_dim(&[-2i64][..], true, Kind::Float);
                 let mut adn = ad.shallow_clone() - ad_mean;
-                adn = Tensor::einsum("bmd,bds->bms", &[&adn, &random_r], None::<Vec<i64>>).to_kind(Kind::Float)
+                adn = Tensor::einsum("bmd,bds->bms", &[&adn, &random_r], None::<Vec<i64>>)
+                    .to_kind(Kind::Float)
                     + &random_tr;
                 atom_coords_denoised = Some(adn);
             }
 
             if let Some(ref mut sgu) = scaled_guidance_update {
-                *sgu = Tensor::einsum("bmd,bds->bms", &[&*sgu, &random_r], None::<Vec<i64>>).to_kind(Kind::Float);
+                *sgu = Tensor::einsum("bmd,bds->bms", &[&*sgu, &random_r], None::<Vec<i64>>)
+                    .to_kind(Kind::Float);
             }
 
             atom_coords = ac;
@@ -671,8 +674,8 @@ impl AtomDiffusion {
                             let gi = p.guidance_interval();
                             if gw > 0.0 && gd % gi == 0 {
                                 let pos = acd.shallow_clone() + guidance_update.shallow_clone();
-                                energy_gradient =
-                                    energy_gradient + gw * p.compute_gradient(&pos, feats, steering_t);
+                                energy_gradient = energy_gradient
+                                    + gw * p.compute_gradient(&pos, feats, steering_t);
                             }
                         }
                         guidance_update = guidance_update - energy_gradient;
@@ -702,8 +705,7 @@ impl AtomDiffusion {
 
             let acd = atom_coords_denoised.as_ref().unwrap();
             let denoised_over_sigma = (&coords_noisy - acd) / t_hat;
-            atom_coords =
-                &coords_noisy + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma;
+            atom_coords = &coords_noisy + self.step_scale * (sigma_t - t_hat) * denoised_over_sigma;
         }
 
         DiffusionSampleOutput {

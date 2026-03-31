@@ -109,18 +109,18 @@ pub fn compute_ptms(
         .mul(&tm_value)
         .sum_dim_intlist(&[-1i64][..], false, Kind::Float);
 
-    let ptm =
-        tm_expected_value
-            .multiply(&pair_mask_ptm)
-            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
-            / (pair_mask_ptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
+    let ptm = tm_expected_value.multiply(&pair_mask_ptm).sum_dim_intlist(
+        &[-1i64][..],
+        false,
+        Kind::Float,
+    ) / (pair_mask_ptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let ptm = ptm.max_dim(1, false).0;
 
-    let iptm =
-        tm_expected_value
-            .multiply(&pair_mask_iptm)
-            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
-            / (pair_mask_iptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
+    let iptm = tm_expected_value.multiply(&pair_mask_iptm).sum_dim_intlist(
+        &[-1i64][..],
+        false,
+        Kind::Float,
+    ) / (pair_mask_iptm.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5);
     let iptm = iptm.max_dim(1, false).0;
 
     let token_type = mol_type
@@ -141,13 +141,12 @@ pub fn compute_ptms(
         * &pad_pair
         * (is_protein.unsqueeze(2) * is_protein.unsqueeze(1));
 
-    let ligand_iptm =
-        (tm_expected_value
-            .multiply(&ligand_iptm_mask)
-            .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
-            / (ligand_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
-            .max_dim(1, false)
-            .0;
+    let ligand_iptm = (tm_expected_value
+        .multiply(&ligand_iptm_mask)
+        .sum_dim_intlist(&[-1i64][..], false, Kind::Float)
+        / (ligand_iptm_mask.sum_dim_intlist(&[-1i64][..], false, Kind::Float) + 1e-5))
+        .max_dim(1, false)
+        .0;
     let protein_iptm = ((tm_expected_value.multiply(&protein_iptm_mask)).sum_dim_intlist(
         &[-1i64][..],
         false,

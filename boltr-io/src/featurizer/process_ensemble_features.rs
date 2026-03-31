@@ -47,12 +47,12 @@ pub fn process_ensemble_features(
     } else if s_ensemble_num < num_ensembles {
         (0..s_ensemble_num).collect()
     } else {
-        sample(rng, s_ensemble_num, num_ensembles).into_iter().collect()
+        sample(rng, s_ensemble_num, num_ensembles)
+            .into_iter()
+            .collect()
     };
 
-    Ok(EnsembleFeatures {
-        ensemble_ref_idxs,
-    })
+    Ok(EnsembleFeatures { ensemble_ref_idxs })
 }
 
 #[cfg(test)]
@@ -75,6 +75,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let e = process_ensemble_features(&s, &mut rng, 4, true, false).unwrap();
         assert_eq!(e.ensemble_ref_idxs.len(), 4);
-        assert!(e.ensemble_ref_idxs.iter().all(|&i| i < s.num_ensemble_conformers()));
+        assert!(e
+            .ensemble_ref_idxs
+            .iter()
+            .all(|&i| i < s.num_ensemble_conformers()));
     }
 }

@@ -82,10 +82,7 @@ impl CcdMolData {
 
     /// Look up an atom by name.
     pub fn atom_by_name(&self, name: &str) -> Option<(usize, &CcdAtom)> {
-        self.atoms
-            .iter()
-            .enumerate()
-            .find(|(_, a)| a.name == name)
+        self.atoms.iter().enumerate().find(|(_, a)| a.name == name)
     }
 
     /// Heavy atom names in order.
@@ -215,8 +212,9 @@ impl CcdMolProvider {
         for code in codes {
             let json_path = mol_dir.join(format!("{code}.json"));
             if json_path.exists() {
-                let mol = load_ccd_json(&json_path)
-                    .with_context(|| format!("load CCD molecule {code} from {}", json_path.display()))?;
+                let mol = load_ccd_json(&json_path).with_context(|| {
+                    format!("load CCD molecule {code} from {}", json_path.display())
+                })?;
                 provider.insert(mol);
             } else {
                 bail!(
@@ -426,16 +424,14 @@ mod tests {
     fn serialize_deserialize_roundtrip() {
         let mol = CcdMolData::new(
             "TEST".to_string(),
-            vec![
-                CcdAtom {
-                    name: "C1".to_string(),
-                    atomic_num: 6,
-                    formal_charge: 0,
-                    leaving_atom: false,
-                    conformer_coords: [1.0, 2.0, 3.0],
-                    chirality_tag: "CHI_UNSPECIFIED".to_string(),
-                },
-            ],
+            vec![CcdAtom {
+                name: "C1".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [1.0, 2.0, 3.0],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            }],
             vec![],
         );
         let json = serialize_ccd_mol_json(&mol).unwrap();

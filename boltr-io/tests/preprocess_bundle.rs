@@ -1,10 +1,11 @@
 //! Tests for preprocess bundle discovery and native writer.
 
-use std::fs;
 use boltr_io::{
-    copy_flat_preprocess_bundle, find_boltz_manifest_path, parse_input_path, parse_manifest_path,
+    canonical_yaml_parent, copy_flat_preprocess_bundle, copy_msa_a3m_to_output,
+    find_boltz_manifest_path, parse_input_path, parse_manifest_path, preprocess_bundle_ready,
     validate_native_eligible, write_native_preprocess_bundle,
 };
+use std::fs;
 
 #[test]
 fn find_manifest_prefers_boltz_results_stem() {
@@ -100,6 +101,75 @@ constraints: []
     .unwrap();
     let parsed = parse_input_path(&yaml).unwrap();
     assert!(validate_native_eligible(&parsed).is_ok());
+}
+
+#[test]
+fn copy_flat_bundle_copies_a3m_sidecars() {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("src");
+    fs::create_dir_all(src.join("msa")).unwrap();
+    fs::write(
+        src.join("manifest.json"),
+        r#"{"records":[{"id":"r1","structure":{},"chains":[{"chain_id":0,"chain_name":"A","mol_type":0,"cluster_id":0,"msa_id":0,"num_residues":1,"valid":true}],"interfaces":[]}]}"#,
+    )
+    .unwrap();
+    fs::write(src.join("r1.npz"), b"npz").unwrap();
+    fs::write(src.join("0.npz"), b"msa").unwrap();
+    fs::write(src.join("msa").join("A.a3m"), b">A\nA\n").unwrap();
+    let dst = tmp.path().join("dst");
+    copy_flat_preprocess_bundle(&src.join("manifest.json"), &dst, false).unwrap();
+    assert_eq!(fs::read(dst.join("msa").join("A.a3m")).unwrap(), b">A\nA\n");
+}
+
+#[test]
+fn preprocess_bundle_ready_detects_missing_npz() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml = tmp.path().join("in.yaml");
+    fs::write(
+        &yaml,
+        r#"sequences:
+  - protein:
+      id: A
+      sequence: "A"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("manifest.json"),
+        r#"{"records":[{"id":"rec1","structure":{},"chains":[{"chain_id":0,"chain_name":"A","mol_type":0,"cluster_id":0,"msa_id":0,"num_residues":1,"valid":true}],"interfaces":[]}]}"#,
+    )
+    .unwrap();
+    assert!(!preprocess_bundle_ready(&yaml, false).unwrap());
+}
+
+#[test]
+fn canonical_yaml_parent_matches_native_writer() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml = tmp.path().join("t.yaml");
+    fs::write(
+        &yaml,
+        r#"sequences:
+  - protein:
+      id: A
+      sequence: "A"
+      msa: empty
+"#,
+    )
+    .unwrap();
+    write_native_preprocess_bundle(&yaml, tmp.path(), Some("rec_x"), Some(16), None).unwrap();
+    let parent = canonical_yaml_parent(&yaml).unwrap();
+    assert_eq!(parent, tmp.path().canonicalize().unwrap());
+    assert!(preprocess_bundle_ready(&yaml, false).unwrap());
+}
+
+#[test]
+fn copy_msa_a3m_to_output_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(tmp.path().join("msa")).unwrap();
+    fs::write(tmp.path().join("msa").join("A.a3m"), b"m").unwrap();
+    let out = tmp.path().join("out");
+    copy_msa_a3m_to_output(tmp.path(), &out).unwrap();
+    assert_eq!(fs::read(out.join("msa").join("A.a3m")).unwrap(), b"m");
 }
 
 #[test]

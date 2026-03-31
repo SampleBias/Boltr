@@ -202,9 +202,7 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
 /// Only the leading numeric id must match our submitted query ids (101..).
 fn query_id_from_a3m_header(line: &str) -> Option<i32> {
     let rest = line.strip_prefix('>')?.trim();
-    let token = rest
-        .split(|c: char| c == '|' || c.is_whitespace())
-        .next()?;
+    let token = rest.split(|c: char| c == '|' || c.is_whitespace()).next()?;
     token.parse().ok()
 }
 

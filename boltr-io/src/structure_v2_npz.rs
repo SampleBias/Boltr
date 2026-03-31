@@ -450,10 +450,7 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
             atom_num: read_i32_le(epay, base + 4)?,
         });
     }
-    let ensemble_atom_coord_idx = ensemble
-        .first()
-        .map(|e| e.atom_coord_idx)
-        .unwrap_or(0);
+    let ensemble_atom_coord_idx = ensemble.first().map(|e| e.atom_coord_idx).unwrap_or(0);
 
     Ok(StructureV2Tables {
         atoms,

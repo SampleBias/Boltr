@@ -21,7 +21,10 @@ pub fn verify_full_collate_golden(
 ) -> Result<()> {
     println!("Loading golden safetensors: {}", golden_path.display());
     let golden_bytes = std::fs::read(golden_path).with_context(|| {
-        format!("Failed to read golden safetensors: {}", golden_path.display())
+        format!(
+            "Failed to read golden safetensors: {}",
+            golden_path.display()
+        )
     })?;
     let golden = SafeTensors::deserialize(&golden_bytes).with_context(|| {
         format!(
@@ -31,14 +34,10 @@ pub fn verify_full_collate_golden(
     })?;
 
     println!("Loading manifest: {}", manifest_path.display());
-    let manifest_bytes = std::fs::read(manifest_path).with_context(|| {
-        format!(
-            "Failed to read manifest: {}",
-            manifest_path.display()
-        )
-    })?;
-    let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
-        .with_context(|| "Failed to parse manifest JSON")?;
+    let manifest_bytes = std::fs::read(manifest_path)
+        .with_context(|| format!("Failed to read manifest: {}", manifest_path.display()))?;
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes).with_context(|| "Failed to parse manifest JSON")?;
 
     // Get all expected keys from manifest
     let expected_keys: Vec<String> = extract_expected_keys(&manifest);
@@ -141,10 +140,7 @@ fn extract_keys_from_manifest(manifest: &serde_json::Value, section: &str) -> Ve
                 keys.extend(obj.keys().map(|k| k.to_string()));
             }
             serde_json::Value::Array(arr) => {
-                keys.extend(
-                    arr.iter()
-                        .map(|v| v.as_str().unwrap_or("").to_string()),
-            )
+                keys.extend(arr.iter().map(|v| v.as_str().unwrap_or("").to_string()))
             }
             _ => {}
         }

@@ -26,8 +26,8 @@ pub mod msa;
 pub mod msa_csv;
 pub mod msa_npz;
 pub mod pad;
-pub mod preprocess;
 pub mod parser;
+pub mod preprocess;
 pub mod ref_atoms;
 pub mod residue_constraints;
 pub mod structure_v2;
@@ -54,22 +54,23 @@ pub use boltz_const::{
     NUM_ELEMENTS, NUM_METHOD_TYPES, NUM_PH_BINS, NUM_TEMP_BINS, NUM_TOKENS, OUT_SINGLE_TYPES,
     OUT_TYPES, TOKENS, UNK_BOND_TYPE, UNK_CHIRALITY_TYPE, UNK_HYBRIDIZATION_TYPE,
 };
+pub use ccd::{serialize_ccd_mol_json, CcdAtom, CcdBond, CcdMolData, CcdMolProvider};
 pub use collate_golden::{
     trunk_smoke_collate_path, trunk_smoke_collate_shapes, trunk_smoke_collate_shapes_from_path,
 };
-pub use ccd::{serialize_ccd_mol_json, CcdAtom, CcdBond, CcdMolData, CcdMolProvider};
 pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, atom_ref_data_from_ccd_mol, dummy_templates_as_feature_batch,
-    inference_ensemble_features, inference_residue_constraint_features, load_dummy_templates_features,
-    pad_template_tdim, process_atom_features, process_ensemble_features, process_msa_features,
+    get_ligand_symmetries_for_tokens, inference_ensemble_features,
+    inference_residue_constraint_features, load_dummy_templates_features, pad_template_tdim,
+    process_atom_features, process_ensemble_features, process_msa_features,
     process_symmetry_features, process_symmetry_features_with_ligand_symmetries,
-    process_template_features, process_token_features, get_ligand_symmetries_for_tokens,
-    stack_template_feature_rows, token_feature_key_names, AffinityCropper, AffinityTokenized,
-    AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
-    InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors, StandardAminoAcidRefData,
-    SymmetryFeatures, TemplateAlignment, TokenFeatureTensors, ALA_STANDARD_HEAVY_ATOM_COUNT,
-    ATOM_FEATURE_KEYS_ALA, CONTACT_CONDITIONING_NUM_CLASSES,
+    process_template_features, process_token_features, stack_template_feature_rows,
+    token_feature_key_names, AffinityCropper, AffinityTokenized, AtomFeatureConfig,
+    AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
+    InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors,
+    StandardAminoAcidRefData, SymmetryFeatures, TemplateAlignment, TokenFeatureTensors,
+    ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA, CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};
@@ -128,13 +129,14 @@ pub use msa::{write_a3m, MsaProcessor};
 pub use parser::parse_input_path as parse_input;
 pub use parser::{parse_input_path, parse_input_str};
 pub use preprocess::{
-    copy_flat_preprocess_bundle, find_boltz_manifest_path, validate_native_eligible,
+    canonical_yaml_parent, copy_flat_preprocess_bundle, copy_msa_a3m_to_output,
+    find_boltz_manifest_path, preprocess_bundle_ready, validate_native_eligible,
     write_native_preprocess_bundle, NativePreprocessError,
 };
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
 pub use write::{
     confidence_json_filename, pae_npz_filename, pde_npz_filename, plddt_npz_filename,
     structure_v2_to_mmcif, structure_v2_to_pdb, write_affinity_json, write_confidence_json,
-    write_pae_npz_path, write_pde_npz_path, write_plddt_npz_path, AffinitySummary, ConfidenceSummary,
-    PredictionFileNames,
+    write_pae_npz_path, write_pde_npz_path, write_plddt_npz_path, AffinitySummary,
+    ConfidenceSummary, PredictionFileNames,
 };

@@ -458,13 +458,7 @@ impl Boltz2Model {
         });
 
         let affinity_module = affinity.map(|cfg| {
-            AffinityModule::new(
-                root.sub("affinity_module"),
-                device,
-                token_s,
-                token_z,
-                &cfg,
-            )
+            AffinityModule::new(root.sub("affinity_module"), device, token_s, token_z, &cfg)
         });
 
         Ok(Self {
@@ -689,8 +683,13 @@ impl Boltz2Model {
         msa_feats: Option<&MsaFeatures<'_>>,
         template_feats: Option<&TemplateFeatures<'_>>,
     ) -> Result<(Tensor, Tensor)> {
-        self.trunk
-            .forward(s_inputs, token_pad_mask, recycling_steps, msa_feats, template_feats)
+        self.trunk.forward(
+            s_inputs,
+            token_pad_mask,
+            recycling_steps,
+            msa_feats,
+            template_feats,
+        )
     }
 
     /// Relative position bias `[B, N, N, token_z]` from tokenizer/featurizer index tensors.
@@ -941,12 +940,11 @@ impl Boltz2Model {
             feats.atom_encoder_batch,
         );
         let potential_merged = merge_potential_batch(feats, potential_extra);
-        let potential_for_sample =
-            if steering.is_some_and(|s| s.uses_extended_sampler()) {
-                Some(&potential_merged)
-            } else {
-                None
-            };
+        let potential_for_sample = if steering.is_some_and(|s| s.uses_extended_sampler()) {
+            Some(&potential_merged)
+        } else {
+            None
+        };
         let diffusion = self.forward_diffusion_sample(
             s_inputs,
             &s_trunk,
@@ -985,12 +983,8 @@ impl Boltz2Model {
                 anyhow::anyhow!("embedder_for_affinity required when model has affinity_module")
             })?;
             let s_aff = self.input_embedder.forward(embedder, true);
-            let z_crop = z_trunk_affinity_crop(
-                &z_trunk,
-                feats.token_pad_mask,
-                feats.mol_type,
-                aff_tok,
-            );
+            let z_crop =
+                z_trunk_affinity_crop(&z_trunk, feats.token_pad_mask, feats.mol_type, aff_tok);
             let best_idx = confidence.as_ref().map_or(0_i64, |co| {
                 let t = &co.iptm;
                 if t.dim() == 0 || t.numel() <= 1 {
@@ -1265,7 +1259,9 @@ mod tests {
         let del = Tensor::randn(&[b, n], (tch::Kind::Float, device));
         let s_inputs = m.forward_input_embedder(&a, &res, &prof, &del);
         let pad = Tensor::ones(&[b, n], (tch::Kind::Float, device));
-        let (s, z) = m.forward_trunk(&s_inputs, &pad, Some(0), None, None).unwrap();
+        let (s, z) = m
+            .forward_trunk(&s_inputs, &pad, Some(0), None, None)
+            .unwrap();
         assert_eq!(s.size(), vec![b, n, token_s]);
         assert_eq!(z.size(), vec![b, n, n, token_z]);
     }

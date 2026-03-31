@@ -211,7 +211,10 @@ fn compute_template_features_single(
     }
 }
 
-fn concat_templates(a: DummyTemplateTensors, b: DummyTemplateTensors) -> Result<DummyTemplateTensors> {
+fn concat_templates(
+    a: DummyTemplateTensors,
+    b: DummyTemplateTensors,
+) -> Result<DummyTemplateTensors> {
     Ok(DummyTemplateTensors {
         template_restype: concatenate(
             Axis(0),
@@ -228,8 +231,10 @@ fn concat_templates(a: DummyTemplateTensors, b: DummyTemplateTensors) -> Result<
             &[a.template_frame_t.view(), b.template_frame_t.view()],
         )?
         .into_owned(),
-        template_cb: concatenate(Axis(0), &[a.template_cb.view(), b.template_cb.view()])?.into_owned(),
-        template_ca: concatenate(Axis(0), &[a.template_ca.view(), b.template_ca.view()])?.into_owned(),
+        template_cb: concatenate(Axis(0), &[a.template_cb.view(), b.template_cb.view()])?
+            .into_owned(),
+        template_ca: concatenate(Axis(0), &[a.template_ca.view(), b.template_ca.view()])?
+            .into_owned(),
         template_mask_cb: concatenate(
             Axis(0),
             &[a.template_mask_cb.view(), b.template_mask_cb.view()],
@@ -247,28 +252,29 @@ fn concat_templates(a: DummyTemplateTensors, b: DummyTemplateTensors) -> Result<
             &[a.query_to_template.view(), b.query_to_template.view()],
         )?
         .into_owned(),
-        visibility_ids: concatenate(
-            Axis(0),
-            &[a.visibility_ids.view(), b.visibility_ids.view()],
-        )?
-        .into_owned(),
-        template_force: concatenate(
-            Axis(0),
-            &[a.template_force.view(), b.template_force.view()],
-        )?
-        .into_owned(),
+        visibility_ids: concatenate(Axis(0), &[a.visibility_ids.view(), b.visibility_ids.view()])?
+            .into_owned(),
+        template_force: concatenate(Axis(0), &[a.template_force.view(), b.template_force.view()])?
+            .into_owned(),
         template_force_threshold: concatenate(
             Axis(0),
-            &[a.template_force_threshold.view(), b.template_force_threshold.view()],
+            &[
+                a.template_force_threshold.view(),
+                b.template_force_threshold.view(),
+            ],
         )?
         .into_owned(),
     })
 }
 
 /// Concatenate along template dimension (axis 0). Fails if `rows` is empty.
-pub fn stack_template_feature_rows(rows: Vec<DummyTemplateTensors>) -> Result<DummyTemplateTensors> {
+pub fn stack_template_feature_rows(
+    rows: Vec<DummyTemplateTensors>,
+) -> Result<DummyTemplateTensors> {
     let mut it = rows.into_iter();
-    let first = it.next().ok_or_else(|| anyhow::anyhow!("no template rows"))?;
+    let first = it
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no template rows"))?;
     let mut acc = first;
     for r in it {
         acc = concat_templates(acc, r)?;
@@ -375,15 +381,9 @@ mod tests {
             force: false,
             threshold: None,
         }];
-        let out = process_template_features(
-            &q_tok,
-            &s,
-            &structures,
-            &tok_map,
-            &record,
-            q_tok.len(),
-        )
-        .expect("process_template_features");
+        let out =
+            process_template_features(&q_tok, &s, &structures, &tok_map, &record, q_tok.len())
+                .expect("process_template_features");
         assert_eq!(out.template_restype.shape()[0], 1);
         assert!(out.template_mask[[0, 0]] > 0.5);
         assert!(out.template_mask_cb[[0, 0]] > 0.5);

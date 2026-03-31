@@ -253,7 +253,9 @@ impl AffinityHeads {
         let numer = (z * cross_pair_mask.unsqueeze(-1))
             .flatten(1, 2)
             .sum_dim_intlist(&[1i64][..], false, Kind::Float);
-        let denom = cross_pair_mask.flatten(1, 2).sum_dim_intlist(&[1i64][..], false, Kind::Float)
+        let denom = cross_pair_mask
+            .flatten(1, 2)
+            .sum_dim_intlist(&[1i64][..], false, Kind::Float)
             + 1e-7;
         let g = numer / denom.unsqueeze(-1);
 
@@ -438,9 +440,7 @@ impl AffinityModule {
         // lig/rec outer products are `[B, N, N, 1]` — squeeze so we do not build a 5D mask.
         let pair_mask = cross_pair_mask.squeeze_dim(-1);
 
-        let z = self
-            .pairformer_stack
-            .forward(&z, &pair_mask, use_kernels);
+        let z = self.pairformer_stack.forward(&z, &pair_mask, use_kernels);
 
         self.affinity_heads.forward(
             &z,

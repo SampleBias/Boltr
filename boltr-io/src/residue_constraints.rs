@@ -9,9 +9,7 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 use zip::ZipArchive;
 
-use crate::structure_v2_npz::{
-    parse_npy_shape_and_payload, read_f32_le, read_i32_le,
-};
+use crate::structure_v2_npz::{parse_npy_shape_and_payload, read_f32_le, read_i32_le};
 
 /// RDKit bounds constraint: distance/angle/dihedral limits between atoms.
 #[derive(Debug, Clone, PartialEq)]
@@ -107,7 +105,10 @@ impl ResidueConstraints {
     /// Returns an error if the file cannot be read or if required arrays are missing.
     pub fn load_from_npz(path: &Path) -> Result<Self> {
         let mut f = File::open(path).with_context(|| {
-            format!("Failed to open residue constraints file: {}", path.display())
+            format!(
+                "Failed to open residue constraints file: {}",
+                path.display()
+            )
         })?;
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
@@ -176,10 +177,7 @@ impl ResidueConstraints {
 
         for i in 0..(payload.len() / rec_size) {
             let base = i * rec_size;
-            let atom_idxs = [
-                read_i32_le(payload, base)?,
-                read_i32_le(payload, base + 4)?,
-            ];
+            let atom_idxs = [read_i32_le(payload, base)?, read_i32_le(payload, base + 4)?];
             let is_bond = payload[base + 8] != 0;
             let is_angle = payload[base + 9] != 0;
             let upper_bound = read_f32_le(payload, base + 12)?;

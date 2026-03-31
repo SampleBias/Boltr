@@ -18,16 +18,8 @@ const TRUNK_SMOKE_GOLDEN: &[u8] =
 fn post_collate_trunk_smoke_matches_golden_allclose() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
     let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
-    let input = load_input(
-        &manifest.records[0],
-        &dir,
-        &dir,
-        None,
-        None,
-        None,
-        false,
-    )
-    .expect("load_input");
+    let input =
+        load_input(&manifest.records[0], &dir, &dir, None, None, None, false).expect("load_input");
     let template_dim = 4;
     let fb = trunk_smoke_feature_batch_from_inference_input(&input, template_dim);
     let coll = collate_inference_batches(&[fb], 0.0, 0, 0).expect("collate");

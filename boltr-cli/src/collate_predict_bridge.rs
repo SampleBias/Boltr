@@ -4,8 +4,8 @@
 
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
-    Boltz2Model, ContactFeatures, InputEmbedderFeats, MsaFeatures, PredictStepFeats, PredictStepOutput,
-    RelPosFeatures, SteeringParams,
+    Boltz2Model, ContactFeatures, InputEmbedderFeats, MsaFeatures, PredictStepFeats,
+    PredictStepOutput, RelPosFeatures, SteeringParams,
 };
 use boltr_io::{FeatureBatch, FeatureTensor, InferenceCollateResult};
 use ndarray::ArrayD;
@@ -14,17 +14,13 @@ use tch::{Device, Kind, Tensor};
 fn f32_to_tensor(a: &ArrayD<f32>, device: Device) -> Tensor {
     let shape: Vec<i64> = a.shape().iter().map(|&d| d as i64).collect();
     let data: Vec<f32> = a.iter().cloned().collect();
-    Tensor::from_slice(&data)
-        .view(&*shape)
-        .to_device(device)
+    Tensor::from_slice(&data).view(&*shape).to_device(device)
 }
 
 fn i64_to_tensor(a: &ArrayD<i64>, device: Device) -> Tensor {
     let shape: Vec<i64> = a.shape().iter().map(|&d| d as i64).collect();
     let data: Vec<i64> = a.iter().cloned().collect();
-    Tensor::from_slice(&data)
-        .view(&*shape)
-        .to_device(device)
+    Tensor::from_slice(&data).view(&*shape).to_device(device)
 }
 
 fn take_f32(batch: &FeatureBatch, key: &str, device: Device) -> Result<Tensor> {
@@ -121,7 +117,9 @@ impl OwnedPredictTensors {
         let deletion_value = take_f32(batch, "deletion_value", device)?;
         let msa_paired = take_i64(batch, "msa_paired", device)?;
         let token_bonds = take_f32(batch, "token_bonds", device)?;
-        let type_bonds = batch.get_i64("type_bonds").map(|a| i64_to_tensor(a, device));
+        let type_bonds = batch
+            .get_i64("type_bonds")
+            .map(|a| i64_to_tensor(a, device));
         let contact_conditioning = take_f32(batch, "contact_conditioning", device)?;
         let contact_threshold = take_f32(batch, "contact_threshold", device)?;
 

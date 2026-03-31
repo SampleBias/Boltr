@@ -48,11 +48,7 @@ pub fn copy_flat_preprocess_bundle(
     for rec in &manifest.records {
         let id = &rec.id;
         if let Some(structure) = structure_npz_path(manifest_parent, id) {
-            copy_or_link(
-                &structure,
-                &dest_dir.join(format!("{id}.npz")),
-                use_symlink,
-            )?;
+            copy_or_link(&structure, &dest_dir.join(format!("{id}.npz")), use_symlink)?;
         }
 
         for chain in &rec.chains {
@@ -85,17 +81,35 @@ pub fn copy_flat_preprocess_bundle(
                     manifest_parent.join("templates").join(&name)
                 };
                 if tmpl.is_file() {
-                    copy_or_link(
-                        &tmpl,
-                        &dest_dir.join(&name),
-                        use_symlink,
-                    )?;
+                    copy_or_link(&tmpl, &dest_dir.join(&name), use_symlink)?;
                 }
             }
         }
-
     }
 
+    copy_msa_a3m_sidecars(manifest_parent, dest_dir, use_symlink)?;
+
+    Ok(())
+}
+
+/// Copy ColabFold/Boltz `.a3m` files from `manifest_parent/msa/` into `dest_dir/msa/` so the YAML
+/// directory has both `.npz` tensors and human-readable MSAs for inspection and re-runs.
+fn copy_msa_a3m_sidecars(manifest_parent: &Path, dest_dir: &Path, use_symlink: bool) -> Result<()> {
+    let src_msa = manifest_parent.join("msa");
+    if !src_msa.is_dir() {
+        return Ok(());
+    }
+    let dst_msa = dest_dir.join("msa");
+    fs::create_dir_all(&dst_msa).with_context(|| format!("mkdir {}", dst_msa.display()))?;
+    for ent in fs::read_dir(&src_msa).with_context(|| format!("read_dir {}", src_msa.display()))? {
+        let ent = ent?;
+        let p = ent.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("a3m") {
+            continue;
+        }
+        let name = ent.file_name();
+        copy_or_link(&p, &dst_msa.join(name), use_symlink)?;
+    }
     Ok(())
 }
 
@@ -106,13 +120,8 @@ fn copy_or_link(src: &Path, dst: &Path, symlink: bool) -> Result<()> {
     if symlink {
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(src, dst).with_context(|| {
-                format!(
-                    "symlink {} -> {}",
-                    src.display(),
-                    dst.display()
-                )
-            })?;
+            std::os::unix::fs::symlink(src, dst)
+                .with_context(|| format!("symlink {} -> {}", src.display(), dst.display()))?;
         }
         #[cfg(not(unix))]
         {
@@ -142,7 +151,10 @@ pub fn find_boltz_manifest_path(staging_dir: &Path, yaml_stem: &str) -> Result<P
         return Ok(br_manifest);
     }
 
-    let direct = staging_dir.join("processed").join(yaml_stem).join("manifest.json");
+    let direct = staging_dir
+        .join("processed")
+        .join(yaml_stem)
+        .join("manifest.json");
     if direct.is_file() {
         return Ok(direct);
     }
