@@ -149,7 +149,10 @@ cargo build --release -p boltr-cli --features tch
 ```bash
 bash scripts/bootstrap_dev_venv.sh    # once: .venv + torch for torch-sys
 bash scripts/cargo-tch build --release -p boltr-cli --features tch
+# or: bash scripts/build-boltr-cli-release.sh
 ```
+
+**Troubleshooting:** If `cargo build -p boltr-cli --features tch` fails with **`Cannot find a libtorch install`** (often followed by `warning: build failed, waiting for other jobs to finish...`), you ran **`cargo` without LibTorch on the path**. Use **Path A** (`export LIBTORCH=...`) or **Path B** (`bash scripts/cargo-tch ...` after `bootstrap_dev_venv.sh`). Plain system `python3` usually has no `torch`, so `torch-sys` cannot probe PyTorch’s libraries.
 
 ### Common commands
 

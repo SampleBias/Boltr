@@ -198,6 +198,16 @@ fn extract_a3m_from_tar_gz(bytes: &[u8], use_env: bool) -> Result<HashMap<i32, S
     Ok(combined.into_iter().map(|(k, v)| (k, v.concat())).collect())
 }
 
+/// ColabFold / MMseqs2 tar members use `>101` or `>102|UniRef50_...` style headers.
+/// Only the leading numeric id must match our submitted query ids (101..).
+fn query_id_from_a3m_header(line: &str) -> Option<i32> {
+    let rest = line.strip_prefix('>')?.trim();
+    let token = rest
+        .split(|c: char| c == '|' || c.is_whitespace())
+        .next()?;
+    token.parse().ok()
+}
+
 fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
     let mut current_m: Option<i32> = None;
     let mut update_m = true;
@@ -211,7 +221,7 @@ fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
         }
         let line_with_nl = format!("{line}\n");
         if line.starts_with('>') && update_m {
-            let id: i32 = line[1..].trim().parse().unwrap_or(-1);
+            let id = query_id_from_a3m_header(line).unwrap_or(-1);
             current_m = Some(id);
             update_m = false;
             out.entry(id).or_default().push(line_with_nl);
@@ -241,5 +251,17 @@ mod tests {
         let mut m = HashMap::new();
         parse_a3m_into_map(text, &mut m);
         assert!(m.contains_key(&101));
+    }
+
+    #[test]
+    fn parse_a3m_map_uniref_suffix_header() {
+        // API returns `>102|UniRef50_...` — full-line parse must not fail.
+        let text = ">102|UniRef50_dummy\nACDE\n";
+        let mut m = HashMap::new();
+        parse_a3m_into_map(text, &mut m);
+        assert!(
+            m.contains_key(&102),
+            "expected query id 102 when header has pipe-separated description"
+        );
     }
 }

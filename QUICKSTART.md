@@ -20,9 +20,12 @@ No LibTorch required for this path.
 ```bash
 bash scripts/bootstrap_dev_venv.sh
 bash scripts/cargo-tch build --release -p boltr-cli --features tch
+# or: bash scripts/build-boltr-cli-release.sh
 ```
 
 Or set `LIBTORCH` / `LIBTORCH_USE_PYTORCH=1` and build as above. Details: **[`DEVELOPMENT.md`](DEVELOPMENT.md)**.
+
+If **`Cannot find a libtorch install`** appears (often with `build failed, waiting for other jobs to finish...`), you used plain **`cargo`** without the venv / `LIBTORCH` — use **`scripts/cargo-tch`** or Path A in **[`README.md`](README.md)**.
 
 ## Web UI + full native cache (one script)
 

@@ -3,10 +3,7 @@
 //! Converts loaded `ResidueConstraints` into tensor format for the model. When no constraints
 //! are present, returns empty tensors with fixed ranks matching Python behavior.
 
-use crate::residue_constraints::{
-    ChiralAtomConstraint, PlanarBondConstraint, PlanarRing5Constraint, PlanarRing6Constraint,
-    RDKitBoundsConstraint, ResidueConstraints, StereoBondConstraint,
-};
+use crate::residue_constraints::ResidueConstraints;
 use ndarray::{Array1, Array2};
 
 /// Tensors matching Python `process_residue_constraint_features` output.
@@ -265,6 +262,10 @@ impl ResidueConstraintTensors {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::residue_constraints::{
+        ChiralAtomConstraint, PlanarBondConstraint, PlanarRing5Constraint, PlanarRing6Constraint,
+        RDKitBoundsConstraint, ResidueConstraints, StereoBondConstraint,
+    };
 
     #[test]
     fn empty_constraints_match_python_else_branch() {

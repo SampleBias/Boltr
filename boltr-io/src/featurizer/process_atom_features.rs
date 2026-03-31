@@ -114,7 +114,7 @@ pub struct StandardAminoAcidRefData {
 
 struct CanonicalResidueRefData {
     /// Atom names (must match `ref_atoms[key]` order).
-    atom_names: Vec<String>,
+    _atom_names: Vec<String>,
     atomic_nums: Vec<i64>,
     charges: Vec<f32>,
     /// All unspecified chirality for standard residues.
@@ -275,7 +275,7 @@ impl StandardAminoAcidRefData {
             data.insert(
                 res_name.to_string(),
                 CanonicalResidueRefData {
-                    atom_names,
+                    _atom_names: atom_names,
                     atomic_nums,
                     charges,
                     chirality_ids,
@@ -481,6 +481,7 @@ fn one_hot_1d(indices: &[i64], num_classes: usize) -> Array2<f32> {
 }
 
 /// One-hot encode a 2-D index array into `[n0, n1, num_classes]`.
+#[allow(dead_code)] // Reserved for parity / future token-atom layouts
 fn one_hot_2d(indices: &Array2<i64>, num_classes: usize) -> Array3<f32> {
     let (n0, n1) = indices.dim();
     let mut out = Array3::zeros((n0, n1, num_classes));
@@ -527,6 +528,7 @@ fn pad_2d_f32(arr: &Array2<f32>, target_rows: usize) -> Array2<f32> {
     out
 }
 
+#[allow(dead_code)]
 fn pad_2d_i64(arr: &Array2<i64>, target_rows: usize) -> Array2<i64> {
     let (_, cols) = arr.dim();
     if arr.nrows() >= target_rows {
@@ -538,6 +540,7 @@ fn pad_2d_i64(arr: &Array2<i64>, target_rows: usize) -> Array2<i64> {
 }
 
 /// Pad 3-D array along dim 1 (atom axis) with zeros.
+#[allow(dead_code)]
 fn pad_3d_f32_dim1(arr: &Array3<f32>, target_atoms: usize) -> Array3<f32> {
     let (d0, _, d2) = arr.dim();
     if arr.dim().1 >= target_atoms {
@@ -550,6 +553,7 @@ fn pad_3d_f32_dim1(arr: &Array3<f32>, target_atoms: usize) -> Array3<f32> {
 }
 
 /// Pad 4-D array along dim 0 and dim 1 (token axes) with zeros.
+#[allow(dead_code)]
 fn pad_4d_f32_dim01(arr: &Array4<f32>, target_tokens: usize) -> Array4<f32> {
     let (_, _, d2, d3) = arr.dim();
     if arr.dim().0 >= target_tokens && arr.dim().1 >= target_tokens {
@@ -564,6 +568,7 @@ fn pad_4d_f32_dim01(arr: &Array4<f32>, target_tokens: usize) -> Array4<f32> {
 }
 
 /// Pad 3-D array along dim 1 (token axis).
+#[allow(dead_code)]
 fn pad_3d_f32_dim1_tokens(arr: &Array3<f32>, target_tokens: usize) -> Array3<f32> {
     let (d0, _, d2) = arr.dim();
     if arr.dim().1 >= target_tokens {
@@ -576,6 +581,7 @@ fn pad_3d_f32_dim1_tokens(arr: &Array3<f32>, target_tokens: usize) -> Array3<f32
 }
 
 /// Pad 2-D array along dim 1 (token axis) with zeros.
+#[allow(dead_code)]
 fn pad_2d_f32_dim1(arr: &Array2<f32>, target_tokens: usize) -> Array2<f32> {
     let (d0, _) = arr.dim();
     if arr.dim().1 >= target_tokens {
@@ -587,6 +593,7 @@ fn pad_2d_f32_dim1(arr: &Array2<f32>, target_tokens: usize) -> Array2<f32> {
 }
 
 /// Pad 2-D array along dim 0 (token axis) with zeros.
+#[allow(dead_code)]
 fn pad_2d_f32_dim0(arr: &Array2<f32>, target_tokens: usize) -> Array2<f32> {
     let (_, d1) = arr.dim();
     if arr.nrows() >= target_tokens {
@@ -597,6 +604,7 @@ fn pad_2d_f32_dim0(arr: &Array2<f32>, target_tokens: usize) -> Array2<f32> {
     out
 }
 
+#[allow(dead_code)]
 fn pad_2d_f32_dim0_i64(arr: &Array2<i64>, target_tokens: usize) -> Array2<i64> {
     let (_, d1) = arr.dim();
     if arr.nrows() >= target_tokens {
@@ -709,7 +717,7 @@ pub fn process_atom_features(
 
     for (token_id, token) in tokens.iter().enumerate() {
         let chain_idx = token.asym_id as usize;
-        let chain = structure.chains.get(chain_idx);
+        let _chain = structure.chains.get(chain_idx);
         let mol_type_i8 = token.mol_type as i8;
 
         // Unique chain-residue id
@@ -862,7 +870,7 @@ pub fn process_atom_features(
                 let dy = ci[1] - cj[1];
                 let dz = ci[2] - cj[2];
                 let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                let bin_idx = boundaries
+                let _bin_idx = boundaries
                     .iter()
                     .position(|&b| dist <= b)
                     .unwrap_or(config.num_bins - 1);
@@ -922,7 +930,7 @@ pub fn process_atom_features(
     }
 
     // ─── Build raw arrays ──────────────────────────────────────────────────
-    let mut pad_mask = Array1::ones(total_atoms);
+    let pad_mask = Array1::ones(total_atoms);
     let resolved_mask = Array1::from(resolved_mask_raw);
     let bfactor = Array1::from(bfactor_raw);
     let plddt = Array1::from(plddt_raw);
@@ -930,7 +938,7 @@ pub fn process_atom_features(
 
     // One-hot backbone features
     let backbone_indices = Array1::from(backbone_feat_index);
-    let mut atom_backbone_feat = one_hot_1d(
+    let atom_backbone_feat = one_hot_1d(
         backbone_indices.as_slice().unwrap(),
         NUM_BACKBONE_FEAT_CLASSES,
     );
@@ -1051,11 +1059,8 @@ pub fn process_atom_features(
     let plddt = pad_1d_f32(&plddt, max_atoms_padded);
 
     // ─── max_tokens padding ────────────────────────────────────────────────
-    let mut final_num_tokens = num_tokens;
     if let Some(max_t) = config.max_tokens {
         if max_t > num_tokens {
-            final_num_tokens = max_t;
-
             // atom_to_token: extend columns to max_tokens
             let mut att_final = Array2::zeros((max_atoms_padded, max_t));
             att_final
