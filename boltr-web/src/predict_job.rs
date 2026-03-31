@@ -61,6 +61,51 @@ pub fn parse_preprocess_mode(s: &str) -> Result<PreprocessMode, &'static str> {
     Err("invalid preprocess (use off, native, boltz, auto)")
 }
 
+/// True if `cmd` is an existing file path, or resolves via [`which::which`] (matches `boltr-cli`).
+fn command_is_runnable(cmd: &str) -> bool {
+    let p = Path::new(cmd);
+    if p.is_absolute() || cmd.contains('/') {
+        return p.is_file();
+    }
+    which::which(cmd).is_ok()
+}
+
+fn boltz_cli_available(opts: &PredictCliOptions) -> Result<(), String> {
+    let cmd = opts.bolt_command.as_deref().unwrap_or("boltz");
+    if command_is_runnable(cmd) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Cannot run Boltz preprocess: nothing executable at {cmd:?}. Install upstream Boltz (PyPI/conda), put `boltz` on the server PATH, or set the Web UI \"Bolt command\" field to the full path (e.g. …/venv/bin/boltz). This is separate from the Boltr Rust binary."
+        ))
+    }
+}
+
+/// Validate preprocess choices before spawning `boltr predict` (clear 400 instead of failing mid-job).
+pub fn preprocess_preflight(input_path: &Path, opts: &PredictCliOptions) -> Result<(), String> {
+    match opts.preprocess {
+        PreprocessMode::Off => Ok(()),
+        PreprocessMode::Native => {
+            let input = boltr_io::parse_input_path(input_path)
+                .map_err(|e| format!("parse YAML: {e}"))?;
+            boltr_io::validate_native_eligible(&input).map_err(|e| {
+                format!(
+                    "{e}. For YAML with templates/constraints (or ligands/DNA/RNA), use preprocess \"boltz\" or \"auto\" and install the Python `boltz` CLI (set \"Bolt command\" if it is not on PATH)."
+                )
+            })
+        }
+        PreprocessMode::Boltz => boltz_cli_available(opts),
+        PreprocessMode::Auto => {
+            let input = boltr_io::parse_input_path(input_path)
+                .map_err(|e| format!("parse YAML: {e}"))?;
+            if boltr_io::validate_native_eligible(&input).is_ok() {
+                return Ok(());
+            }
+            boltz_cli_available(opts)
+        }
+    }
+}
+
 /// `BOLTR_WEB_ENABLE_PREDICT=0` disables predict endpoints (default: enabled).
 #[must_use]
 pub fn predict_enabled() -> bool {
@@ -581,5 +626,14 @@ mod tests {
         assert_eq!(parse_preprocess_mode("off").unwrap(), PreprocessMode::Off);
         assert_eq!(parse_preprocess_mode("AUTO").unwrap(), PreprocessMode::Auto);
         assert!(parse_preprocess_mode("nope").is_err());
+    }
+
+    #[test]
+    fn preprocess_preflight_off_skips_checks() {
+        let opts = PredictCliOptions {
+            preprocess: PreprocessMode::Off,
+            ..Default::default()
+        };
+        assert!(preprocess_preflight(Path::new("/no/such/file.yaml"), &opts).is_ok());
     }
 }

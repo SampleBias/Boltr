@@ -33,7 +33,8 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::predict_job::{
     build_predict_argv, cache_from_form_override, parse_preprocess_mode, path_under_job_dir,
-    predict_enabled, run_predict_job, tarball_out_dir, JobStore, PredictCliOptions, PredictJob,
+    predict_enabled, preprocess_preflight, run_predict_job, tarball_out_dir, JobStore,
+    PredictCliOptions, PredictJob,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 use crate::paths::resolve_boltr_exe;
@@ -443,6 +444,11 @@ async fn post_predict(
         if !t.is_empty() {
             opts.preprocess_record_id = Some(t.to_string());
         }
+    }
+
+    if let Err(msg) = preprocess_preflight(&input_path, &opts) {
+        let _ = tokio::fs::remove_dir_all(&base).await;
+        return Err((StatusCode::BAD_REQUEST, msg));
     }
 
     let cache = cache_from_form_override(cache_override.as_deref(), &state.default_cache);

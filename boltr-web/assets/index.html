@@ -223,8 +223,9 @@ ___</pre>
       <label for="predictBoltCommand">Bolt command</label>
     </div>
     <div class="row">
-      <input type="text" id="predictBoltCommand" class="path-wide" placeholder="default: boltz on PATH" autocomplete="off" spellcheck="false" title="--bolt-command: path to boltz executable if not on PATH" />
+      <input type="text" id="predictBoltCommand" class="path-wide" placeholder="/path/to/venv/bin/boltz if boltz is not on PATH" autocomplete="off" spellcheck="false" title="--bolt-command: full path to upstream Boltz CLI (Python), not the boltr Rust binary" />
     </div>
+    <p id="predictPreprocessHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
       <label for="predictOutputFormat">Output format</label>
       <select id="predictOutputFormat" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -274,6 +275,22 @@ ___</pre>
     function updatePredictButton() {
       const ok = $("yamlFile").files.length > 0 || $("jobDir").value.trim().length > 0;
       $("btnPredict").disabled = !ok;
+    }
+
+    function updatePreprocessHint() {
+      const el = $("predictPreprocessHint");
+      if (!el) return;
+      const m = $("predictPreprocess").value;
+      if (m === "boltz" || m === "auto") {
+        el.style.display = "block";
+        el.innerHTML = "<strong>Boltz CLI:</strong> preprocess <code>boltz</code> / <code>auto</code> (when native cannot run) needs the upstream <em>Python</em> <code>boltz</code> executable on this machine. If <code>command -v boltz</code> fails in the shell where you start <code>boltr-web</code>, paste the full path here (e.g. <code>…/venv/bin/boltz</code>). This is not the Rust <code>boltr</code> binary.";
+      } else if (m === "native") {
+        el.style.display = "block";
+        el.innerHTML = "<strong>Native:</strong> only for protein-only YAML with empty or absent <code>templates:</code>/<code>constraints:</code>. Complexes with real templates/constraints need <code>boltz</code> + Bolt command above.";
+      } else {
+        el.style.display = "none";
+        el.textContent = "";
+      }
     }
 
     function esc(s) {
@@ -391,6 +408,7 @@ ___</pre>
       updatePredictButton();
     };
     $("jobDir").addEventListener("input", updatePredictButton);
+    $("predictPreprocess").addEventListener("change", updatePreprocessHint);
 
     $("btnValidate").onclick = () => {
       const f = $("yamlFile").files[0];
@@ -513,6 +531,7 @@ ___</pre>
     };
 
     updatePredictButton();
+    updatePreprocessHint();
     fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
   </script>
 </body>
