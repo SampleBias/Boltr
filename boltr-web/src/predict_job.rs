@@ -18,6 +18,49 @@ use tracing::{error, info};
 use crate::paths::prepend_torch_wheel_lib_to_ld_path;
 use crate::prereq::{find_venv_python, resolve_cache_dir};
 
+/// Matches `boltr predict --preprocess` (`boltr-cli` `PreprocessCli`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreprocessMode {
+    /// No bundle generation.
+    #[default]
+    Off,
+    /// Rust native when eligible, else Boltz if available.
+    Auto,
+    /// Upstream Boltz subprocess + copy bundle next to YAML.
+    Boltz,
+    /// Rust-only protein-only bundle.
+    Native,
+}
+
+impl PreprocessMode {
+    fn as_cli_value(self) -> Option<&'static str> {
+        match self {
+            PreprocessMode::Off => None,
+            PreprocessMode::Native => Some("native"),
+            PreprocessMode::Boltz => Some("boltz"),
+            PreprocessMode::Auto => Some("auto"),
+        }
+    }
+}
+
+/// Parse multipart `preprocess` field; empty trims to [`PreprocessMode::Off`].
+pub fn parse_preprocess_mode(s: &str) -> Result<PreprocessMode, &'static str> {
+    let t = s.trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("off") {
+        return Ok(PreprocessMode::Off);
+    }
+    if t.eq_ignore_ascii_case("native") {
+        return Ok(PreprocessMode::Native);
+    }
+    if t.eq_ignore_ascii_case("boltz") {
+        return Ok(PreprocessMode::Boltz);
+    }
+    if t.eq_ignore_ascii_case("auto") {
+        return Ok(PreprocessMode::Auto);
+    }
+    Err("invalid preprocess (use off, native, boltz, auto)")
+}
+
 /// `BOLTR_WEB_ENABLE_PREDICT=0` disables predict endpoints (default: enabled).
 #[must_use]
 pub fn predict_enabled() -> bool {
@@ -54,6 +97,13 @@ pub struct PredictCliOptions {
     pub write_full_pae: bool,
     pub write_full_pde: bool,
     pub spike_only: bool,
+    pub preprocess: PreprocessMode,
+    pub bolt_command: Option<String>,
+    pub preprocess_staging: Option<PathBuf>,
+    pub preprocess_keep_staging: bool,
+    pub preprocess_symlink: bool,
+    pub preprocess_bolt_arg: Vec<String>,
+    pub preprocess_record_id: Option<String>,
 }
 
 /// Build `boltr predict` argv: `predict`, `<input>`, `--output`, …
@@ -169,6 +219,44 @@ pub fn build_predict_argv(
     }
     if opts.spike_only {
         args.push("--spike-only".to_string());
+    }
+
+    if let Some(v) = opts.preprocess.as_cli_value() {
+        args.push("--preprocess".to_string());
+        args.push(v.to_string());
+    }
+    if let Some(ref c) = opts.bolt_command {
+        let t = c.trim();
+        if !t.is_empty() {
+            args.push("--bolt-command".to_string());
+            args.push(t.to_string());
+        }
+    }
+    if let Some(ref p) = opts.preprocess_staging {
+        if !p.as_os_str().is_empty() {
+            args.push("--preprocess-staging".to_string());
+            args.push(p.display().to_string());
+        }
+    }
+    if opts.preprocess_keep_staging {
+        args.push("--preprocess-keep-staging".to_string());
+    }
+    if opts.preprocess_symlink {
+        args.push("--preprocess-symlink".to_string());
+    }
+    for a in &opts.preprocess_bolt_arg {
+        let t = a.trim();
+        if !t.is_empty() {
+            args.push("--preprocess-bolt-arg".to_string());
+            args.push(t.to_string());
+        }
+    }
+    if let Some(ref id) = opts.preprocess_record_id {
+        let t = id.trim();
+        if !t.is_empty() {
+            args.push("--preprocess-record-id".to_string());
+            args.push(t.to_string());
+        }
     }
 
     args
@@ -453,5 +541,45 @@ mod tests {
         assert!(args.contains(&"--override".to_string()));
         assert!(args.contains(&"--device".to_string()));
         assert!(args.contains(&"cuda:0".to_string()));
+    }
+
+    #[test]
+    fn build_predict_argv_preprocess_off_omits_flag() {
+        let opts = PredictCliOptions {
+            device: "cpu".to_string(),
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        assert!(!args.iter().any(|a| a == "--preprocess"));
+    }
+
+    #[test]
+    fn build_predict_argv_preprocess_native() {
+        let opts = PredictCliOptions {
+            device: "cpu".to_string(),
+            preprocess: PreprocessMode::Native,
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        let i = args.iter().position(|a| a == "--preprocess").unwrap();
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("native"));
+    }
+
+    #[test]
+    fn parse_preprocess_mode_accepts_aliases() {
+        assert_eq!(parse_preprocess_mode("").unwrap(), PreprocessMode::Off);
+        assert_eq!(parse_preprocess_mode("off").unwrap(), PreprocessMode::Off);
+        assert_eq!(parse_preprocess_mode("AUTO").unwrap(), PreprocessMode::Auto);
+        assert!(parse_preprocess_mode("nope").is_err());
     }
 }

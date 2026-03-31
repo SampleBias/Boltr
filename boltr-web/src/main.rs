@@ -32,8 +32,8 @@ use serde::Serialize;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::predict_job::{
-    build_predict_argv, cache_from_form_override, path_under_job_dir, predict_enabled,
-    run_predict_job, tarball_out_dir, JobStore, PredictCliOptions, PredictJob,
+    build_predict_argv, cache_from_form_override, parse_preprocess_mode, path_under_job_dir,
+    predict_enabled, run_predict_job, tarball_out_dir, JobStore, PredictCliOptions, PredictJob,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 use crate::paths::resolve_boltr_exe;
@@ -402,6 +402,48 @@ async fn post_predict(
         .get("spike_only")
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+
+    let preprocess_raw = field_map.get("preprocess").map(String::as_str).unwrap_or("off");
+    opts.preprocess = parse_preprocess_mode(preprocess_raw).map_err(|msg| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("preprocess: {msg}"),
+        )
+    })?;
+    if let Some(p) = field_map.get("bolt_command") {
+        let t = p.trim();
+        if !t.is_empty() {
+            opts.bolt_command = Some(t.to_string());
+        }
+    }
+    if let Some(p) = field_map.get("preprocess_staging") {
+        let t = p.trim();
+        if !t.is_empty() {
+            opts.preprocess_staging = Some(PathBuf::from(t));
+        }
+    }
+    opts.preprocess_keep_staging = field_map
+        .get("preprocess_keep_staging")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    opts.preprocess_symlink = field_map
+        .get("preprocess_symlink")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if let Some(raw) = field_map.get("preprocess_bolt_arg") {
+        opts.preprocess_bolt_arg = raw
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+    }
+    if let Some(p) = field_map.get("preprocess_record_id") {
+        let t = p.trim();
+        if !t.is_empty() {
+            opts.preprocess_record_id = Some(t.to_string());
+        }
+    }
 
     let cache = cache_from_form_override(cache_override.as_deref(), &state.default_cache);
 
