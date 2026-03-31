@@ -15,6 +15,20 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
+export BOLTZ_CACHE="$CACHE"
+mkdir -p "$CACHE"
+CONF_SF="$CACHE/boltz2_conf.safetensors"
+
+echo "==> Boltr_go: model cache directory: $CACHE"
+if [[ ! -f "$CACHE/boltz2_conf.ckpt" ]] && [[ ! -f "$CACHE/boltz2_conf.safetensors" ]]; then
+  echo "    (no boltz2 checkpoints in cache yet — bootstrap will download and export)"
+elif [[ -f "$CACHE/boltz2_conf.ckpt" ]] && [[ ! -f "$CONF_SF" ]]; then
+  echo "    (found .ckpt — bootstrap will export .safetensors if needed)"
+else
+  echo "    (cache already has boltz2 assets; bootstrap still runs download/export steps)"
+fi
+
 echo "==> Boltr_go: prerequisite hints (non-fatal)"
 bash scripts/check_tch_prereqs.sh || true
 
@@ -22,20 +36,25 @@ echo
 echo "==> Boltr_go: venv, build, download, Lightning → safetensors, boltr doctor"
 bash scripts/bootstrap_webui_env.sh
 
-CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
-CONF_SF="$CACHE/boltz2_conf.safetensors"
+VERIFY_OK=0
+VERIFY_SKIP=0
+TESTS_OK=0
+TESTS_SKIP=0
 
-if [[ "${BOLTR_GO_SKIP_VERIFY:-}" != "1" ]]; then
+if [[ "${BOLTR_GO_SKIP_VERIFY:-}" == "1" ]]; then
+  echo
+  echo "==> Boltr_go: skipping verify (BOLTR_GO_SKIP_VERIFY=1)"
+  VERIFY_SKIP=1
+elif [[ ! -f "$CONF_SF" ]]; then
+  echo
+  echo "==> Boltr_go: VarStore verify skipped — missing $CONF_SF (re-run boltr download or export manually)" >&2
+  VERIFY_SKIP=1
+else
   echo
   echo "==> Boltr_go: VarStore keys vs $CONF_SF"
-  if [[ ! -f "$CONF_SF" ]]; then
-    echo "WARN: missing $CONF_SF — skip verify (re-run boltr download or export manually)" >&2
-  else
-    # Defaults match Boltz-2 trunk export; add --bond-type-feature / --blocks if your ckpt differs (DEVELOPMENT.md).
-    scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- "$CONF_SF"
-  fi
-else
-  echo "==> Boltr_go: skipping verify (BOLTR_GO_SKIP_VERIFY=1)"
+  # Defaults match Boltz-2 trunk export; add --bond-type-feature / --blocks if your ckpt differs (DEVELOPMENT.md).
+  scripts/cargo-tch run -p boltr-backend-tch --bin verify_boltz2_safetensors --features tch-backend -- "$CONF_SF"
+  VERIFY_OK=1
 fi
 
 if [[ "${BOLTR_GO_SKIP_TESTS:-}" != "1" ]]; then
@@ -50,12 +69,26 @@ if [[ "${BOLTR_GO_SKIP_TESTS:-}" != "1" ]]; then
   echo
   echo "==> Boltr_go: boltr-backend-tch library tests (tch)"
   scripts/cargo-tch test -p boltr-backend-tch --features tch-backend --lib
+  TESTS_OK=1
 else
+  echo
   echo "==> Boltr_go: skipping tests (BOLTR_GO_SKIP_TESTS=1)"
+  TESTS_SKIP=1
 fi
 
 echo
+python3 "$ROOT/scripts/write_boltr_go_bootstrap_json.py" \
+  --cache-dir "$CACHE" \
+  --repo-root "$ROOT" \
+  --download-ok 1 \
+  --verify-ok "${VERIFY_OK:-0}" \
+  --verify-skipped "${VERIFY_SKIP:-0}" \
+  --tests-ok "${TESTS_OK:-0}" \
+  --tests-skipped "${TESTS_SKIP:-0}"
+
+echo
 echo "Boltr_go finished OK."
+echo "  Status JSON: $CACHE/boltr_go_bootstrap.json (shown in boltr-web after Refresh status)"
 echo "  boltr:     $ROOT/target/release/boltr"
 echo "  boltr-web: $ROOT/scripts/with_dev_venv.sh $ROOT/target/release/boltr-web"
 echo "  export BOLTR=$ROOT/target/release/boltr   # for boltr-web status probes"

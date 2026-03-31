@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use boltr_io::config::BoltzInput;
 use boltr_io::parse_manifest_path;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Resolve cache directory: same rules as `boltr` CLI.
@@ -33,6 +33,34 @@ pub struct FileCheck {
     pub note: Option<String>,
 }
 
+/// Written by [`scripts/write_boltr_go_bootstrap_json.py`] after `./Boltr_go` completes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoltrGoBootstrap {
+    #[serde(default)]
+    pub version: Option<u32>,
+    pub completed_at: String,
+    #[serde(default)]
+    pub cache_dir: String,
+    #[serde(default)]
+    pub repo_root: Option<String>,
+    #[serde(default)]
+    pub download_ok: bool,
+    #[serde(default)]
+    pub verify_safetensors_ok: Option<bool>,
+    #[serde(default)]
+    pub verify_skipped: bool,
+    #[serde(default)]
+    pub tests_ok: Option<bool>,
+    #[serde(default)]
+    pub tests_skipped: bool,
+}
+
+fn load_boltr_go_bootstrap(cache: &Path) -> Option<BoltrGoBootstrap> {
+    let p = cache.join("boltr_go_bootstrap.json");
+    let data = std::fs::read_to_string(&p).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
 #[derive(Debug, Serialize)]
 pub struct StatusResponse {
     pub cache_dir: String,
@@ -56,6 +84,9 @@ pub struct StatusResponse {
     pub environment_ready: bool,
     /// `true` when preprocess bridge inputs could work (manifest + npz checks are per-upload).
     pub notes: Vec<String>,
+    /// Present when `./Boltr_go` (or the writer script) left `boltr_go_bootstrap.json` in the cache dir.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boltr_go_bootstrap: Option<BoltrGoBootstrap>,
 }
 
 pub fn gather_status(cache: &Path) -> StatusResponse {
@@ -142,6 +173,8 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
             .to_string(),
     );
 
+    let boltr_go_bootstrap = load_boltr_go_bootstrap(cache);
+
     StatusResponse {
         cache_dir: cache.display().to_string(),
         files,
@@ -154,6 +187,7 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
         boltr_doctor_error: None,
         environment_ready: false,
         notes,
+        boltr_go_bootstrap,
     }
 }
 
