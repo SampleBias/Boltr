@@ -210,10 +210,11 @@ fn query_id_from_a3m_header(line: &str) -> Option<i32> {
 
 fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
     let mut current_m: Option<i32> = None;
-    for mut line in text.lines() {
-        if line.contains('\0') {
-            line = line.trim_end_matches('\0');
-        }
+    for line in text.lines() {
+        // ColabFold `mmseqs2.py` replaces `\0` in each line so a line like `\0>102|UniRef50...`
+        // becomes a new header. Without this, `line.starts_with('>')` is false and the block
+        // is merged into the previous query (then we error on "missing MSA block for query id 102").
+        let line = line.replace('\0', "");
         if line.is_empty() {
             continue;
         }
@@ -222,7 +223,7 @@ fn parse_a3m_into_map(text: &str, out: &mut HashMap<i32, Vec<String>>) {
         // returns multiple queries (101, 102, …) in one `uniref.a3m`; a previous `update_m`
         // gate incorrectly treated only the first `>` as a header and merged the rest into 101.
         if line.starts_with('>') {
-            let id = query_id_from_a3m_header(line).unwrap_or(-1);
+            let id = query_id_from_a3m_header(line.as_str()).unwrap_or(-1);
             current_m = Some(id);
             out.entry(id).or_default().push(line_with_nl);
         } else if let Some(m) = current_m {
@@ -277,5 +278,18 @@ mod tests {
         let s102 = m[&102].concat();
         assert!(s101.contains(">101") && s101.contains("ACDE"));
         assert!(s102.contains(">102") && s102.contains("FGHI"));
+    }
+
+    #[test]
+    fn parse_a3m_map_null_prefixed_second_header() {
+        // Server often separates query blocks with a NUL before the next `>` (see ColabFold gather).
+        let text = ">101\nACDE\n\0>102|UniRef50_x\nFGHI\n";
+        let mut m = HashMap::new();
+        parse_a3m_into_map(text, &mut m);
+        assert!(
+            m.contains_key(&102),
+            "NUL-prefixed line must become a second query block"
+        );
+        assert!(m[&102].concat().contains(">102|UniRef50_x"));
     }
 }
