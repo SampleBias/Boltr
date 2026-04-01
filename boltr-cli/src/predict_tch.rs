@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use boltr_backend_tch::{
     resolve_predict_args, AtomDiffusionConfig, Boltz2DiffusionArgs, Boltz2Hparams, Boltz2Model,
     Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures, SteeringParams,
@@ -27,18 +27,49 @@ use tch::{self, Kind, Tensor};
 
 use crate::OutputFormat;
 
-fn first_sample_coords_2d(coords: &Tensor) -> Tensor {
-    let mut t = coords.shallow_clone();
-    if t.dim() == 3 && t.size()[0] > 1 {
-        t = t.narrow(0, 0, 1);
-    }
+/// Turn `diffusion.sample_atom_coords` into one `[x,y,z]` per atom for [`StructureV2Tables::apply_predicted_atom_coords`].
+///
+/// Boltz uses `[batch_or_multiplicity, N_atoms, 3]`. Some layouts may appear as `[N, 3]` or wrongly
+/// transposed `[3, N]` (xyz major). Mis-reading `[3, N]` as `[N, 3]` assigns nonsense coordinates
+/// (often degenerate / line-like in the viewer).
+fn diffusion_sample_coords_to_xyz_vec(coord_tensor: &Tensor) -> Result<Vec<[f32; 3]>> {
+    let mut t = coord_tensor.shallow_clone();
     if t.dim() == 3 {
+        let sz = t.size();
+        if sz[2] != 3 {
+            bail!(
+                "sample_atom_coords: expected last dim 3 (xyz), got shape {:?}",
+                sz
+            );
+        }
+        if sz[0] > 1 {
+            t = t.narrow(0, 0, 1);
+        }
         t = t.squeeze_dim(0);
     }
-    t
-}
+    if t.dim() != 2 {
+        bail!(
+            "sample_atom_coords: expected 2D [N,3] after batch trim, got dim {} shape {:?}",
+            t.dim(),
+            t.size()
+        );
+    }
 
-fn tensor_xyz_to_vec(t: &Tensor) -> Vec<[f32; 3]> {
+    // Ensure [N, 3] (atoms × xyz). Standard is size[1] == 3.
+    let sz = t.size();
+    let t = if sz[1] == 3 {
+        t
+    } else if sz[0] == 3 && sz[1] != 3 {
+        // [3, N_atoms] — transpose to [N, 3]
+        t.transpose(0, 1)
+    } else {
+        bail!(
+            "sample_atom_coords: cannot interpret as [N,3] or [3,N], got shape {:?}",
+            sz
+        );
+    };
+
+    let t = t.to_kind(Kind::Float).to_device(tch::Device::Cpu);
     let n = t.size()[0] as usize;
     let mut v = Vec::with_capacity(n);
     for i in 0..n {
@@ -48,7 +79,7 @@ fn tensor_xyz_to_vec(t: &Tensor) -> Vec<[f32; 3]> {
             t.double_value(&[i as i64, 2]) as f32,
         ]);
     }
-    v
+    Ok(v)
 }
 
 /// When `manifest.json` + preprocess `.npz` live next to the input YAML, run collate → `predict_step` → structure writer.
@@ -116,9 +147,19 @@ fn try_predict_from_preprocess(
     )
     .context("predict_step_from_collate")?;
 
-    let coords_t = first_sample_coords_2d(&out.diffusion.sample_atom_coords);
-    let xyz = tensor_xyz_to_vec(&coords_t);
-    let n_atom = inference_input.structure.atoms.len().min(xyz.len());
+    let raw_shape = out.diffusion.sample_atom_coords.size();
+    let xyz = diffusion_sample_coords_to_xyz_vec(&out.diffusion.sample_atom_coords)
+        .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
+    let n_atoms_struct = inference_input.structure.atoms.len();
+    if xyz.len() != n_atoms_struct {
+        tracing::warn!(
+            n_model = xyz.len(),
+            n_structure = n_atoms_struct,
+            raw_shape = ?raw_shape,
+            "predicted atom count differs from StructureV2 atoms; applying min length (check collate vs structure npz)"
+        );
+    }
+    let n_atom = n_atoms_struct.min(xyz.len());
     inference_input
         .structure
         .apply_predicted_atom_coords(&xyz[..n_atom]);
