@@ -452,7 +452,7 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
     }
     let ensemble_atom_coord_idx = ensemble.first().map(|e| e.atom_coord_idx).unwrap_or(0);
 
-    Ok(StructureV2Tables {
+    let mut tables = StructureV2Tables {
         atoms,
         residues,
         chains,
@@ -461,7 +461,9 @@ pub fn read_structure_v2_npz_bytes(zip_bytes: &[u8]) -> Result<StructureV2Tables
         ensemble,
         ensemble_atom_coord_idx,
         bonds,
-    })
+    };
+    tables.sync_atom_coords_from_flat_table();
+    Ok(tables)
 }
 
 fn pack_ensemble_npy(s: &StructureV2Tables) -> Result<Vec<u8>> {

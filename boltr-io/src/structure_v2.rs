@@ -80,6 +80,22 @@ pub struct StructureV2Tables {
 }
 
 impl StructureV2Tables {
+    /// Copy positions from the flat `coords` table into each [`AtomV2Row::coords`] for the first
+    /// ensemble conformer (`ensemble_base_offset(0) + atom_index`).
+    ///
+    /// Boltz preprocess may store coordinates only in `coords` while per-atom records contain
+    /// zeros. [`crate::featurizer::process_atom_features`] reads the flat table; mmCIF/PDB export
+    /// reads `atom.coords` — without syncing, exports can show all zeros while the
+    /// model still sees correct inputs.
+    pub fn sync_atom_coords_from_flat_table(&mut self) {
+        let base = self.ensemble_base_offset(0) as usize;
+        for i in 0..self.atoms.len() {
+            if let Some(c) = self.coords.get(base + i) {
+                self.atoms[i].coords = *c;
+            }
+        }
+    }
+
     /// Number of conformers (`len(structure.ensemble)` in Boltz).
     #[inline]
     #[must_use]
