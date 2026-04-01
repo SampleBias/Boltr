@@ -46,7 +46,8 @@ pub mod model;
 pub use boltz2::{
     apply_affinity_mw_correction, get_potentials_boltz2, zeros_atom_attention_out, AffinityHead,
     AffinityModule, AffinityModuleConfig, AffinityOutput, AtomDiffusion, AtomDiffusionConfig,
-    AtomEncoderBatchFeats, AtomEncoderFlags, AtomEncoderPlaceholder, BFactorModule, Boltz2Model,
+    AtomEncoderBatchFeats, AtomEncoderFlags, AtomEncoderPlaceholder, BFactorModule,
+    Boltz2DiffusionArgs, Boltz2Model,
     ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput, ConfidenceV2, ContactConditioning,
     ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput, DiffusionModule,
     DiffusionSampleOutput, DistogramModule, InputEmbedder, InputEmbedderFeats, MsaFeatures,

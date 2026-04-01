@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
-    resolve_predict_args, Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides,
-    RelPosFeatures, SteeringParams,
+    resolve_predict_args, AtomDiffusionConfig, Boltz2DiffusionArgs, Boltz2Hparams, Boltz2Model,
+    Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures, SteeringParams,
 };
 use boltr_io::config::BoltzInput;
 use boltr_io::{
@@ -722,21 +722,30 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     let num_blocks = hparams.resolved_num_pairformer_blocks().unwrap_or(4);
 
     let device = boltr_backend_tch::parse_device_spec(&device)?;
+    let diff_args = Boltz2DiffusionArgs::from_boltz2_hparams(&hparams);
+    let diff_config = AtomDiffusionConfig::from_boltz2_hparams(&hparams);
     tracing::info!(
         token_s,
         token_z,
         num_blocks,
+        token_transformer_heads = diff_args.token_transformer_heads,
         ?device,
         "building Boltz2Model from hparams"
     );
 
-    let mut model = Boltz2Model::with_options_bonds(
+    let mut model = Boltz2Model::with_all_options(
         device,
         token_s,
         token_z,
         Some(num_blocks),
         hparams.resolved_bond_type_feature(),
-    );
+        diff_args,
+        diff_config,
+        None,
+        None,
+        false,
+    )
+    .context("Boltz2Model::with_all_options")?;
 
     // 5. Load weights
     match model.load_partial_from_safetensors(&conf_path) {

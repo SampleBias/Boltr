@@ -256,6 +256,55 @@ impl Default for Boltz2DiffusionArgs {
     }
 }
 
+impl Boltz2DiffusionArgs {
+    /// Merge [`crate::boltz_hparams::Boltz2Hparams`] into defaults so `VarStore` layer sizes match
+    /// the exported `boltz2_conf.safetensors` (especially `score_model_args.token_transformer_heads`).
+    pub fn from_boltz2_hparams(h: &crate::boltz_hparams::Boltz2Hparams) -> Self {
+        let mut d = Self::default();
+        if let Some(atom_s) = h.atom_s {
+            d.atom_s = atom_s;
+        }
+        if let Some(atom_z) = h.atom_z {
+            d.atom_z = atom_z;
+        }
+        if let Some(n) = h.num_bins {
+            d.num_bins = n;
+        }
+        if let Some(pb) = h.other.get("predict_bfactor").and_then(|v| v.as_bool()) {
+            d.predict_bfactor = pb;
+        }
+        if let Some(v) = &h.score_model_args {
+            if let Some(obj) = v.as_object() {
+                if let Some(x) = obj.get("atom_encoder_depth").and_then(|x| x.as_i64()) {
+                    d.atom_encoder_depth = x;
+                }
+                if let Some(x) = obj.get("atom_encoder_heads").and_then(|x| x.as_i64()) {
+                    d.atom_encoder_heads = x;
+                }
+                if let Some(x) = obj.get("atom_decoder_depth").and_then(|x| x.as_i64()) {
+                    d.atom_decoder_depth = x;
+                }
+                if let Some(x) = obj.get("atom_decoder_heads").and_then(|x| x.as_i64()) {
+                    d.atom_decoder_heads = x;
+                }
+                if let Some(x) = obj.get("token_transformer_depth").and_then(|x| x.as_i64()) {
+                    d.token_transformer_depth = x;
+                }
+                if let Some(x) = obj.get("token_transformer_heads").and_then(|x| x.as_i64()) {
+                    d.token_transformer_heads = x;
+                }
+                if let Some(x) = obj.get("conditioning_transition_layers").and_then(|x| x.as_i64()) {
+                    d.conditioning_transition_layers = x;
+                }
+                if let Some(x) = obj.get("dim_fourier").and_then(|x| x.as_i64()) {
+                    d.dim_fourier = x;
+                }
+            }
+        }
+        d
+    }
+}
+
 impl Boltz2Model {
     /// Build from exported Lightning `hyper_parameters` JSON ([`Boltz2Hparams`]).
     pub fn from_hparams_json(device: Device, json_bytes: &[u8]) -> Result<Self> {

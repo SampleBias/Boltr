@@ -32,8 +32,10 @@ const DESCR_RESIDUES: &str = "[('res_type', '|i1')]";
 const DESCR_DELETIONS: &str = "[('res_idx', '<i2'), ('deletion', '<i2')]";
 const DESCR_SEQUENCES: &str = "[('seq_idx', '<i2'), ('taxonomy', '<i4'), ('res_start', '<i4'), ('res_end', '<i4'), ('del_start', '<i4'), ('del_end', '<i4')]";
 
-/// Aligned `itemsize` for `MSASequence` (i2 + pad + 5×i4).
+/// Aligned `itemsize` for `MSASequence` as written by this crate (`pack_sequences`: i2 + pad + 5×i4).
 const SEQUENCE_RECORD_BYTES: usize = 24;
+/// Packed layout from NumPy/Boltz `MSASequence` dtype (no padding after `seq_idx`).
+const SEQUENCE_RECORD_BYTES_BOLTZ: usize = 22;
 
 fn shape_repr_1d(n: usize) -> String {
     format!("({n},)")
@@ -277,13 +279,26 @@ fn decode_msa_from_npy_payloads(
     let (n_del, del_payload) = parse_npy_1d_shape_and_payload(&del_npy)?;
     let (n_res, res_payload) = parse_npy_1d_shape_and_payload(&res_npy)?;
 
-    if seq_payload.len() != n_seq * SEQUENCE_RECORD_BYTES {
-        bail!(
-            "sequences payload length {} != n_seq * {}",
-            seq_payload.len(),
-            SEQUENCE_RECORD_BYTES
-        );
-    }
+    let seq_stride = if n_seq == 0 {
+        if !seq_payload.is_empty() {
+            bail!("sequences: n_seq=0 but payload non-empty");
+        }
+        SEQUENCE_RECORD_BYTES
+    } else {
+        let s = seq_payload.len() / n_seq;
+        if seq_payload.len() != n_seq * s
+            || (s != SEQUENCE_RECORD_BYTES && s != SEQUENCE_RECORD_BYTES_BOLTZ)
+        {
+            bail!(
+                "sequences payload length {} incompatible with n_seq={} (expected stride {} or {})",
+                seq_payload.len(),
+                n_seq,
+                SEQUENCE_RECORD_BYTES,
+                SEQUENCE_RECORD_BYTES_BOLTZ
+            );
+        }
+        s
+    };
     if del_payload.len() != n_del * 4 {
         bail!("deletions payload length mismatch");
     }
@@ -293,14 +308,29 @@ fn decode_msa_from_npy_payloads(
 
     let mut sequences = Vec::with_capacity(n_seq);
     for i in 0..n_seq {
-        let base = i * SEQUENCE_RECORD_BYTES;
-        let chunk = &seq_payload[base..base + SEQUENCE_RECORD_BYTES];
-        let seq_idx = i16::from_le_bytes([chunk[0], chunk[1]]) as i32;
-        let taxonomy = i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
-        let res_start = i32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]) as usize;
-        let res_end = i32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]) as usize;
-        let del_start = i32::from_le_bytes([chunk[16], chunk[17], chunk[18], chunk[19]]) as usize;
-        let del_end = i32::from_le_bytes([chunk[20], chunk[21], chunk[22], chunk[23]]) as usize;
+        let base = i * seq_stride;
+        let chunk = &seq_payload[base..base + seq_stride];
+        let (seq_idx, taxonomy, res_start, res_end, del_start, del_end) = if seq_stride
+            == SEQUENCE_RECORD_BYTES_BOLTZ
+        {
+            (
+                i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
+                i32::from_le_bytes([chunk[2], chunk[3], chunk[4], chunk[5]]),
+                i32::from_le_bytes([chunk[6], chunk[7], chunk[8], chunk[9]]) as usize,
+                i32::from_le_bytes([chunk[10], chunk[11], chunk[12], chunk[13]]) as usize,
+                i32::from_le_bytes([chunk[14], chunk[15], chunk[16], chunk[17]]) as usize,
+                i32::from_le_bytes([chunk[18], chunk[19], chunk[20], chunk[21]]) as usize,
+            )
+        } else {
+            (
+                i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
+                i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]),
+                i32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]) as usize,
+                i32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]) as usize,
+                i32::from_le_bytes([chunk[16], chunk[17], chunk[18], chunk[19]]) as usize,
+                i32::from_le_bytes([chunk[20], chunk[21], chunk[22], chunk[23]]) as usize,
+            )
+        };
         sequences.push(A3mSequenceMeta {
             seq_idx,
             taxonomy_id: taxonomy,

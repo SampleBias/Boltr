@@ -250,6 +250,47 @@ impl Default for AtomDiffusionConfig {
     }
 }
 
+impl AtomDiffusionConfig {
+    /// Overlay `diffusion_process_args` from [`crate::boltz_hparams::Boltz2Hparams`] when present.
+    pub fn from_boltz2_hparams(h: &crate::boltz_hparams::Boltz2Hparams) -> Self {
+        let mut c = Self::default();
+        let Some(v) = &h.diffusion_process_args else {
+            return c;
+        };
+        let Some(obj) = v.as_object() else {
+            return c;
+        };
+        if let Some(x) = obj.get("sigma_min").and_then(|x| x.as_f64()) {
+            c.sigma_min = x;
+        }
+        if let Some(x) = obj.get("sigma_max").and_then(|x| x.as_f64()) {
+            c.sigma_max = x;
+        }
+        if let Some(x) = obj.get("sigma_data").and_then(|x| x.as_f64()) {
+            c.sigma_data = x;
+        }
+        if let Some(x) = obj.get("rho").and_then(|x| x.as_f64()) {
+            c.rho = x;
+        }
+        if let Some(x) = obj.get("gamma_0").and_then(|x| x.as_f64()) {
+            c.gamma_0 = x;
+        }
+        if let Some(x) = obj.get("gamma_min").and_then(|x| x.as_f64()) {
+            c.gamma_min = x;
+        }
+        if let Some(x) = obj.get("noise_scale").and_then(|x| x.as_f64()) {
+            c.noise_scale = x;
+        }
+        if let Some(x) = obj.get("step_scale").and_then(|x| x.as_f64()) {
+            c.step_scale = x;
+        }
+        if let Some(x) = obj.get("alignment_reverse_diff").and_then(|x| x.as_bool()) {
+            c.alignment_reverse_diff = x;
+        }
+        c
+    }
+}
+
 /// Output of the diffusion sampling process.
 pub struct DiffusionSampleOutput {
     /// Denoised atom coordinates `[multiplicity, M, 3]`.
