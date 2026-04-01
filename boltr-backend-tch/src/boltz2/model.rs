@@ -273,6 +273,16 @@ impl Boltz2DiffusionArgs {
         if let Some(pb) = h.other.get("predict_bfactor").and_then(|v| v.as_bool()) {
             d.predict_bfactor = pb;
         }
+        // Boltz2 checkpoints use `use_no_atom_char: false` → 388-dim atom features (vs Rust default 132).
+        if let Some(b) = h.other.get("use_no_atom_char").and_then(|v| v.as_bool()) {
+            d.atom_encoder_flags.use_no_atom_char = b;
+        }
+        if let Some(b) = h.other.get("use_atom_backbone_feat").and_then(|v| v.as_bool()) {
+            d.atom_encoder_flags.use_atom_backbone_feat = b;
+        }
+        if let Some(b) = h.other.get("use_residue_feats_atoms").and_then(|v| v.as_bool()) {
+            d.atom_encoder_flags.use_residue_feats_atoms = b;
+        }
         if let Some(v) = &h.score_model_args {
             if let Some(obj) = v.as_object() {
                 if let Some(x) = obj.get("atom_encoder_depth").and_then(|x| x.as_i64()) {
@@ -301,6 +311,7 @@ impl Boltz2DiffusionArgs {
                 }
             }
         }
+        d.atom_feature_dim = d.atom_encoder_flags.expected_atom_feature_dim();
         d
     }
 }
