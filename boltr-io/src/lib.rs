@@ -117,8 +117,9 @@ pub use inference_collate_serialize::{
     write_inference_collate_golden, TRUNK_COLLATE_S_INPUT_LAST,
 };
 pub use inference_dataset::{
-    affinity_asym_id_from_record, atom_features_from_inference_input, load_input,
-    msa_features_from_inference_input, parse_manifest_json, parse_manifest_path,
+    affinity_asym_id_from_record, atom_features_from_inference_input,
+    featurized_atom_token_sum, load_input, msa_features_from_inference_input, parse_manifest_json,
+    parse_manifest_path,
     template_features_from_tokenized, token_features_from_inference_input,
     tokenize_boltz2_inference, trunk_smoke_feature_batch_from_inference_input, Boltz2ChainInfo,
     Boltz2InferenceInput, Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, Boltz2Tokenized,

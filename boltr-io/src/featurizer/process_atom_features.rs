@@ -408,6 +408,14 @@ pub struct AtomFeatureTensors {
 }
 
 impl AtomFeatureTensors {
+    /// Count of real atom slots before tail padding (`atom_pad_mask == 1`).
+    /// Matches the `total_atoms` loop in [`process_atom_features`] and the leading rows of
+    /// [`Self::coords`] / model diffusion outputs (before padded tail garbage).
+    #[must_use]
+    pub fn unpadded_atom_count(&self) -> usize {
+        self.atom_pad_mask.iter().filter(|&&x| x > 0.5).count()
+    }
+
     /// Pack into [`FeatureBatch`] with keys matching Python `process_atom_features` return dict.
     #[must_use]
     pub fn to_feature_batch(&self) -> FeatureBatch {

@@ -385,6 +385,18 @@ pub fn token_features_from_inference_input(input: &Boltz2InferenceInput) -> Toke
     process_token_features(&tokens, &bonds, None)
 }
 
+/// Number of atom slots emitted by [`process_atom_features`] **before** `atom_pad_mask` window padding.
+///
+/// This is `sum(token.atom_num)` in [`tokenize_structure`] order — the same ordering as diffusion
+/// coordinates for indices `0..this-1`. Compare to [`Boltz2InferenceInput::structure`].`atoms.len()`:
+/// they should match for preprocess bundles without extra orphan atoms in the npz.
+#[must_use]
+pub fn featurized_atom_token_sum(input: &Boltz2InferenceInput) -> usize {
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, _) = tokenize_structure(&input.structure, aff);
+    tokens.iter().map(|t| t.atom_num as usize).sum()
+}
+
 /// Atom-level features after `load_input`: `tokenize_structure` + [`process_atom_features`](crate::featurizer::process_atom_features).
 ///
 /// Uses [`StandardAminoAcidRefData`] for canonical residue chemistry (matches Boltz `load_canonicals`

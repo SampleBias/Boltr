@@ -20,8 +20,9 @@ use boltr_backend_tch::{
 };
 use boltr_io::config::BoltzInput;
 use boltr_io::{
-    canonical_yaml_parent, collate_inference_batches, copy_msa_a3m_to_output, load_input,
-    parse_manifest_path, trunk_smoke_feature_batch_from_inference_input,
+    canonical_yaml_parent, collate_inference_batches, copy_msa_a3m_to_output,
+    featurized_atom_token_sum, load_input, parse_manifest_path,
+    trunk_smoke_feature_batch_from_inference_input,
 };
 use tch::{self, Kind, Tensor};
 
@@ -150,19 +151,40 @@ fn try_predict_from_preprocess(
     let raw_shape = out.diffusion.sample_atom_coords.size();
     let xyz = diffusion_sample_coords_to_xyz_vec(&out.diffusion.sample_atom_coords)
         .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
+    let n_from_model = xyz.len();
+    let n_featurized = featurized_atom_token_sum(&inference_input);
     let n_atoms_struct = inference_input.structure.atoms.len();
-    if xyz.len() != n_atoms_struct {
+
+    // `n_from_model` includes atom_pad_mask tail padding (window-rounded); it can exceed
+    // `n_featurized` and `n_atoms_struct`. Only compare structure vs featurizer for order/count.
+    if n_featurized != n_atoms_struct {
         tracing::warn!(
-            n_model = xyz.len(),
-            n_structure = n_atoms_struct,
+            n_featurized,
+            n_structure_atoms = n_atoms_struct,
             raw_shape = ?raw_shape,
-            "predicted atom count differs from StructureV2 atoms; applying min length (check collate vs structure npz)"
+            "featurized atom count (token sum) differs from StructureV2 atoms length; tail atoms may keep reference coords or map incorrectly"
         );
     }
-    let n_atom = n_atoms_struct.min(xyz.len());
+    if n_from_model < n_featurized {
+        tracing::warn!(
+            n_from_model,
+            n_featurized,
+            raw_shape = ?raw_shape,
+            "diffusion returned fewer coords than featurizer real atoms; truncating coordinate write"
+        );
+    }
+    if n_from_model > n_featurized {
+        tracing::debug!(
+            n_from_model,
+            n_featurized,
+            "diffusion atom dim exceeds featurized real atoms (expected: padding to atoms_per_window)"
+        );
+    }
+
+    let n_apply = n_featurized.min(n_atoms_struct).min(n_from_model);
     inference_input
         .structure
-        .apply_predicted_atom_coords(&xyz[..n_atom]);
+        .apply_predicted_atom_coords(&xyz[..n_apply]);
 
     let record_id = record.id.clone();
     write_structure_file(
