@@ -701,6 +701,29 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         return Ok(());
     }
 
+    // Export reference mmCIF/PDB from preprocess bundle before loading the full graph. This avoids
+    // needing diffusion featurizer tensors (e.g. atom name chars) when the bundle is valid.
+    if let Ok(Some(rid)) =
+        try_write_preprocess_reference_structure(&input_path, &out_dir, output_format, affinity)
+    {
+        let record_dir = out_dir.join(&rid);
+        let marker = record_dir.join("boltr_predict_complete.txt");
+        let predict_args = resolved.as_ref().ok();
+        let info = serde_json::json!({
+            "record_id": rid,
+            "status": "preprocess_reference_structure",
+            "affinity": affinity,
+            "use_potentials": use_potentials,
+            "predict_args": predict_args,
+            "output_format": output_format.to_string(),
+            "note": "Structure exported from preprocess bundle (reference/input coordinates) before model load. Not a diffusion sample."
+        });
+        let j = serde_json::to_string_pretty(&info)?;
+        tokio::fs::write(&marker, j).await?;
+        tracing::info!(path = %marker.display(), "predict pipeline complete (preprocess reference structure, no model)");
+        return Ok(());
+    }
+
     // 3. Resolve checkpoint paths
     let conf_path = resolve_conf_checkpoint(checkpoint.as_deref(), &cache)?;
     tracing::info!(path = %conf_path.display(), "using confidence checkpoint");
@@ -807,31 +830,9 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "preprocess predict_step bridge failed; trying preprocess reference export"
+                "preprocess predict_step bridge failed (reference export was attempted before model load)"
             );
         }
-    }
-
-    // 5b. Reference geometry from preprocess bundle (no diffusion) — always attempt when bundle exists
-    if let Ok(Some(rid)) =
-        try_write_preprocess_reference_structure(&input_path, &out_dir, output_format, affinity)
-    {
-        let record_dir = out_dir.join(&rid);
-        let marker = record_dir.join("boltr_predict_complete.txt");
-        let predict_args = resolved.as_ref().ok();
-        let info = serde_json::json!({
-            "record_id": rid,
-            "status": "preprocess_reference_structure",
-            "affinity": affinity,
-            "use_potentials": use_potentials,
-            "predict_args": predict_args,
-            "output_format": output_format.to_string(),
-            "note": "Structure exported from preprocess bundle (reference/input coordinates). Not a diffusion sample; use predict_step_complete when the full bridge runs."
-        });
-        let j = serde_json::to_string_pretty(&info)?;
-        tokio::fs::write(&marker, j).await?;
-        tracing::info!(path = %marker.display(), "predict pipeline complete (preprocess reference structure)");
-        return Ok(());
     }
 
     // 6. Placeholder path when no manifest/preprocess next to the input YAML

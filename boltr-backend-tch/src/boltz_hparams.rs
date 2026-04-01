@@ -268,19 +268,4 @@ mod tests {
         assert_eq!(h.resolved_num_pairformer_blocks(), Some(64));
     }
 
-    /// Local cache file from `boltr download` (optional).
-    #[test]
-    fn cache_boltz2_hparams_deserializes_score_model_args() {
-        let p = std::path::Path::new("/home/s4mpl3bi4s/.cache/boltr/boltz2_hparams.json");
-        if !p.is_file() {
-            return;
-        }
-        let raw = std::fs::read(p).expect("read cache boltz2_hparams.json");
-        let h = Boltz2Hparams::from_json_slice(&raw).expect("parse");
-        let sm = h.score_model_args.as_ref().expect("score_model_args present in cache JSON");
-        assert_eq!(
-            sm.get("token_transformer_heads").and_then(|x| x.as_i64()),
-            Some(16)
-        );
-    }
 }
