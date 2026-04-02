@@ -4,8 +4,8 @@
 
 use anyhow::{bail, Context, Result};
 use boltr_backend_tch::{
-    Boltz2Model, ContactFeatures, InputEmbedderFeats, MsaFeatures, PredictStepFeats,
-    PredictStepOutput, RelPosFeatures, SteeringParams,
+    AtomEncoderBatchFeats, Boltz2Model, ContactFeatures, InputEmbedderFeats, MsaFeatures,
+    PredictStepFeats, PredictStepOutput, RelPosFeatures, SteeringParams,
 };
 use boltr_io::{FeatureBatch, FeatureTensor, InferenceCollateResult};
 use ndarray::ArrayD;
@@ -89,6 +89,12 @@ pub struct OwnedPredictTensors {
     /// Placeholder; confidence path expects `[B, N_atoms]`-shaped indices when enabled.
     token_to_rep_atom: Tensor,
     frames_idx: Tensor,
+    /// Atom-name one-hot (Boltz `ref_atom_name_chars`); required when checkpoint has `use_no_atom_char: false`.
+    ref_atom_name_chars: Tensor,
+    /// Optional; required when checkpoint enables `use_atom_backbone_feat`.
+    atom_backbone_feat: Option<Tensor>,
+    /// Token-level `modified` (int); used when checkpoint enables `use_residue_feats_atoms`.
+    modified: Tensor,
 }
 
 impl OwnedPredictTensors {
@@ -129,6 +135,12 @@ impl OwnedPredictTensors {
         let token_to_rep_atom = Tensor::zeros(&[b, n_atom], (Kind::Int64, device));
         let frames_idx = Tensor::zeros(&[b, n_tok, 3], (Kind::Int64, device));
 
+        let ref_atom_name_chars = take_f32(batch, "ref_atom_name_chars", device)?;
+        let atom_backbone_feat = batch
+            .get_f32("atom_backbone_feat")
+            .map(|a| f32_to_tensor(a, device));
+        let modified = take_i64(batch, "modified", device)?;
+
         Ok(Self {
             device,
             ref_pos,
@@ -159,10 +171,16 @@ impl OwnedPredictTensors {
             contact_threshold,
             token_to_rep_atom,
             frames_idx,
+            ref_atom_name_chars,
+            atom_backbone_feat,
+            modified,
         })
     }
 
-    pub fn input_embedder_feats(&self) -> InputEmbedderFeats<'_> {
+    pub fn input_embedder_feats<'a>(
+        &'a self,
+        atom_encoder_batch: Option<&'a AtomEncoderBatchFeats<'a>>,
+    ) -> InputEmbedderFeats<'a> {
         InputEmbedderFeats {
             ref_pos: &self.ref_pos,
             ref_charge: &self.ref_charge,
@@ -175,7 +193,7 @@ impl OwnedPredictTensors {
             deletion_mean: &self.deletion_mean,
             profile_affinity: None,
             deletion_mean_affinity: None,
-            atom_encoder_batch: None,
+            atom_encoder_batch,
         }
     }
 
@@ -208,7 +226,10 @@ impl OwnedPredictTensors {
         }
     }
 
-    pub fn predict_step_feats(&self) -> PredictStepFeats<'_> {
+    pub fn predict_step_feats<'a>(
+        &'a self,
+        atom_encoder_batch: Option<&'a AtomEncoderBatchFeats<'a>>,
+    ) -> PredictStepFeats<'a> {
         PredictStepFeats {
             token_pad_mask: &self.token_pad_mask,
             asym_id: &self.asym_id,
@@ -221,7 +242,7 @@ impl OwnedPredictTensors {
             atom_pad_mask: &self.atom_pad_mask,
             ref_space_uid: &self.ref_space_uid,
             atom_to_token: &self.atom_to_token,
-            atom_encoder_batch: None,
+            atom_encoder_batch,
             affinity_token_mask: None,
             affinity_mw: None,
         }
@@ -244,12 +265,19 @@ pub fn predict_step_from_collate(
 ) -> Result<PredictStepOutput> {
     let device = model.device();
     let owned = OwnedPredictTensors::from_collate_batch(&coll.batch, device)?;
-    let emb = owned.input_embedder_feats();
+    let atom_encoder_batch = AtomEncoderBatchFeats {
+        ref_atom_name_chars: Some(&owned.ref_atom_name_chars),
+        atom_backbone_feat: owned.atom_backbone_feat.as_ref(),
+        res_type: Some(&owned.res_type),
+        modified: Some(&owned.modified),
+        mol_type: Some(&owned.mol_type),
+    };
+    let emb = owned.input_embedder_feats(Some(&atom_encoder_batch));
     let s_inputs = model.forward_s_inputs_from_embedder(&emb, false);
     let rel = owned.rel_pos_feats();
     let msa = owned.msa_feats();
     let contact = owned.contact_feats();
-    let feats = owned.predict_step_feats();
+    let feats = owned.predict_step_feats(Some(&atom_encoder_batch));
 
     let type_bonds = if model.bond_type_feature() {
         owned.type_bonds.as_ref()
