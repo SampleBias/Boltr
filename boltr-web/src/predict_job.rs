@@ -633,6 +633,11 @@ fn build_structure_message(
                 );
             }
         }
+        Some("no_tch_backend") => {
+            s.push_str(
+                " The `boltr` binary was built without the LibTorch (`tch`) backend — no diffusion or structure files. Rebuild with `cargo build -p boltr-cli --features tch` and set `BOLTR` to that binary (or use `scripts/with_dev_venv.sh` for LibTorch).",
+            );
+        }
         Some(other) => {
             s.push_str(&format!(" Completion status: {other}."));
             if let Some(n) = completion_note.filter(|x| !x.is_empty()) {
@@ -981,5 +986,25 @@ mod tests {
         assert!(i.structure_paths.is_empty());
         assert_eq!(i.completion_status.as_deref(), Some("pipeline_complete"));
         assert!(i.structure_message.contains("test note"));
+    }
+
+    #[test]
+    fn inspect_predict_output_no_tch_backend_message() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rec = tmp.path().join("job1");
+        std::fs::create_dir_all(&rec).unwrap();
+        std::fs::write(
+            rec.join("boltr_predict_complete.txt"),
+            r#"{"status":"no_tch_backend","note":"rebuild with tch"}"#,
+        )
+        .unwrap();
+        let i = inspect_predict_output(tmp.path());
+        assert!(i.structure_paths.is_empty());
+        assert_eq!(i.completion_status.as_deref(), Some("no_tch_backend"));
+        assert!(
+            i.structure_message.contains("LibTorch"),
+            "message={}",
+            i.structure_message
+        );
     }
 }

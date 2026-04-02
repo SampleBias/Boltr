@@ -906,6 +906,25 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             write_full_pde,
             &parsed,
         );
+        // Same layout as `predict_tch` placeholder so UIs can parse `status` / `note`.
+        let record_id = input_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("prediction")
+            .to_string();
+        let record_dir = out_dir.join(&record_id);
+        tokio::fs::create_dir_all(&record_dir).await?;
+        let marker = record_dir.join("boltr_predict_complete.txt");
+        let info = serde_json::json!({
+            "record_id": record_id,
+            "status": "no_tch_backend",
+            "affinity": affinity,
+            "note": "This boltr binary was built without --features tch. Rebuild with `cargo build -p boltr-cli --features tch` and ensure LibTorch is available to write mmCIF/PDB from diffusion."
+        });
+        let j = serde_json::to_string_pretty(&info)?;
+        tokio::fs::write(&marker, j).await?;
+        tracing::info!(path = %marker.display(), "wrote boltr_predict_complete.txt (no tch backend)");
+
         if spike_only {
             tracing::warn!(
                 "rebuild with `cargo build -p boltr-cli --features tch` for model execution"

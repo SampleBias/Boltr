@@ -139,4 +139,88 @@ impl StructureV2Tables {
             }
         }
     }
+
+    /// Returns true when at least one atom is marked present and every present atom has coordinates
+    /// within `eps` of the origin (placeholder or failed coordinate write).
+    #[must_use]
+    pub fn present_atoms_all_coords_near_zero(&self, eps: f32) -> bool {
+        let mut any_present = false;
+        for atom in &self.atoms {
+            if atom.is_present {
+                any_present = true;
+                if atom.coords[0].abs() > eps
+                    || atom.coords[1].abs() > eps
+                    || atom.coords[2].abs() > eps
+                {
+                    return false;
+                }
+            }
+        }
+        any_present
+    }
+}
+
+#[cfg(test)]
+mod present_coords_tests {
+    use super::{AtomV2Row, StructureV2Tables};
+
+    fn empty() -> StructureV2Tables {
+        StructureV2Tables {
+            atoms: vec![],
+            residues: vec![],
+            chains: vec![],
+            chain_mask: vec![],
+            coords: vec![],
+            ensemble: vec![],
+            ensemble_atom_coord_idx: 0,
+            bonds: vec![],
+        }
+    }
+
+    #[test]
+    fn empty_structure_not_all_zero_flag() {
+        assert!(!empty().present_atoms_all_coords_near_zero(1e-12));
+    }
+
+    #[test]
+    fn all_present_zero_is_flagged() {
+        let s = StructureV2Tables {
+            atoms: vec![AtomV2Row {
+                name: "CA".into(),
+                coords: [0.0, 0.0, 0.0],
+                is_present: true,
+                bfactor: 0.0,
+                plddt: 0.0,
+            }],
+            residues: vec![],
+            chains: vec![],
+            chain_mask: vec![],
+            coords: vec![],
+            ensemble: vec![],
+            ensemble_atom_coord_idx: 0,
+            bonds: vec![],
+        };
+        assert!(s.present_atoms_all_coords_near_zero(1e-12));
+    }
+
+    #[test]
+    fn nonzero_present_not_flagged() {
+        let s = StructureV2Tables {
+            atoms: vec![AtomV2Row {
+                name: "CA".into(),
+                coords: [1.0, 0.0, 0.0],
+                is_present: true,
+                bfactor: 0.0,
+                plddt: 0.0,
+            }],
+            residues: vec![],
+            chains: vec![],
+            chain_mask: vec![],
+            coords: vec![],
+            ensemble: vec![],
+            ensemble_atom_coord_idx: 0,
+            bonds: vec![],
+        };
+        assert!(!s.present_atoms_all_coords_near_zero(1e-12));
+    }
 }

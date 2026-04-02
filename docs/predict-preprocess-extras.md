@@ -38,6 +38,19 @@ This document matches the `boltr predict` flags added for the folding-accuracy r
 
 Extending the backend to feed constraint tensors into diffusion is a separate change (parity tests + checkpoint alignment).
 
+## Completion marker (`boltr_predict_complete.txt`)
+
+When using `--features tch`, each successful run writes `output/<record_id>/boltr_predict_complete.txt` with a `status` field:
+
+| `status` | Meaning |
+|----------|---------|
+| `predict_step_complete` | Structure came from `load_input` + collate + `predict_step` (diffusion sample). |
+| `preprocess_reference_structure` | Structure is **reference/input geometry** from the preprocess `.npz` only (not a folded sample). Used when the native bridge is skipped (e.g. `--affinity` but no flat `{id}.npz` beside the manifest) or when `predict_step` did not produce a file and the reference export fallback succeeded. |
+| `pipeline_complete` | No structure file was written (missing bundle, failed load, or both predict and reference export failed). |
+| `no_tch_backend` | The `boltr` binary was built **without** `--features tch` — diffusion did not run. Rebuild with `tch` and LibTorch to produce `.cif`/`.pdb`. |
+
+Reference exports are not Boltz diffusion outputs; coordinates may be placeholders (e.g. all zeros) if the preprocess bundle stored no real 3D coordinates.
+
 ## See also
 
 - [boltz-reference/docs/prediction.md](../boltz-reference/docs/prediction.md)
