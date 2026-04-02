@@ -11,7 +11,7 @@ default = []
 tch-backend = ["tch"]
 
 [dependencies]
-tch = { version = "0.16", optional = true }
+tch = { version = "0.16", optional = true, features = ["download-libtorch"] }
 ndarray.workspace = true
 serde.workspace = true
 serde_json.workspace = true

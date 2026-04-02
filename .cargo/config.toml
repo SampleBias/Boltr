@@ -1,0 +1,13 @@
+# Workspace Cargo defaults for Boltr.
+#
+# Optional: compile `tch` against the PyTorch wheel in `.venv` (CUDA / exact pip match) instead of
+# the crate-downloaded LibTorch. Uncomment when using `scripts/with_dev_venv.sh` or after
+# `source .venv/bin/activate`, and comment out again for a clean LibTorch-download build.
+#
+# [env]
+# LIBTORCH_USE_PYTORCH = "1"
+# LIBTORCH_BYPASS_VERSION_CHECK = "1"
+
+[alias]
+# Same as: cargo build --release -p boltr-cli --features tch
+build-boltr = "build --release -p boltr-cli --features tch"

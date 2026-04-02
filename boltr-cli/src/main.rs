@@ -919,7 +919,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             "record_id": record_id,
             "status": "no_tch_backend",
             "affinity": affinity,
-            "note": "This boltr binary was built without --features tch. Rebuild with `cargo build -p boltr-cli --features tch` and ensure LibTorch is available to write mmCIF/PDB from diffusion."
+            "note": "This boltr binary was built without --features tch. Rebuild with `cargo build --release -p boltr-cli --features tch` or `cargo build-boltr` (LibTorch is fetched automatically); set `BOLTR` to that binary."
         });
         let j = serde_json::to_string_pretty(&info)?;
         tokio::fs::write(&marker, j).await?;
@@ -927,7 +927,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
 
         if spike_only {
             tracing::warn!(
-                "rebuild with `cargo build -p boltr-cli --features tch` for model execution"
+                "rebuild with `cargo build --release -p boltr-cli --features tch` or `cargo build-boltr` for model execution"
             );
         }
         tracing::info!("predict pipeline complete (no tch backend linked)");
@@ -943,7 +943,7 @@ fn predict_backend_note() -> &'static str {
     }
     #[cfg(not(feature = "tch"))]
     {
-        "rebuild with: cargo build -p boltr-cli --features tch (LibTorch required)"
+        "rebuild with: cargo build --release -p boltr-cli --features tch or cargo build-boltr (LibTorch fetched automatically)"
     }
 }
 

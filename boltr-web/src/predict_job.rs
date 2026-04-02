@@ -635,7 +635,7 @@ fn build_structure_message(
         }
         Some("no_tch_backend") => {
             s.push_str(
-                " The `boltr` binary was built without the LibTorch (`tch`) backend — no diffusion or structure files. Rebuild with `cargo build -p boltr-cli --features tch` and set `BOLTR` to that binary (or use `scripts/with_dev_venv.sh` for LibTorch).",
+                " The `boltr` binary was built without the LibTorch (`tch`) backend — no diffusion or structure files. Rebuild with `cargo build --release -p boltr-cli --features tch` (LibTorch is fetched automatically) or `cargo build-boltr`, then `export BOLTR=$PWD/target/release/boltr`. For CUDA / pip `torch`, use `scripts/cargo-tch` or see README.",
             );
         }
         Some(other) => {
