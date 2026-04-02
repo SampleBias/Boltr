@@ -104,7 +104,6 @@ impl OwnedPredictTensors {
         let ref_element = take_f32(batch, "ref_element", device)?;
         let atom_pad_mask = take_f32(batch, "atom_pad_mask", device)?;
         let ref_space_uid = take_i64(batch, "ref_space_uid", device)?;
-        let atom_to_token = take_f32(batch, "atom_to_token", device)?;
         let res_type = take_f32(batch, "res_type", device)?;
         let profile = take_f32(batch, "profile", device)?;
         let deletion_mean = take_f32(batch, "deletion_mean", device)?;
@@ -116,6 +115,18 @@ impl OwnedPredictTensors {
         let cyclic_f = take_f32(batch, "cyclic_period", device)?;
         let cyclic_period = cyclic_f.to_kind(Kind::Int64);
         let token_pad_mask = take_f32(batch, "token_pad_mask", device)?;
+        let n_tok = token_pad_mask.size()[1];
+        let mut atom_to_token = take_f32(batch, "atom_to_token", device)?;
+        let n_att = atom_to_token.size()[2];
+        if n_att != n_tok {
+            if n_att > n_tok {
+                atom_to_token = atom_to_token.narrow(2, 0, n_tok);
+            } else {
+                bail!(
+                    "atom_to_token last dim {n_att} < token_pad_mask token count {n_tok} (inconsistent preprocess collate)"
+                );
+            }
+        }
         let mol_type = take_i64(batch, "mol_type", device)?;
         let msa = take_i64(batch, "msa", device)?;
         let msa_mask = take_msa_mask(batch, device)?;
@@ -130,7 +141,6 @@ impl OwnedPredictTensors {
         let contact_threshold = take_f32(batch, "contact_threshold", device)?;
 
         let b = token_pad_mask.size()[0];
-        let n_tok = token_pad_mask.size()[1];
         let n_atom = ref_pos.size()[1];
         let token_to_rep_atom = Tensor::zeros(&[b, n_atom], (Kind::Int64, device));
         let frames_idx = Tensor::zeros(&[b, n_tok, 3], (Kind::Int64, device));

@@ -859,6 +859,8 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         token_z,
         num_blocks,
         token_transformer_heads = diff_args.token_transformer_heads,
+        atoms_per_window_queries = diff_args.atoms_per_window_queries,
+        atoms_per_window_keys = diff_args.atoms_per_window_keys,
         ?device,
         "building Boltz2Model from hparams"
     );

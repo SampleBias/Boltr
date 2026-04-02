@@ -224,6 +224,22 @@ fn single_to_keys(single: &Tensor, indexing_matrix: &Tensor, w: i64, h: i64) -> 
     out.reshape(&[b, k, h, d])
 }
 
+/// `z_to_p` einsum output must match `p` as `[B, K, W, H, atom_z]`. Some LibTorch builds return the
+/// window axes swapped (`[B, K, H, W, …]`) when `W != H`, which breaks `p + z_to_p_out`.
+fn align_z_to_p_with_p(p: &Tensor, z_to_p_out: Tensor) -> Tensor {
+    let ps = p.size();
+    let zs = z_to_p_out.size();
+    if ps.len() == 5 && zs.len() == 5 && ps[0] == zs[0] && ps[4] == zs[4] {
+        if ps[2] == zs[2] && ps[3] == zs[3] {
+            return z_to_p_out;
+        }
+        if ps[2] == zs[3] && ps[3] == zs[2] {
+            return z_to_p_out.transpose(2, 3);
+        }
+    }
+    z_to_p_out
+}
+
 // ---------------------------------------------------------------------------
 // AtomEncoder — flags / extra feats (encodersv2.AtomEncoder)
 // ---------------------------------------------------------------------------
@@ -530,23 +546,31 @@ impl AtomEncoder {
         let mut c = c;
         if self.structure_prediction {
             if let (Some(s_trunk), Some(z)) = (s_trunk, z) {
-                let s_to_c = self.s_to_c_trans_linear.as_ref().unwrap().forward(
-                    &self
-                        .s_to_c_trans_norm
-                        .as_ref()
-                        .unwrap()
-                        .forward(&s_trunk.to_kind(Kind::Float)),
-                );
+                let s_to_c = self
+                    .s_to_c_trans_linear
+                    .as_ref()
+                    .expect("AtomEncoder: s_to_c_trans_linear missing despite structure_prediction")
+                    .forward(
+                        &self
+                            .s_to_c_trans_norm
+                            .as_ref()
+                            .expect("AtomEncoder: s_to_c_trans_norm missing despite structure_prediction")
+                            .forward(&s_trunk.to_kind(Kind::Float)),
+                    );
                 let s_to_c = atom_to_token.to_kind(Kind::Float).bmm(&s_to_c);
                 c = &c + &s_to_c.to_kind(c.kind());
 
-                let z_to_p = self.z_to_p_trans_linear.as_ref().unwrap().forward(
-                    &self
-                        .z_to_p_trans_norm
-                        .as_ref()
-                        .unwrap()
-                        .forward(&z.to_kind(Kind::Float)),
-                );
+                let z_to_p = self
+                    .z_to_p_trans_linear
+                    .as_ref()
+                    .expect("AtomEncoder: z_to_p_trans_linear missing despite structure_prediction")
+                    .forward(
+                        &self
+                            .z_to_p_trans_norm
+                            .as_ref()
+                            .expect("AtomEncoder: z_to_p_trans_norm missing despite structure_prediction")
+                            .forward(&z.to_kind(Kind::Float)),
+                    );
                 let atom_to_token_queries =
                     atom_to_token.to_kind(Kind::Float).reshape(&[b, k, w, -1]);
                 let atom_to_token_keys =
@@ -556,6 +580,17 @@ impl AtomEncoder {
                     &[&z_to_p, &atom_to_token_queries, &atom_to_token_keys],
                     None::<i64>,
                 );
+                let z_to_p_out = align_z_to_p_with_p(&p, z_to_p_out);
+                let p_sz = p.size();
+                let z_sz = z_to_p_out.size();
+                if p_sz != z_sz {
+                    panic!(
+                        "AtomEncoder: z_to_p_out shape {:?} does not match p {:?} after W/H alignment. \
+                         Set boltz2_hparams atoms_per_window_queries/keys to match the checkpoint; \
+                         run with RUST_BACKTRACE=1. If atom_to_token token count differs from trunk N, check preprocess collate.",
+                        z_sz, p_sz
+                    );
+                }
                 let p_kind = p.kind();
                 p = p + z_to_p_out.to_kind(p_kind);
             }
@@ -667,7 +702,11 @@ impl AtomAttentionEncoder {
     ) -> (Tensor, Tensor, Tensor) {
         let mut q = if self.structure_prediction {
             let q_exp = q.repeat_interleave_self_int(multiplicity, Some(0), None);
-            let r_to_q = self.r_to_q_trans.as_ref().unwrap().forward(r);
+            let r_to_q = self
+                .r_to_q_trans
+                .as_ref()
+                .expect("AtomDecoder: r_to_q_trans missing despite structure_prediction")
+                .forward(r);
             q_exp + r_to_q
         } else {
             q.shallow_clone()
@@ -786,6 +825,16 @@ impl AtomAttentionDecoder {
 mod tests {
     use super::*;
     use tch::nn::VarStore;
+
+    #[test]
+    fn align_z_to_p_with_p_fixes_swapped_window_axes() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let p = Tensor::zeros(&[1, 2, 32, 128, 16], (Kind::Float, device));
+        let swapped = Tensor::zeros(&[1, 2, 128, 32, 16], (Kind::Float, device));
+        let fixed = align_z_to_p_with_p(&p, swapped);
+        assert_eq!(fixed.size(), p.size());
+    }
 
     #[test]
     fn fourier_embedding_shape() {

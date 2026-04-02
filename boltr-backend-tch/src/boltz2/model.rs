@@ -322,6 +322,8 @@ impl Boltz2DiffusionArgs {
                 }
             }
         }
+        d.atoms_per_window_queries = h.resolved_atoms_per_window_queries();
+        d.atoms_per_window_keys = h.resolved_atoms_per_window_keys();
         d.atom_feature_dim = d.atom_encoder_flags.expected_atom_feature_dim();
         d
     }
@@ -1570,5 +1572,14 @@ mod tests {
         )
         .expect("with_all_options");
         assert!(m.confidence_module().is_some());
+    }
+
+    #[test]
+    fn from_boltz2_hparams_respects_atoms_per_window() {
+        let j = br#"{"token_s": 384, "atoms_per_window_queries": 16, "atoms_per_window_keys": 64}"#;
+        let h = crate::boltz_hparams::Boltz2Hparams::from_json_slice(j).unwrap();
+        let d = Boltz2DiffusionArgs::from_boltz2_hparams(&h);
+        assert_eq!(d.atoms_per_window_queries, 16);
+        assert_eq!(d.atoms_per_window_keys, 64);
     }
 }

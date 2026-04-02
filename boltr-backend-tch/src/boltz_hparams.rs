@@ -59,6 +59,11 @@ pub struct Boltz2Hparams {
     pub affinity_prediction: Option<bool>,
     #[serde(default)]
     pub affinity_mw_correction: Option<bool>,
+    /// Atom window sizes (Boltz2 `atoms_per_window_queries` / `atoms_per_window_keys`).
+    #[serde(default)]
+    pub atoms_per_window_queries: Option<i64>,
+    #[serde(default)]
+    pub atoms_per_window_keys: Option<i64>,
     /// Remaining Lightning `hyper_parameters` keys (flags, optimizers, etc.).
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
@@ -171,6 +176,22 @@ impl Boltz2Hparams {
         self.bond_type_feature.unwrap_or(false)
     }
 
+    /// `atoms_per_window_queries` from explicit JSON, `other`, or default `32`.
+    #[must_use]
+    pub fn resolved_atoms_per_window_queries(&self) -> i64 {
+        self.atoms_per_window_queries
+            .or_else(|| self.other.get("atoms_per_window_queries").and_then(|v| v.as_i64()))
+            .unwrap_or(32)
+    }
+
+    /// `atoms_per_window_keys` from explicit JSON, `other`, or default `128`.
+    #[must_use]
+    pub fn resolved_atoms_per_window_keys(&self) -> i64 {
+        self.atoms_per_window_keys
+            .or_else(|| self.other.get("atoms_per_window_keys").and_then(|v| v.as_i64()))
+            .unwrap_or(128)
+    }
+
     /// `training_args["recycling_steps"]` when present (Boltz2 training / finetune scripts).
     #[must_use]
     pub fn recycling_steps_from_training_args(&self) -> Option<i64> {
@@ -225,6 +246,29 @@ mod tests {
         let j = br#"{"token_s": 384, "token_z": 128, "num_blocks": 4, "ema": true}"#;
         let h = Boltz2Hparams::from_json_slice(j).unwrap();
         assert_eq!(h.other.get("ema"), Some(&serde_json::json!(true)));
+    }
+
+    #[test]
+    fn resolved_atoms_per_window_from_other_map() {
+        let mut h = Boltz2Hparams::default();
+        h.other.insert(
+            "atoms_per_window_queries".to_string(),
+            serde_json::json!(40),
+        );
+        h.other.insert(
+            "atoms_per_window_keys".to_string(),
+            serde_json::json!(80),
+        );
+        assert_eq!(h.resolved_atoms_per_window_queries(), 40);
+        assert_eq!(h.resolved_atoms_per_window_keys(), 80);
+    }
+
+    #[test]
+    fn resolved_atoms_per_window_top_level_json() {
+        let j = br#"{"token_s": 384, "atoms_per_window_queries": 16, "atoms_per_window_keys": 64}"#;
+        let h = Boltz2Hparams::from_json_slice(j).unwrap();
+        assert_eq!(h.resolved_atoms_per_window_queries(), 16);
+        assert_eq!(h.resolved_atoms_per_window_keys(), 64);
     }
 
     #[test]

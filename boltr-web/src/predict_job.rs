@@ -559,6 +559,24 @@ fn collect_structure_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// When `completion_note` looks like a LibTorch / shape error, append troubleshooting text.
+fn append_tensor_shape_hint(s: &mut String, completion_note: Option<&str>) {
+    let Some(n) = completion_note.filter(|x| !x.is_empty()) else {
+        return;
+    };
+    let lower = n.to_ascii_lowercase();
+    if lower.contains("atomencoder")
+        || lower.contains("z_to_p")
+        || (lower.contains("tensor") && (lower.contains("size") || lower.contains("dim")))
+        || lower.contains("libtorch")
+        || lower.contains("cannot be broadcast")
+    {
+        s.push_str(
+            " For tensor shape issues, rerun with `RUST_BACKTRACE=1` and check `boltz2_hparams.json` matches the checkpoint (`atoms_per_window_queries` / `atoms_per_window_keys`) and preprocess token alignment.",
+        );
+    }
+}
+
 fn collect_named_files(dir: &Path, filename: &str, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -651,6 +669,7 @@ fn build_structure_message(
             );
         }
     }
+    append_tensor_shape_hint(&mut s, completion_note);
     s
 }
 
@@ -986,6 +1005,21 @@ mod tests {
         assert!(i.structure_paths.is_empty());
         assert_eq!(i.completion_status.as_deref(), Some("pipeline_complete"));
         assert!(i.structure_message.contains("test note"));
+    }
+
+    #[test]
+    fn inspect_predict_output_pipeline_complete_appends_shape_hint() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rec = tmp.path().join("rec1");
+        std::fs::create_dir_all(&rec).unwrap();
+        std::fs::write(
+            rec.join("boltr_predict_complete.txt"),
+            r#"{"status":"pipeline_complete","note":"AtomEncoder: z_to_p_out shape mismatch"}"#,
+        )
+        .unwrap();
+        let i = inspect_predict_output(tmp.path());
+        assert!(i.structure_message.contains("RUST_BACKTRACE"));
+        assert!(i.structure_message.contains("boltz2_hparams"));
     }
 
     #[test]
