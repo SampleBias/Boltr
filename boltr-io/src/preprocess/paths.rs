@@ -86,3 +86,94 @@ pub fn copy_msa_a3m_to_output(preprocess_dir: &Path, out_dir: &Path) -> Result<(
     }
     Ok(())
 }
+
+/// Resolve optional `constraints_dir` / `extra_mols_dir` for [`crate::load_input`].
+///
+/// When `auto_extras` is true and a CLI path is omitted, looks under `preprocess_dir` for
+/// `mols/` or `extra_mols/` (must contain at least one `*.json`) and `constraints/` or
+/// `residue_constraints/` (directory exists).
+#[must_use]
+pub fn resolve_preprocess_load_dirs(
+    preprocess_dir: &Path,
+    extra_mols_cli: Option<&Path>,
+    constraints_cli: Option<&Path>,
+    auto_extras: bool,
+) -> (Option<PathBuf>, Option<PathBuf>) {
+    let mut extra = extra_mols_cli.map(Path::to_path_buf);
+    let mut cons = constraints_cli.map(Path::to_path_buf);
+    if auto_extras {
+        if extra.is_none() {
+            for name in ["mols", "extra_mols"] {
+                let p = preprocess_dir.join(name);
+                if dir_has_json_files(&p) {
+                    tracing::info!(
+                        dir = %p.display(),
+                        "preprocess auto-extras: using extra mols directory"
+                    );
+                    extra = Some(p);
+                    break;
+                }
+            }
+        }
+        if cons.is_none() {
+            for name in ["constraints", "residue_constraints"] {
+                let p = preprocess_dir.join(name);
+                if p.is_dir() {
+                    tracing::info!(
+                        dir = %p.display(),
+                        "preprocess auto-extras: using residue constraints directory"
+                    );
+                    cons = Some(p);
+                    break;
+                }
+            }
+        }
+    }
+    (extra, cons)
+}
+
+fn dir_has_json_files(dir: &Path) -> bool {
+    if !dir.is_dir() {
+        return false;
+    }
+    let Ok(rd) = fs::read_dir(dir) else {
+        return false;
+    };
+    rd.filter_map(|e| e.ok()).any(|e| {
+        e.path()
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+    })
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn resolve_respects_explicit_cli_paths() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mols = tmp.path().join("my_mols");
+        fs::create_dir_all(&mols).unwrap();
+        let c = tmp.path().join("my_cons");
+        fs::create_dir_all(&c).unwrap();
+        let (e, co) = resolve_preprocess_load_dirs(tmp.path(), Some(&mols), Some(&c), false);
+        assert_eq!(e.as_ref().map(|p| p.as_path()), Some(mols.as_path()));
+        assert_eq!(co.as_ref().map(|p| p.as_path()), Some(c.as_path()));
+    }
+
+    #[test]
+    fn auto_extras_finds_mols_with_json() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mols = tmp.path().join("mols");
+        fs::create_dir_all(&mols).unwrap();
+        fs::write(mols.join("X.json"), "[]").unwrap();
+        let (e, _) = resolve_preprocess_load_dirs(tmp.path(), None, None, true);
+        assert_eq!(
+            e.as_ref().map(|p| p.file_name().unwrap().to_str().unwrap()),
+            Some("mols")
+        );
+    }
+}

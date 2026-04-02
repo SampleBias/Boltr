@@ -47,14 +47,14 @@ pub use boltz2::{
     apply_affinity_mw_correction, get_potentials_boltz2, zeros_atom_attention_out, AffinityHead,
     AffinityModule, AffinityModuleConfig, AffinityOutput, AtomDiffusion, AtomDiffusionConfig,
     AtomEncoderBatchFeats, AtomEncoderFlags, AtomEncoderPlaceholder, BFactorModule,
-    Boltz2DiffusionArgs, Boltz2Model,
-    ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput, ConfidenceV2, ContactConditioning,
-    ContactFeatures, DiffusionConditioning, DiffusionConditioningOutput, DiffusionModule,
-    DiffusionSampleOutput, DistogramModule, InputEmbedder, InputEmbedderFeats, MsaFeatures,
-    MsaModule, Potential, PotentialBatchFeats, PredictStepFeats, PredictStepOutput, RelPosFeatures,
-    RelativePositionEncoder, SteeringParams, TemplateFeatures, TemplateModule, TemplateV2Module,
-    AFFINITY_MW_BIAS, AFFINITY_MW_COEF, AFFINITY_MW_MODEL_COEF, BOLTZ_MSA_PROFILE_IN,
-    BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM, CONTACT_CONDITIONING_CHANNELS,
+    Boltz2DiffusionArgs, Boltz2Model, ConfidenceModule, ConfidenceModuleConfig, ConfidenceOutput,
+    ConfidenceV2, ContactConditioning, ContactFeatures, DiffusionConditioning,
+    DiffusionConditioningOutput, DiffusionModule, DiffusionSampleOutput, DistogramModule,
+    InputEmbedder, InputEmbedderFeats, MsaFeatures, MsaModule, Potential, PotentialBatchFeats,
+    PredictStepFeats, PredictStepOutput, RelPosFeatures, RelativePositionEncoder, SteeringParams,
+    TemplateFeatures, TemplateModule, TemplateV2Module, AFFINITY_MW_BIAS, AFFINITY_MW_COEF,
+    AFFINITY_MW_MODEL_COEF, BOLTZ_MSA_PROFILE_IN, BOLTZ_NUM_TOKENS, BOND_TYPE_EMBEDDING_NUM,
+    CONTACT_CONDITIONING_CHANNELS,
 };
 #[cfg(feature = "tch-backend")]
 pub use checkpoint::{

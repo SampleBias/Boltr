@@ -94,6 +94,185 @@ impl CcdMolData {
     pub fn is_single_atom(&self) -> bool {
         self.num_heavy_atoms == 1
     }
+    /// Extract symmetry swap groups from this molecule.
+    ///
+    /// This identifies symmetric atom pairs based on bond topology.
+    /// Returns groups of `(atom_idx_1, atom_idx_2)` pairs where swapping
+    /// these atoms would result in an equivalent molecular graph.
+    ///
+    /// Note: This is a simplified symmetry detection. Full symmetry detection
+    /// requires RDKit's graph isomorphism algorithms. Six-membered aromatic
+    /// pairing uses the first found cycle and DFS visit order (not canonical
+    /// ring numbering). This implementation identifies:
+    /// - Aromatic ring symmetries (e.g., phenyl ring 180° rotations)
+    /// - Bond-type symmetries (equivalent atoms in symmetric substructures)
+    ///
+    /// Returns: A vector of symmetry groups, where each group is a vector
+    /// of atom index pairs that can be swapped.
+    #[must_use]
+    pub fn extract_symmetry_groups(&self) -> Vec<Vec<(usize, usize)>> {
+        let mut groups: Vec<Vec<(usize, usize)>> = Vec::new();
+
+        // Find aromatic bonds for ring symmetry detection
+        let aromatic_bonds: Vec<(usize, usize)> = self
+            .bonds
+            .iter()
+            .filter(|b| b.bond_type == "AROMATIC")
+            .map(|b| (b.atom_idx_1, b.atom_idx_2))
+            .collect();
+
+        // Build adjacency list for aromatic rings
+        let mut adjacency: std::collections::HashMap<usize, Vec<usize>> =
+            std::collections::HashMap::new();
+        for &(i, j) in &aromatic_bonds {
+            adjacency.entry(i).or_default().push(j);
+            adjacency.entry(j).or_default().push(i);
+        }
+
+        // Detect 6-membered aromatic rings (phenyl, pyridine, etc.)
+        // These typically have 180° rotational symmetry
+        for &start in adjacency.keys() {
+            let visited = self.find_aromatic_ring(&adjacency, start, 6);
+            if visited.len() == 6 {
+                // Found a 6-membered aromatic ring
+                // Identify opposite atoms in the ring for 180° rotation symmetry
+                let ring: Vec<usize> = visited;
+                for i in 0..3 {
+                    let atom1 = ring[i];
+                    let atom2 = ring[i + 3];
+                    // Only add if both atoms exist and are not already paired
+                    if atom1 < self.atoms.len() && atom2 < self.atoms.len() {
+                        groups.push(vec![(atom1, atom2), (atom2, atom1)]);
+                    }
+                }
+                break; // Only process the first ring found
+            }
+        }
+
+        // Detect symmetric terminal groups (e.g., -CH3, -OH in symmetric positions)
+        // Find atoms with identical bond environments
+        for i in 0..self.atoms.len() {
+            for j in (i + 1)..self.atoms.len() {
+                if self.are_atoms_equivalent(i, j, &aromatic_bonds) {
+                    // Check if this pair is not already in a group
+                    let already_grouped = groups.iter().any(|g| {
+                        g.iter()
+                            .any(|(a, b)| (*a == i && *b == j) || (*a == j && *b == i))
+                    });
+                    if !already_grouped {
+                        groups.push(vec![(i, j), (j, i)]);
+                    }
+                }
+            }
+        }
+
+        groups
+    }
+
+    /// Find an aromatic ring of given size starting from a specific atom.
+    fn find_aromatic_ring(
+        &self,
+        adjacency: &std::collections::HashMap<usize, Vec<usize>>,
+        start: usize,
+        target_size: usize,
+    ) -> Vec<usize> {
+        let mut visited: Vec<usize> = Vec::new();
+        let mut stack: Vec<(usize, Option<usize>)> = vec![(start, None)];
+
+        while let Some((current, parent)) = stack.pop() {
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.push(current);
+
+            if let Some(neighbors) = adjacency.get(&current) {
+                for &neighbor in neighbors {
+                    if Some(neighbor) != parent && !visited.contains(&neighbor) {
+                        stack.push((neighbor, Some(current)));
+                    }
+                }
+            }
+
+            if visited.len() >= target_size {
+                // Check if it forms a ring (last connects to first)
+                if let Some(neighbors) = adjacency.get(&current) {
+                    if neighbors.contains(&start) && visited.len() == target_size {
+                        return visited;
+                    }
+                }
+                break;
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Check if two atoms have equivalent bond environments.
+    fn are_atoms_equivalent(&self, i: usize, j: usize, _aromatic_bonds: &[(usize, usize)]) -> bool {
+        // Get bond partners for each atom
+        let partners_i: Vec<usize> = self
+            .bonds
+            .iter()
+            .filter_map(|b| {
+                if b.atom_idx_1 == i {
+                    Some(b.atom_idx_2)
+                } else if b.atom_idx_2 == i {
+                    Some(b.atom_idx_1)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let partners_j: Vec<usize> = self
+            .bonds
+            .iter()
+            .filter_map(|b| {
+                if b.atom_idx_1 == j {
+                    Some(b.atom_idx_2)
+                } else if b.atom_idx_2 == j {
+                    Some(b.atom_idx_1)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Different number of bonds -> not equivalent
+        if partners_i.len() != partners_j.len() {
+            return false;
+        }
+
+        // Check if atoms have same element
+        if self.atoms[i].atomic_num != self.atoms[j].atomic_num {
+            return false;
+        }
+
+        // Check if bonds have same types
+        for &p_i in &partners_i {
+            let bond_type_i = self.get_bond_type(i, p_i);
+            let has_match = partners_j.iter().any(|&p_j| {
+                let bond_type_j = self.get_bond_type(j, p_j);
+                bond_type_i == bond_type_j
+            });
+            if !has_match {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Get bond type between two atoms.
+    fn get_bond_type(&self, i: usize, j: usize) -> &str {
+        self.bonds
+            .iter()
+            .find(|b| {
+                (b.atom_idx_1 == i && b.atom_idx_2 == j) || (b.atom_idx_1 == j && b.atom_idx_2 == i)
+            })
+            .map(|b| b.bond_type.as_str())
+            .unwrap_or("NONE")
+    }
 }
 
 /// A provider of CCD molecule data, loaded from the `mols/` directory.
@@ -239,6 +418,19 @@ impl CcdMolProvider {
     /// Iterate over all loaded molecules.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &CcdMolData)> {
         self.mols.iter()
+    }
+    /// Build a symmetry map for all loaded molecules.
+    ///
+    /// Returns a HashMap where keys are CCD codes and values are
+    /// symmetry groups (vectors of atom index pairs that can be swapped).
+    ///
+    /// This is used for ligand symmetry features in the folding prediction pipeline.
+    #[must_use]
+    pub fn build_symmetry_map(&self) -> HashMap<String, Vec<Vec<(usize, usize)>>> {
+        self.mols
+            .iter()
+            .map(|(code, mol)| (code.clone(), mol.extract_symmetry_groups()))
+            .collect()
     }
 }
 
@@ -440,5 +632,278 @@ mod tests {
         assert_eq!(back.code, "TEST");
         assert_eq!(back.atoms.len(), 1);
         assert_eq!(back.atoms[0].conformer_coords, [1.0, 2.0, 3.0]);
+    }
+}
+
+#[cfg(test)]
+mod symmetry_tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_symmetry_groups_single_atom() {
+        let mol = CcdMolData::new(
+            "LIG".to_string(),
+            vec![CcdAtom {
+                name: "C1".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [0.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            }],
+            vec![],
+        );
+        let groups = mol.extract_symmetry_groups();
+        assert!(
+            groups.is_empty(),
+            "Single atom should have no symmetry groups"
+        );
+    }
+
+    #[test]
+    fn test_extract_symmetry_groups_aromatic_ring() {
+        // Create a simple 6-membered aromatic ring (simplified benzene)
+        let atoms = vec![
+            CcdAtom {
+                name: "C1".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [0.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "C2".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [1.4; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "C3".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [2.8; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "C4".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [4.2; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "C5".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [5.6; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "C6".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [7.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+        ];
+
+        // Create aromatic bonds in a ring
+        let bonds = vec![
+            CcdBond {
+                atom_idx_1: 0,
+                atom_idx_2: 1,
+                bond_type: "AROMATIC".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 1,
+                atom_idx_2: 2,
+                bond_type: "AROMATIC".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 2,
+                atom_idx_2: 3,
+                bond_type: "AROMATIC".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 3,
+                atom_idx_2: 4,
+                bond_type: "AROMATIC".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 4,
+                atom_idx_2: 5,
+                bond_type: "AROMATIC".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 5,
+                atom_idx_2: 0,
+                bond_type: "AROMATIC".to_string(),
+            },
+        ];
+
+        let mol = CcdMolData::new("BENZENE".to_string(), atoms, bonds);
+        let groups = mol.extract_symmetry_groups();
+
+        // Should find 3 symmetry pairs (opposite atoms in 6-membered ring)
+        assert!(
+            !groups.is_empty(),
+            "Aromatic ring should have symmetry groups"
+        );
+
+        // Each group should have 2 pairs (i,j) and (j,i)
+        for group in &groups {
+            assert_eq!(group.len(), 2, "Each symmetry group should have 2 pairs");
+        }
+    }
+
+    #[test]
+    fn test_extract_symmetry_groups_equivalent_atoms() {
+        // Create a molecule with two equivalent terminal atoms
+        let atoms = vec![
+            CcdAtom {
+                name: "C1".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [0.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "H1".to_string(),
+                atomic_num: 1,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [1.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+            CcdAtom {
+                name: "H2".to_string(),
+                atomic_num: 1,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [2.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            },
+        ];
+
+        // Both H1 and H2 are bonded to C1 (symmetric)
+        let bonds = vec![
+            CcdBond {
+                atom_idx_1: 0,
+                atom_idx_2: 1,
+                bond_type: "SINGLE".to_string(),
+            },
+            CcdBond {
+                atom_idx_1: 0,
+                atom_idx_2: 2,
+                bond_type: "SINGLE".to_string(),
+            },
+        ];
+
+        let mol = CcdMolData::new("CH3".to_string(), atoms, bonds);
+        let groups = mol.extract_symmetry_groups();
+
+        // Should find symmetry between H1 and H2
+        assert!(
+            !groups.is_empty(),
+            "Equivalent atoms should have symmetry groups"
+        );
+
+        // Check that H1-H2 symmetry is found
+        let has_h1_h2_symmetry = groups.iter().any(|g| {
+            g.iter()
+                .any(|(a, b)| (*a == 1 && *b == 2) || (*a == 2 && *b == 1))
+        });
+        assert!(
+            has_h1_h2_symmetry,
+            "Should find symmetry between equivalent H atoms"
+        );
+    }
+
+    #[test]
+    fn test_build_symmetry_map_provider() {
+        let mut provider = CcdMolProvider::new();
+
+        // Add two molecules
+        let mol1 = CcdMolData::new(
+            "MOL1".to_string(),
+            vec![CcdAtom {
+                name: "C1".to_string(),
+                atomic_num: 6,
+                formal_charge: 0,
+                leaving_atom: false,
+                conformer_coords: [0.0; 3],
+                chirality_tag: "CHI_UNSPECIFIED".to_string(),
+            }],
+            vec![],
+        );
+
+        let mol2 = CcdMolData::new(
+            "MOL2".to_string(),
+            vec![
+                CcdAtom {
+                    name: "C1".to_string(),
+                    atomic_num: 6,
+                    formal_charge: 0,
+                    leaving_atom: false,
+                    conformer_coords: [0.0; 3],
+                    chirality_tag: "CHI_UNSPECIFIED".to_string(),
+                },
+                CcdAtom {
+                    name: "H1".to_string(),
+                    atomic_num: 1,
+                    formal_charge: 0,
+                    leaving_atom: false,
+                    conformer_coords: [1.0; 3],
+                    chirality_tag: "CHI_UNSPECIFIED".to_string(),
+                },
+                CcdAtom {
+                    name: "H2".to_string(),
+                    atomic_num: 1,
+                    formal_charge: 0,
+                    leaving_atom: false,
+                    conformer_coords: [2.0; 3],
+                    chirality_tag: "CHI_UNSPECIFIED".to_string(),
+                },
+            ],
+            vec![
+                CcdBond {
+                    atom_idx_1: 0,
+                    atom_idx_2: 1,
+                    bond_type: "SINGLE".to_string(),
+                },
+                CcdBond {
+                    atom_idx_1: 0,
+                    atom_idx_2: 2,
+                    bond_type: "SINGLE".to_string(),
+                },
+            ],
+        );
+
+        provider.insert(mol1);
+        provider.insert(mol2);
+
+        let symmetry_map = provider.build_symmetry_map();
+
+        assert_eq!(
+            symmetry_map.len(),
+            2,
+            "Should have symmetry for both molecules"
+        );
+        assert!(symmetry_map.contains_key("MOL1"));
+        assert!(symmetry_map.contains_key("MOL2"));
+
+        // MOL1 has no symmetry (single atom)
+        assert!(symmetry_map.get("MOL1").unwrap().is_empty());
+
+        // MOL2 has symmetry between H1 and H2
+        assert!(!symmetry_map.get("MOL2").unwrap().is_empty());
     }
 }

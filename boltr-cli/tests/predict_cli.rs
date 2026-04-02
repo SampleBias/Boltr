@@ -106,6 +106,10 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("--write-full-pde"));
     assert!(stdout.contains("--override"));
     assert!(stdout.contains("--num-samples"));
+    assert!(stdout.contains("--extra-mols-dir"));
+    assert!(stdout.contains("--constraints-dir"));
+    assert!(stdout.contains("--preprocess-auto-extras"));
+    assert!(stdout.contains("--ensemble-ref"));
 }
 
 #[test]

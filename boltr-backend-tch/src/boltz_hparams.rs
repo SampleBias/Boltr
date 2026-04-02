@@ -267,5 +267,4 @@ mod tests {
         let h = Boltz2Hparams::from_json_slice(j.as_bytes()).expect("coerce + parse");
         assert_eq!(h.resolved_num_pairformer_blocks(), Some(64));
     }
-
 }

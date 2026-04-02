@@ -310,27 +310,26 @@ fn decode_msa_from_npy_payloads(
     for i in 0..n_seq {
         let base = i * seq_stride;
         let chunk = &seq_payload[base..base + seq_stride];
-        let (seq_idx, taxonomy, res_start, res_end, del_start, del_end) = if seq_stride
-            == SEQUENCE_RECORD_BYTES_BOLTZ
-        {
-            (
-                i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
-                i32::from_le_bytes([chunk[2], chunk[3], chunk[4], chunk[5]]),
-                i32::from_le_bytes([chunk[6], chunk[7], chunk[8], chunk[9]]) as usize,
-                i32::from_le_bytes([chunk[10], chunk[11], chunk[12], chunk[13]]) as usize,
-                i32::from_le_bytes([chunk[14], chunk[15], chunk[16], chunk[17]]) as usize,
-                i32::from_le_bytes([chunk[18], chunk[19], chunk[20], chunk[21]]) as usize,
-            )
-        } else {
-            (
-                i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
-                i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]),
-                i32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]) as usize,
-                i32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]) as usize,
-                i32::from_le_bytes([chunk[16], chunk[17], chunk[18], chunk[19]]) as usize,
-                i32::from_le_bytes([chunk[20], chunk[21], chunk[22], chunk[23]]) as usize,
-            )
-        };
+        let (seq_idx, taxonomy, res_start, res_end, del_start, del_end) =
+            if seq_stride == SEQUENCE_RECORD_BYTES_BOLTZ {
+                (
+                    i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
+                    i32::from_le_bytes([chunk[2], chunk[3], chunk[4], chunk[5]]),
+                    i32::from_le_bytes([chunk[6], chunk[7], chunk[8], chunk[9]]) as usize,
+                    i32::from_le_bytes([chunk[10], chunk[11], chunk[12], chunk[13]]) as usize,
+                    i32::from_le_bytes([chunk[14], chunk[15], chunk[16], chunk[17]]) as usize,
+                    i32::from_le_bytes([chunk[18], chunk[19], chunk[20], chunk[21]]) as usize,
+                )
+            } else {
+                (
+                    i16::from_le_bytes([chunk[0], chunk[1]]) as i32,
+                    i32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]),
+                    i32::from_le_bytes([chunk[8], chunk[9], chunk[10], chunk[11]]) as usize,
+                    i32::from_le_bytes([chunk[12], chunk[13], chunk[14], chunk[15]]) as usize,
+                    i32::from_le_bytes([chunk[16], chunk[17], chunk[18], chunk[19]]) as usize,
+                    i32::from_le_bytes([chunk[20], chunk[21], chunk[22], chunk[23]]) as usize,
+                )
+            };
         sequences.push(A3mSequenceMeta {
             seq_idx,
             taxonomy_id: taxonomy,

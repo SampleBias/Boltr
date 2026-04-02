@@ -277,10 +277,18 @@ impl Boltz2DiffusionArgs {
         if let Some(b) = h.other.get("use_no_atom_char").and_then(|v| v.as_bool()) {
             d.atom_encoder_flags.use_no_atom_char = b;
         }
-        if let Some(b) = h.other.get("use_atom_backbone_feat").and_then(|v| v.as_bool()) {
+        if let Some(b) = h
+            .other
+            .get("use_atom_backbone_feat")
+            .and_then(|v| v.as_bool())
+        {
             d.atom_encoder_flags.use_atom_backbone_feat = b;
         }
-        if let Some(b) = h.other.get("use_residue_feats_atoms").and_then(|v| v.as_bool()) {
+        if let Some(b) = h
+            .other
+            .get("use_residue_feats_atoms")
+            .and_then(|v| v.as_bool())
+        {
             d.atom_encoder_flags.use_residue_feats_atoms = b;
         }
         if let Some(v) = &h.score_model_args {
@@ -303,7 +311,10 @@ impl Boltz2DiffusionArgs {
                 if let Some(x) = obj.get("token_transformer_heads").and_then(|x| x.as_i64()) {
                     d.token_transformer_heads = x;
                 }
-                if let Some(x) = obj.get("conditioning_transition_layers").and_then(|x| x.as_i64()) {
+                if let Some(x) = obj
+                    .get("conditioning_transition_layers")
+                    .and_then(|x| x.as_i64())
+                {
                     d.conditioning_transition_layers = x;
                 }
                 if let Some(x) = obj.get("dim_fourier").and_then(|x| x.as_i64()) {

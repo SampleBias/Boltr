@@ -62,15 +62,16 @@ pub use config::BoltzInput;
 pub use featurizer::{
     ala_tokenized_smoke, atom_ref_data_from_ccd_mol, dummy_templates_as_feature_batch,
     get_ligand_symmetries_for_tokens, inference_ensemble_features,
-    inference_residue_constraint_features, load_dummy_templates_features, pad_template_tdim,
-    process_atom_features, process_ensemble_features, process_msa_features,
-    process_symmetry_features, process_symmetry_features_with_ligand_symmetries,
-    process_template_features, process_token_features, stack_template_feature_rows,
-    token_feature_key_names, AffinityCropper, AffinityTokenized, AtomFeatureConfig,
-    AtomFeatureTensors, AtomRefDataProvider, ChainSwap, DummyTemplateTensors,
-    InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors,
+    inference_multi_conformer_features, inference_residue_constraint_features,
+    load_dummy_templates_features, pad_template_tdim, process_atom_features,
+    process_ensemble_features, process_msa_features, process_symmetry_features,
+    process_symmetry_features_with_ligand_symmetries, process_template_features,
+    process_token_features, stack_template_feature_rows, token_feature_key_names, AffinityCropper,
+    AffinityTokenized, AtomFeatureConfig, AtomFeatureTensors, AtomRefDataProvider, ChainSwap,
+    DummyTemplateTensors, InferenceAtomRefProvider, MsaFeatureTensors, ResidueConstraintTensors,
     StandardAminoAcidRefData, SymmetryFeatures, TemplateAlignment, TokenFeatureTensors,
     ALA_STANDARD_HEAVY_ATOM_COUNT, ATOM_FEATURE_KEYS_ALA, CONTACT_CONDITIONING_NUM_CLASSES,
+    INFERENCE_MULTI_CONFORMER_MAX,
 };
 pub use msa_csv::{parse_csv_path, parse_csv_str};
 pub use msa_npz::{read_msa_npz_bytes, read_msa_npz_path, write_msa_npz_compressed};
@@ -118,12 +119,14 @@ pub use inference_collate_serialize::{
 };
 pub use inference_dataset::{
     affinity_asym_id_from_record, atom_features_from_inference_input,
+    atom_features_from_inference_input_with_ensemble, ensemble_features_for_inference_mode,
     featurized_atom_token_sum, load_input, msa_features_from_inference_input, parse_manifest_json,
-    parse_manifest_path,
-    template_features_from_tokenized, token_features_from_inference_input,
-    tokenize_boltz2_inference, trunk_smoke_feature_batch_from_inference_input, Boltz2ChainInfo,
+    parse_manifest_path, symmetry_features_from_inference_input, template_features_from_tokenized,
+    token_features_from_inference_input, tokenize_boltz2_inference,
+    trunk_smoke_feature_batch_from_inference_input,
+    trunk_smoke_feature_batch_from_inference_input_with_ensemble, Boltz2ChainInfo,
     Boltz2InferenceInput, Boltz2InterfaceInfo, Boltz2Manifest, Boltz2Record, Boltz2Tokenized,
-    Boltz2Tokenizer, StructureInfo, TemplateInfo, TokenizeBoltz2Input,
+    Boltz2Tokenizer, InferenceEnsembleMode, StructureInfo, TemplateInfo, TokenizeBoltz2Input,
 };
 pub use ligand_exclusion::{is_ligand_excluded, LIGAND_EXCLUSION_CODES, LIGAND_EXCLUSION_COUNT};
 pub use msa::{write_a3m, MsaProcessor};
@@ -131,8 +134,8 @@ pub use parser::parse_input_path as parse_input;
 pub use parser::{parse_input_path, parse_input_str};
 pub use preprocess::{
     canonical_yaml_parent, copy_flat_preprocess_bundle, copy_msa_a3m_to_output,
-    find_boltz_manifest_path, preprocess_bundle_ready, validate_native_eligible,
-    write_native_preprocess_bundle, NativePreprocessError,
+    find_boltz_manifest_path, preprocess_bundle_ready, resolve_preprocess_load_dirs,
+    validate_native_eligible, write_native_preprocess_bundle, NativePreprocessError,
 };
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
 pub use write::{

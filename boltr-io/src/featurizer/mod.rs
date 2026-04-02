@@ -2,13 +2,15 @@
 //!
 //! [`process_atom_features`] covers standard amino acids and nucleic acids. [`process_template_features`]
 //! matches Boltz template stacking when manifest [`crate::inference_dataset::TemplateInfo`] alignment
-//! fields and template structures + tokenized templates are present. Symmetry, ensemble sampling,
-//! and empty residue-constraint tensors (`process_symmetry_features`, `process_ensemble_features`,
-//! `inference_residue_constraint_features`) mirror Boltz optional inference outputs (see module docs).
+//! fields and template structures + tokenized templates are present. Symmetry, ensemble sampling
+//! ([`multi_conformer`] for multi-ensemble indices), and empty residue-constraint tensors
+//! (`process_symmetry_features`, `process_ensemble_features`, `inference_residue_constraint_features`)
+//! mirror Boltz optional inference outputs (see module docs).
 
 pub mod crop_affinity;
 pub mod dummy_templates;
 pub mod msa_pairing;
+pub mod multi_conformer;
 pub mod process_atom_features;
 pub mod process_ensemble_features;
 pub mod process_msa_features;
@@ -56,3 +58,5 @@ pub use process_token_features::{
     process_token_features, TokenFeatureTensors, CONTACT_CONDITIONING_NUM_CLASSES,
 };
 pub use token::{ala_tokenized_smoke, token_feature_key_names};
+
+pub use multi_conformer::{inference_multi_conformer_features, INFERENCE_MULTI_CONFORMER_MAX};

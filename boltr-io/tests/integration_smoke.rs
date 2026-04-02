@@ -13,8 +13,8 @@ use std::path::Path;
 
 use boltr_io::{
     atom_features_from_inference_input, collate_inference_batches, featurized_atom_token_sum,
-    load_input, msa_features_from_inference_input, parse_manifest_path, process_symmetry_features,
-    process_token_features, tokenize_boltz2_inference,
+    load_input, msa_features_from_inference_input, parse_manifest_path, process_token_features,
+    symmetry_features_from_inference_input, tokenize_boltz2_inference,
     trunk_smoke_feature_batch_from_inference_input, ATOM_FEATURE_KEYS_ALA,
     INFERENCE_COLLATE_EXCLUDED_KEYS,
 };
@@ -57,7 +57,7 @@ fn e2e_manifest_to_single_feature_batch() {
     assert_eq!(n_tok, input.structure.atoms.len());
     assert_eq!(atoms.unpadded_atom_count(), n_tok);
 
-    let symm = process_symmetry_features(&input.structure, &tokenized.tokens);
+    let symm = symmetry_features_from_inference_input(&input);
     assert_eq!(symm.all_coords.nrows(), 5); // 5 atoms in ALA
     assert_eq!(symm.crop_to_all_atom_map.len(), 5);
 

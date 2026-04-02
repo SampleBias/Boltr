@@ -122,3 +122,33 @@ fn load_input_token_features_match_canonical_ala_golden_path() {
     let expected = process_token_features(&tokens, &bonds, None);
     assert_eq!(got, expected);
 }
+
+#[test]
+fn load_input_extra_mols_dir_populates_provider_and_trunk_smoke_ok() {
+    let dir = fixture_dir();
+    let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        tmp.path().join("TESTLIG.json"),
+        r#"{"code":"TESTLIG","atoms":[{"name":"C1","atomic_num":6,"formal_charge":0,"leaving_atom":false,"conformer_coords":[0,0,0],"chirality_tag":"CHI_UNSPECIFIED"}],"bonds":[]}"#,
+    )
+    .unwrap();
+
+    let input = load_input(
+        &manifest.records[0],
+        &dir,
+        &dir,
+        None,
+        None,
+        Some(tmp.path()),
+        false,
+    )
+    .expect("load_input");
+
+    assert!(
+        input.extra_mols.as_ref().is_some_and(|m| !m.is_empty()),
+        "expected CCD JSON loaded into extra_mols"
+    );
+    let batch = trunk_smoke_feature_batch_from_inference_input(&input, 1);
+    assert!(batch.tensors.contains_key("ref_pos"));
+}

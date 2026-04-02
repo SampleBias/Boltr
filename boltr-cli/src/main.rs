@@ -237,6 +237,22 @@ enum Commands {
         /// Record id for `--preprocess native` (`manifest.records[0].id`); default: YAML stem.
         #[arg(long)]
         preprocess_record_id: Option<String>,
+
+        /// Directory of CCD `*.json` files for ligand/extra residue chemistry (passed to `load_input` as `extra_mols_dir`).
+        #[arg(long)]
+        extra_mols_dir: Option<PathBuf>,
+
+        /// Directory containing `{record_id}.npz` residue constraint files (Boltz preprocess layout).
+        #[arg(long)]
+        constraints_dir: Option<PathBuf>,
+
+        /// When set, look beside the YAML for `mols`/`extra_mols` and `constraints` if the corresponding `--*-dir` flag is omitted.
+        #[arg(long, default_value_t = false)]
+        preprocess_auto_extras: bool,
+
+        /// Ensemble reference indices for atom featurization: `single` (index 0) or `multi` (up to 5 conformers).
+        #[arg(long, value_enum, default_value_t = EnsembleRefCli::Single)]
+        ensemble_ref: EnsembleRefCli,
     },
 
     /// Download model weights and static assets.
@@ -345,6 +361,15 @@ enum PreprocessBundleMode {
     Native,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+enum EnsembleRefCli {
+    /// Single ensemble index `0` (default; checkpoint-safe).
+    #[default]
+    Single,
+    /// Multiple conformers (bounded by structure; experimental).
+    Multi,
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -410,6 +435,10 @@ async fn main() -> Result<()> {
             preprocess_symlink,
             preprocess_bolt_arg,
             preprocess_record_id,
+            extra_mols_dir,
+            constraints_dir,
+            preprocess_auto_extras,
+            ensemble_ref,
         } => {
             let cache = resolve_cache_dir(cache_dir.as_deref());
             let out_dir = Path::new(&output).to_path_buf();
@@ -450,6 +479,10 @@ async fn main() -> Result<()> {
                 preprocess_symlink,
                 preprocess_bolt_arg,
                 preprocess_record_id,
+                extra_mols_dir,
+                constraints_dir,
+                preprocess_auto_extras,
+                ensemble_ref,
             })
             .await?;
         }
@@ -598,6 +631,10 @@ struct PredictFlowArgs {
     preprocess_symlink: bool,
     preprocess_bolt_arg: Vec<String>,
     preprocess_record_id: Option<String>,
+    extra_mols_dir: Option<PathBuf>,
+    constraints_dir: Option<PathBuf>,
+    preprocess_auto_extras: bool,
+    ensemble_ref: EnsembleRefCli,
 }
 
 async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
@@ -636,6 +673,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         preprocess_symlink,
         preprocess_bolt_arg,
         preprocess_record_id,
+        extra_mols_dir,
+        constraints_dir,
+        preprocess_auto_extras,
+        ensemble_ref,
     } = args;
 
     // 1. Parse input (YAML / FASTA / directory)
@@ -796,6 +837,11 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     {
         use boltr_backend_tch::PredictArgsCliOverrides;
 
+        let ensemble_mode = match ensemble_ref {
+            EnsembleRefCli::Single => boltr_io::InferenceEnsembleMode::Single,
+            EnsembleRefCli::Multi => boltr_io::InferenceEnsembleMode::Multi,
+        };
+
         let overrides = PredictArgsCliOverrides {
             recycling_steps,
             sampling_steps,
@@ -825,6 +871,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             write_full_pae,
             write_full_pde,
             spike_only,
+            extra_mols_dir: extra_mols_dir.clone(),
+            constraints_dir: constraints_dir.clone(),
+            preprocess_auto_extras,
+            ensemble_mode,
             parsed: &parsed,
         })
         .await?;
@@ -845,6 +895,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             affinity_checkpoint,
             affinity_mw_correction,
             sampling_steps_affinity,
+            extra_mols_dir,
+            constraints_dir,
+            preprocess_auto_extras,
+            ensemble_ref,
             diffusion_samples_affinity,
             preprocessing_threads,
             override_flag,

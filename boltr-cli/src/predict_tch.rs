@@ -21,8 +21,8 @@ use boltr_backend_tch::{
 use boltr_io::config::BoltzInput;
 use boltr_io::{
     canonical_yaml_parent, collate_inference_batches, copy_msa_a3m_to_output,
-    featurized_atom_token_sum, load_input, parse_manifest_path,
-    trunk_smoke_feature_batch_from_inference_input,
+    featurized_atom_token_sum, load_input, parse_manifest_path, resolve_preprocess_load_dirs,
+    trunk_smoke_feature_batch_from_inference_input_with_ensemble, InferenceEnsembleMode,
 };
 use tch::{self, Kind, Tensor};
 
@@ -92,6 +92,10 @@ fn try_predict_from_preprocess(
     resolved: &Boltz2PredictArgs,
     affinity: bool,
     use_potentials: bool,
+    extra_mols_dir: Option<&Path>,
+    constraints_dir: Option<&Path>,
+    preprocess_auto_extras: bool,
+    ensemble_mode: InferenceEnsembleMode,
 ) -> Result<Option<String>> {
     let preprocess_dir = match canonical_yaml_parent(input_path) {
         Ok(p) => p,
@@ -116,13 +120,19 @@ fn try_predict_from_preprocess(
         .records
         .first()
         .context("manifest.json has no records")?;
+    let (extra_mols_pb, constraints_pb) = resolve_preprocess_load_dirs(
+        &preprocess_dir,
+        extra_mols_dir,
+        constraints_dir,
+        preprocess_auto_extras,
+    );
     let mut inference_input = load_input(
         record,
         &preprocess_dir,
         &preprocess_dir,
+        constraints_pb.as_deref(),
         None,
-        None,
-        None,
+        extra_mols_pb.as_deref(),
         false,
     )
     .with_context(|| {
@@ -133,7 +143,11 @@ fn try_predict_from_preprocess(
     })?;
 
     let template_dim = 4_usize;
-    let fb = trunk_smoke_feature_batch_from_inference_input(&inference_input, template_dim);
+    let fb = trunk_smoke_feature_batch_from_inference_input_with_ensemble(
+        &inference_input,
+        template_dim,
+        ensemble_mode,
+    );
     let coll = collate_inference_batches(std::slice::from_ref(&fb), 0.0, 0, 0)
         .map_err(|e| anyhow::anyhow!("collate_inference_batches: {e}"))?;
 
@@ -212,6 +226,9 @@ fn try_write_preprocess_reference_structure(
     out_dir: &Path,
     output_format: OutputFormat,
     affinity: bool,
+    extra_mols_dir: Option<&Path>,
+    constraints_dir: Option<&Path>,
+    preprocess_auto_extras: bool,
 ) -> Result<Option<String>> {
     let preprocess_dir = match canonical_yaml_parent(input_path) {
         Ok(p) => p,
@@ -240,15 +257,22 @@ fn try_write_preprocess_reference_structure(
         }
     };
 
+    let (extra_mols_pb, constraints_pb) = resolve_preprocess_load_dirs(
+        &preprocess_dir,
+        extra_mols_dir,
+        constraints_dir,
+        preprocess_auto_extras,
+    );
+
     // `--affinity` expects `pre_affinity_{id}.npz`; native/Boltz preprocess usually emits flat `{id}.npz`.
     // Fall back to the flat bundle so users still get a reference .cif/.pdb when affinity layout is absent.
     let inference_input = match load_input(
         record,
         &preprocess_dir,
         &preprocess_dir,
+        constraints_pb.as_deref(),
         None,
-        None,
-        None,
+        extra_mols_pb.as_deref(),
         affinity,
     ) {
         Ok(i) => i,
@@ -271,9 +295,9 @@ fn try_write_preprocess_reference_structure(
                 record,
                 &preprocess_dir,
                 &preprocess_dir,
+                constraints_pb.as_deref(),
                 None,
-                None,
-                None,
+                extra_mols_pb.as_deref(),
                 false,
             ) {
                 Ok(i) => i,
@@ -347,6 +371,14 @@ pub struct PredictTchArgs<'a> {
     pub write_full_pae: bool,
     pub write_full_pde: bool,
     pub spike_only: bool,
+    /// Optional directory of CCD `*.json` (same as [`boltr_io::load_input`] `extra_mols_dir`).
+    pub extra_mols_dir: Option<PathBuf>,
+    /// Optional directory containing `{record_id}.npz` residue constraints.
+    pub constraints_dir: Option<PathBuf>,
+    /// When true, discover `mols`/`extra_mols` and `constraints` under the preprocess dir if CLI paths omitted.
+    pub preprocess_auto_extras: bool,
+    /// Atom-feature ensemble policy for trunk featurization (default single index 0).
+    pub ensemble_mode: InferenceEnsembleMode,
     pub parsed: &'a BoltzInput,
 }
 
@@ -731,6 +763,10 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         write_full_pae,
         write_full_pde,
         spike_only,
+        extra_mols_dir,
+        constraints_dir,
+        preprocess_auto_extras,
+        ensemble_mode,
         parsed: _,
     } = args;
 
@@ -766,9 +802,15 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
 
     // Export reference mmCIF/PDB from preprocess bundle before loading the full graph. This avoids
     // needing diffusion featurizer tensors (e.g. atom name chars) when the bundle is valid.
-    if let Ok(Some(rid)) =
-        try_write_preprocess_reference_structure(&input_path, &out_dir, output_format, affinity)
-    {
+    if let Ok(Some(rid)) = try_write_preprocess_reference_structure(
+        &input_path,
+        &out_dir,
+        output_format,
+        affinity,
+        extra_mols_dir.as_deref(),
+        constraints_dir.as_deref(),
+        preprocess_auto_extras,
+    ) {
         let record_dir = out_dir.join(&rid);
         let marker = record_dir.join("boltr_predict_complete.txt");
         let predict_args = resolved.as_ref().ok();
@@ -870,6 +912,10 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         &pargs,
         affinity,
         use_potentials,
+        extra_mols_dir.as_deref(),
+        constraints_dir.as_deref(),
+        preprocess_auto_extras,
+        ensemble_mode,
     ) {
         Ok(Some(rid)) => {
             let record_dir = out_dir.join(&rid);

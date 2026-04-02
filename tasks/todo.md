@@ -68,3 +68,14 @@ From TODO.md §6: Implement the full `boltr-cli` user-facing commands matching t
  | - [x] Enhanced eval stub documentation
  `boltr eval` command now clearly indicates native evaluation is not available, tells user to use upstream Docker tools and redirects to the `boltz-reference/docs/evaluation.md`)
 
+
+
+---
+
+## New Session - 2026-04-02 09:12
+- [ ] Review existing todo items
+- [ ] Identify new requirements
+- [ ] Update task priorities
+- [ ] Add session-specific tasks
+
+*Session started: 2026-04-02 09:12*

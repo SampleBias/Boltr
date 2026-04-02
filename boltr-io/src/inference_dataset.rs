@@ -19,17 +19,40 @@ use crate::boltz_const::MAX_MSA_SEQS;
 use crate::ccd::CcdMolProvider;
 use crate::feature_batch::FeatureBatch;
 use crate::featurizer::{
-    inference_ensemble_features, load_dummy_templates_features, pad_template_tdim,
-    process_atom_features, process_msa_features, process_symmetry_features,
-    process_template_features, process_token_features, AffinityCropper, AffinityTokenized,
-    AtomFeatureConfig, AtomFeatureTensors, InferenceAtomRefProvider, MsaFeatureTensors,
-    StandardAminoAcidRefData, TemplateAlignment, TokenFeatureTensors,
+    inference_ensemble_features, inference_multi_conformer_features, load_dummy_templates_features,
+    pad_template_tdim, process_atom_features, process_msa_features,
+    process_symmetry_features_with_ligand_symmetries, process_template_features,
+    process_token_features, AffinityCropper, AffinityTokenized, AtomFeatureConfig,
+    AtomFeatureTensors, EnsembleFeatures, InferenceAtomRefProvider, MsaFeatureTensors,
+    StandardAminoAcidRefData, SymmetryFeatures, TemplateAlignment, TokenFeatureTensors,
 };
 use crate::msa_npz::read_msa_npz_path;
 use crate::residue_constraints::ResidueConstraints;
 use crate::structure_v2::StructureV2Tables;
 use crate::structure_v2_npz::read_structure_v2_npz_path;
 use crate::tokenize::boltz2::{tokenize_structure, TokenBondV2, TokenData};
+
+/// How to build [`EnsembleFeatures`] for atom / trunk featurization (inference).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum InferenceEnsembleMode {
+    /// Single ensemble index `0` (Boltz `fix_single_ensemble` default).
+    #[default]
+    Single,
+    /// Up to [`crate::featurizer::INFERENCE_MULTI_CONFORMER_MAX`] conformers, bounded by structure.
+    Multi,
+}
+
+/// Select ensemble reference indices for inference featurization.
+#[must_use]
+pub fn ensemble_features_for_inference_mode(
+    mode: InferenceEnsembleMode,
+    structure: &StructureV2Tables,
+) -> EnsembleFeatures {
+    match mode {
+        InferenceEnsembleMode::Single => inference_ensemble_features(),
+        InferenceEnsembleMode::Multi => inference_multi_conformer_features(structure),
+    }
+}
 
 fn default_true() -> bool {
     true
@@ -404,6 +427,15 @@ pub fn featurized_atom_token_sum(input: &Boltz2InferenceInput) -> usize {
 /// residues are resolved via [`InferenceAtomRefProvider`] and CCD JSON graphs.
 #[must_use]
 pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomFeatureTensors {
+    atom_features_from_inference_input_with_ensemble(input, InferenceEnsembleMode::default())
+}
+
+/// Like [`atom_features_from_inference_input`] with explicit multi-conformer policy.
+#[must_use]
+pub fn atom_features_from_inference_input_with_ensemble(
+    input: &Boltz2InferenceInput,
+    ensemble_mode: InferenceEnsembleMode,
+) -> AtomFeatureTensors {
     let aff = affinity_asym_id_from_record(&input.record);
     let (tokens, _bonds) = tokenize_structure(&input.structure, aff);
     let standard = StandardAminoAcidRefData::new();
@@ -412,13 +444,30 @@ pub fn atom_features_from_inference_input(input: &Boltz2InferenceInput) -> AtomF
         extra_mols: input.extra_mols.as_ref(),
     };
     let config = AtomFeatureConfig::default();
-    process_atom_features(
-        &tokens,
-        &input.structure,
-        &inference_ensemble_features(),
-        &provider,
-        &config,
-    )
+    let ens = ensemble_features_for_inference_mode(ensemble_mode, &input.structure);
+    process_atom_features(&tokens, &input.structure, &ens, &provider, &config)
+}
+
+/// Symmetry features after `load_input`: [`process_symmetry_features_with_ligand_symmetries`].
+///
+/// When [`Boltz2InferenceInput::extra_mols`] is set, ligand swap groups are built from
+/// [`CcdMolProvider::build_symmetry_map`]. Otherwise matches [`crate::featurizer::process_symmetry_features`].
+#[must_use]
+pub fn symmetry_features_from_inference_input(input: &Boltz2InferenceInput) -> SymmetryFeatures {
+    let aff = affinity_asym_id_from_record(&input.record);
+    let (tokens, _) = tokenize_structure(&input.structure, aff);
+    symmetry_features_for_tokens(input, &tokens)
+}
+
+fn symmetry_features_for_tokens(
+    input: &Boltz2InferenceInput,
+    tokens: &[TokenData],
+) -> SymmetryFeatures {
+    let ligand_map = input
+        .extra_mols
+        .as_ref()
+        .map(CcdMolProvider::build_symmetry_map);
+    process_symmetry_features_with_ligand_symmetries(&input.structure, tokens, ligand_map.as_ref())
 }
 
 /// MSA tensors after `load_input`: `tokenize_structure` + [`process_msa_features`](crate::featurizer::process_msa_features).
@@ -516,7 +565,7 @@ pub fn template_features_from_tokenized(
 /// - `process_token_features` (token-level)
 /// - `process_msa_features` (MSA)
 /// - `process_atom_features` (atom-level)
-/// - `process_symmetry_features` (symmetry / all_coords)
+/// - [`symmetry_features_from_inference_input`] (symmetry / all_coords; optional CCD ligand swaps)
 /// - `process_residue_constraint_features` (constraints)
 /// - template features (real or dummy)
 ///
@@ -526,6 +575,20 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
     input: &Boltz2InferenceInput,
     template_dim: usize,
 ) -> FeatureBatch {
+    trunk_smoke_feature_batch_from_inference_input_with_ensemble(
+        input,
+        template_dim,
+        InferenceEnsembleMode::default(),
+    )
+}
+
+/// Like [`trunk_smoke_feature_batch_from_inference_input`] with explicit ensemble mode for atom features.
+#[must_use]
+pub fn trunk_smoke_feature_batch_from_inference_input_with_ensemble(
+    input: &Boltz2InferenceInput,
+    template_dim: usize,
+    ensemble_mode: InferenceEnsembleMode,
+) -> FeatureBatch {
     let tokenized = tokenize_boltz2_inference(input);
     let n = tokenized.tokens.len();
 
@@ -534,9 +597,9 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
     // MSA features
     let msa = msa_features_from_inference_input(input);
     // Atom features
-    let atoms = atom_features_from_inference_input(input);
+    let atoms = atom_features_from_inference_input_with_ensemble(input, ensemble_mode);
     // Symmetry features (all_coords, all_resolved_mask, crop_to_all_atom_map)
-    let symm = process_symmetry_features(&input.structure, &tokenized.tokens);
+    let symm = symmetry_features_for_tokens(input, &tokenized.tokens);
 
     let mut batch = tok.to_feature_batch();
     batch.merge(msa.to_feature_batch());
@@ -558,6 +621,7 @@ pub fn trunk_smoke_feature_batch_from_inference_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::featurizer::process_symmetry_features;
     use crate::fixtures::structure_v2_single_ala;
 
     #[test]
@@ -652,6 +716,34 @@ mod tests {
             batch.tensors.contains_key("crop_to_all_atom_map"),
             "missing crop_to_all_atom_map"
         );
+    }
+
+    #[test]
+    fn symmetry_features_without_extra_mols_matches_process_symmetry_features() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
+        let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+        let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+            .expect("load_input");
+        assert!(input.extra_mols.is_none());
+        let from_input = symmetry_features_from_inference_input(&input);
+        let aff = affinity_asym_id_from_record(&input.record);
+        let (tokens, _) = tokenize_structure(&input.structure, aff);
+        let direct = process_symmetry_features(&input.structure, &tokens);
+        assert_eq!(from_input, direct);
+    }
+
+    #[test]
+    fn trunk_smoke_multi_ensemble_builds_feature_batch() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/load_input_smoke");
+        let manifest = parse_manifest_path(&dir.join("manifest.json")).expect("manifest");
+        let input = load_input(&manifest.records[0], &dir, &dir, None, None, None, false)
+            .expect("load_input");
+        let batch = trunk_smoke_feature_batch_from_inference_input_with_ensemble(
+            &input,
+            1,
+            InferenceEnsembleMode::Multi,
+        );
+        assert!(batch.tensors.contains_key("ref_pos"));
     }
 
     #[test]
