@@ -87,10 +87,10 @@ This plan upgrades folding-related behavior by improving atom/residue **data** p
 
 **Not done (deferred — see expert table):**
 
-- Switching **default** `atom_features_from_inference_input` or CLI predict to multi-conformer without model review.
-- Diffusion **averaging** over ensemble indices in `boltr-backend-tch`.
+- Switching **default** to multi-conformer globally (CLI default remains **single** via `--ensemble-ref`).
+- Diffusion **averaging** over ensemble indices in `boltr-backend-tch` and validation vs checkpoint training.
 
-**Status:** ✅ **DONE** (API + safety); ⏸️ **opt-in integration** / backend left to future work
+**Status:** ✅ **DONE** (API + safety + **CLI opt-in** `--ensemble-ref multi` with `--features tch`); ⏸️ **diffusion ensemble semantics** / full parity left to future work
 
 ---
 
@@ -126,7 +126,7 @@ Steps 2.1–2.3 (frames in diffusion, template strength, atom encoder audit) rem
 ### Backlog ⏸
 
 - [ ] **Step 1.3** — Constraints applied **inside** diffusion (`boltr-backend-tch`)
-- [ ] **Step 1.2 follow-up** — Opt-in use of multi-conformer in predict / atom path + diffusion support
+- [x] **Step 1.2 follow-up (CLI + featurizer)** — `boltr predict` exposes `--ensemble-ref single|multi` (default `single`); `predict_tch` passes `InferenceEnsembleMode` into `trunk_smoke_feature_batch_from_inference_input_with_ensemble`. **Still backlog:** diffusion-side ensemble semantics / averaging vs training parity (see expert table).
 - [ ] Phase 2 (frames, templates, encoders)
 - [ ] Phase 3 (extended goldens, E2E ligand fixtures, RMSD benchmarks)
 
