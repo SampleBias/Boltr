@@ -231,10 +231,7 @@ async fn post_predict(
     let mut cache_override: Option<String> = None;
     let mut job_dir: Option<PathBuf> = None;
 
-    let mut opts = PredictCliOptions {
-        device: "cpu".to_string(),
-        ..Default::default()
-    };
+    let mut opts = PredictCliOptions::default();
 
     let mut field_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
@@ -306,10 +303,24 @@ async fn post_predict(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     };
 
-    // Options from form
-    if let Some(d) = field_map.get("device") {
-        if !d.trim().is_empty() {
-            opts.device = d.trim().to_string();
+    // Compute: prefer `compute` (auto|gpu|cpu); else legacy `device` (cpu|cuda|cuda:N|auto|gpu).
+    if let Some(c) = field_map.get("compute") {
+        let t = c.trim().to_lowercase();
+        opts.device = match t.as_str() {
+            "auto" => "auto".to_string(),
+            "gpu" => "gpu".to_string(),
+            "cpu" => "cpu".to_string(),
+            _ => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    format!("compute: invalid value {c:?} (use auto, gpu, cpu)"),
+                ));
+            }
+        };
+    } else if let Some(d) = field_map.get("device") {
+        let t = d.trim();
+        if !t.is_empty() {
+            opts.device = t.to_string();
         }
     }
     opts.use_msa_server = field_map

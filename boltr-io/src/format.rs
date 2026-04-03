@@ -13,7 +13,11 @@ pub struct PredictionRunSummary {
     pub input_path: String,
     pub chain_ids: Vec<String>,
     pub use_msa_server: bool,
+    /// Concrete LibTorch device after resolving `auto` / `gpu` (`cpu`, `cuda`, `cuda:N`).
     pub device: String,
+    /// Original user request when `auto` or `gpu` was used (e.g. `auto`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_requested: Option<String>,
     /// Recorded for the run; also feeds `diffusion_samples` in `boltr_predict_args.json` when
     /// `--diffusion-samples` is omitted (LibTorch build).
     pub num_samples: usize,
@@ -31,6 +35,7 @@ impl PredictionRunSummary {
         input: &BoltzInput,
         use_msa_server: bool,
         device: impl Into<String>,
+        device_requested: Option<String>,
         num_samples: usize,
         backend_note: impl Into<String>,
         affinity: bool,
@@ -43,6 +48,7 @@ impl PredictionRunSummary {
             chain_ids: input.summary_chain_ids(),
             use_msa_server,
             device: device.into(),
+            device_requested,
             num_samples,
             backend_note: backend_note.into(),
             affinity,

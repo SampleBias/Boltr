@@ -227,8 +227,9 @@ pub fn predict_enabled() -> bool {
 }
 
 /// CLI flags collected from the predict form (empty optional = omit).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PredictCliOptions {
+    /// Passed as `boltr predict --device` (`auto`, `cpu`, `gpu`, `cuda`, `cuda:N`, …).
     pub device: String,
     pub use_msa_server: bool,
     pub msa_server_url: Option<String>,
@@ -264,6 +265,47 @@ pub struct PredictCliOptions {
     pub preprocess_cuda_visible_devices: Option<String>,
     pub preprocess_boltz_cpu: bool,
     pub preprocess_post_boltz_empty_cache: bool,
+}
+
+impl Default for PredictCliOptions {
+    fn default() -> Self {
+        Self {
+            device: "auto".to_string(),
+            use_msa_server: false,
+            msa_server_url: None,
+            msa_pairing_strategy: None,
+            affinity: false,
+            use_potentials: false,
+            recycling_steps: None,
+            sampling_steps: None,
+            diffusion_samples: None,
+            max_parallel_samples: None,
+            step_scale: None,
+            output_format: None,
+            max_msa_seqs: None,
+            num_samples: None,
+            checkpoint: None,
+            affinity_checkpoint: None,
+            affinity_mw_correction: false,
+            sampling_steps_affinity: None,
+            diffusion_samples_affinity: None,
+            preprocessing_threads: None,
+            r#override: false,
+            write_full_pae: false,
+            write_full_pde: false,
+            spike_only: false,
+            preprocess: PreprocessMode::default(),
+            bolt_command: None,
+            preprocess_staging: None,
+            preprocess_keep_staging: false,
+            preprocess_symlink: false,
+            preprocess_bolt_arg: Vec::new(),
+            preprocess_record_id: None,
+            preprocess_cuda_visible_devices: None,
+            preprocess_boltz_cpu: false,
+            preprocess_post_boltz_empty_cache: false,
+        }
+    }
 }
 
 /// Build `boltr predict` argv: `predict`, `<input>`, `--output`, …
@@ -908,11 +950,8 @@ mod tests {
     }
 
     #[test]
-    fn build_predict_argv_default_includes_preprocess_auto() {
-        let opts = PredictCliOptions {
-            device: "cpu".to_string(),
-            ..Default::default()
-        };
+    fn build_predict_argv_default_includes_preprocess_auto_and_device_auto() {
+        let opts = PredictCliOptions::default();
         let args = build_predict_argv(
             Path::new("/in/a.yaml"),
             Path::new("/out"),
@@ -921,6 +960,8 @@ mod tests {
         );
         let i = args.iter().position(|a| a == "--preprocess").unwrap();
         assert_eq!(args.get(i + 1).map(String::as_str), Some("auto"));
+        let di = args.iter().position(|a| a == "--device").unwrap();
+        assert_eq!(args.get(di + 1).map(String::as_str), Some("auto"));
     }
 
     #[test]

@@ -203,14 +203,14 @@ ___</pre>
       <p class="notes"><strong>Output format</strong> — structures are written as <code>.cif</code> (mmCIF) or <code>.pdb</code> per <code>boltr predict --output-format</code>. Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
     </div>
     <div class="row">
-      <label for="predictDevice">Device</label>
-      <select id="predictDevice" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
-        <option value="cpu">cpu</option>
-        <option value="cuda">cuda</option>
-        <option value="cuda:0">cuda:0</option>
+      <label for="predictCompute">Compute</label>
+      <select id="predictCompute" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
+        <option value="auto" selected>Auto (GPU if available)</option>
+        <option value="gpu">GPU (CUDA required)</option>
+        <option value="cpu">CPU</option>
       </select>
     </div>
-    <p class="notes" style="max-width:42rem;">With <strong>cuda</strong>, LibTorch uses the GPU. Upstream Boltz preprocess defaults to GPU on the same card (with allocator tweaks); use <strong>Boltz CUDA devices</strong> (e.g. <code>1</code>) to put Boltz on a second GPU, or <strong>Force Boltz CPU</strong> if LibTorch OOMs after preprocess.</p>
+    <p class="notes" style="max-width:42rem;"><strong>Auto</strong> sets <code>--device auto</code>: LibTorch uses CUDA when available, otherwise CPU; upstream Boltz preprocess matches. <strong>GPU</strong> requires CUDA. For a specific card index, use the CLI <code>--device cuda:N</code> or set <code>BOLTR_DEVICE</code>.</p>
     <div class="row">
       <label for="predictPreprocess">Preprocess</label>
       <select id="predictPreprocess" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -226,16 +226,21 @@ ___</pre>
     <div class="row">
       <input type="text" id="predictBoltCommand" class="path-wide" placeholder="optional if PATH or BOLTR_BOLTZ_COMMAND is set" autocomplete="off" spellcheck="false" title="--bolt-command: upstream Python boltz; admins can set env BOLTR_BOLTZ_COMMAND instead" />
     </div>
-    <div class="row">
-      <label for="predictBoltzCudaVis">Boltz CUDA devices</label>
-    </div>
-    <div class="row">
-      <input type="text" id="predictBoltzCudaVis" class="path-wide" placeholder="optional: e.g. 1 for second GPU (CUDA_VISIBLE_DEVICES for Boltz only)" autocomplete="off" spellcheck="false" title="--preprocess-cuda-visible-devices" />
-    </div>
-    <div class="row">
-      <label><input type="checkbox" id="predictBoltzCpu" /> Force Boltz CPU (<code>--preprocess-boltz-cpu</code>)</label>
-      <label><input type="checkbox" id="predictPostEmptyCache" /> Post-Boltz GPU cache clear (<code>--preprocess-post-boltz-empty-cache</code>)</label>
-    </div>
+    <details class="notes" style="max-width:42rem;margin-top:0.35rem;">
+      <summary style="cursor:pointer;">Advanced preprocess / multi-GPU</summary>
+      <div class="row" style="margin-top:0.5rem;">
+        <label for="predictBoltzCudaVis">Boltz CUDA devices</label>
+      </div>
+      <div class="row">
+        <input type="text" id="predictBoltzCudaVis" class="path-wide" placeholder="optional: e.g. 1 for second GPU (CUDA_VISIBLE_DEVICES for Boltz only)" autocomplete="off" spellcheck="false" title="--preprocess-cuda-visible-devices" />
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="predictBoltzCpu" /> Force Boltz CPU (<code>--preprocess-boltz-cpu</code>) — OOM fallback when LibTorch uses GPU</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="predictPostEmptyCache" /> Post-Boltz GPU cache clear (<code>--preprocess-post-boltz-empty-cache</code>) — usually on by default for GPU; enable here to force</label>
+      </div>
+    </details>
     <p id="predictPreprocessHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
       <label for="predictOutputFormat">Output format</label>
@@ -472,7 +477,7 @@ ___</pre>
       const c = $("cacheDir").value.trim();
       if (c) fd.append("cache_dir", c);
       if (jd) fd.append("job_dir", jd);
-      fd.append("device", $("predictDevice").value);
+      fd.append("compute", $("predictCompute").value);
       fd.append("preprocess", $("predictPreprocess").value);
       const boltCmd = $("predictBoltCommand").value.trim();
       if (boltCmd) fd.append("bolt_command", boltCmd);

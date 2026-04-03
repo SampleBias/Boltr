@@ -71,31 +71,50 @@ pub fn resolve_force_boltz_cpu(cli_flag: bool) -> bool {
             .unwrap_or(false)
 }
 
-/// `--preprocess-post-boltz-empty-cache` or `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=1`.
-pub fn resolve_post_boltz_empty_cache(cli_flag: bool) -> bool {
-    cli_flag
-        || std::env::var("BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
+/// After Boltz preprocess, run `torch.cuda.empty_cache()` when LibTorch uses CUDA.
+/// Defaults to **on** for GPU predict (`predict_cuda`); set `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=0` to disable.
+/// `--preprocess-post-boltz-empty-cache` still forces on (redundant when default is on).
+pub fn resolve_post_boltz_empty_cache(cli_flag: bool, predict_cuda: bool) -> bool {
+    if !predict_cuda {
+        return false;
+    }
+    if let Ok(s) = std::env::var("BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE") {
+        let t = s.trim().to_lowercase();
+        if t == "0" || t == "false" || t == "no" || t == "off" {
+            return false;
+        }
+        if t == "1" || t == "true" || t == "yes" || t == "on" {
+            return true;
+        }
+    }
+    cli_flag || true
 }
 
 /// Extra args for `boltz predict` when invoked from `boltr predict --preprocess …`.
 ///
 /// - With **`--preprocess-cuda-visible-devices`** (or env), Boltz runs on that GPU; LibTorch uses `--device` (typically another physical GPU).
 /// - On a **single** GPU, Boltz defaults to **`--accelerator gpu`** (upstream default); set **`--preprocess-boltz-cpu`** to force CPU Boltz if LibTorch OOMs after Boltz.
+/// - When **`--device cpu`** for LibTorch, upstream Boltz must also get **`--accelerator cpu`**, or it keeps the default GPU path and can fail (e.g. cuSOLVER) despite the user choosing CPU.
 pub fn bolt_preprocess_args_for_predict(
     device: &str,
     bolt_extra: &[String],
     force_boltz_cpu: bool,
 ) -> Vec<String> {
-    if !predict_device_is_cuda(device) || user_set_boltz_accelerator(bolt_extra) {
+    if user_set_boltz_accelerator(bolt_extra) {
         return bolt_extra.to_vec();
     }
-    if force_boltz_cpu {
+    let need_boltz_cpu = !predict_device_is_cuda(device) || force_boltz_cpu;
+    if need_boltz_cpu {
         let mut out = bolt_extra.to_vec();
-        tracing::info!(
-            "preprocess: Boltz subprocess --accelerator cpu (--preprocess-boltz-cpu or BOLTR_PREPROCESS_BOLTZ_CPU)"
-        );
+        if !predict_device_is_cuda(device) {
+            tracing::info!(
+                "preprocess: Boltz subprocess --accelerator cpu (boltr --device cpu)"
+            );
+        } else {
+            tracing::info!(
+                "preprocess: Boltz subprocess --accelerator cpu (--preprocess-boltz-cpu or BOLTR_PREPROCESS_BOLTZ_CPU)"
+            );
+        }
         out.push("--accelerator".to_string());
         out.push("cpu".to_string());
         return out;
@@ -221,7 +240,7 @@ pub fn run_boltz_preprocess(
 
 #[cfg(test)]
 mod tests {
-    use super::bolt_preprocess_args_for_predict;
+    use super::{bolt_preprocess_args_for_predict, resolve_post_boltz_empty_cache};
 
     #[test]
     fn boltz_gpu_default_when_boltr_cuda_no_force() {
@@ -239,9 +258,12 @@ mod tests {
     }
 
     #[test]
-    fn boltz_default_when_boltr_cpu() {
+    fn boltz_cpu_when_boltr_cpu() {
         let out = bolt_preprocess_args_for_predict("cpu", &[], false);
-        assert!(out.is_empty());
+        assert_eq!(
+            out,
+            vec!["--accelerator".to_string(), "cpu".to_string()]
+        );
     }
 
     #[test]
@@ -249,6 +271,12 @@ mod tests {
         let extra = vec!["--accelerator".to_string(), "gpu".to_string()];
         let out = bolt_preprocess_args_for_predict("cuda", &extra, true);
         assert_eq!(out, extra);
+    }
+
+    #[test]
+    fn post_empty_cache_never_when_cpu_predict() {
+        assert!(!resolve_post_boltz_empty_cache(false, false));
+        assert!(!resolve_post_boltz_empty_cache(true, false));
     }
 }
 

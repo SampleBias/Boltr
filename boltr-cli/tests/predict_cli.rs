@@ -53,6 +53,7 @@ fn predict_summary_json_no_tch() {
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["use_msa_server"], false);
     assert_eq!(v["device"], "cpu");
+    assert_eq!(v["device_requested"], "auto");
     assert_eq!(v["affinity"], false);
 }
 
@@ -113,6 +114,8 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("--preprocess-cuda-visible-devices"));
     assert!(stdout.contains("--preprocess-boltz-cpu"));
     assert!(stdout.contains("--preprocess-post-boltz-empty-cache"));
+    assert!(stdout.contains("--device"));
+    assert!(stdout.contains("auto"));
 }
 
 #[test]

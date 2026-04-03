@@ -20,6 +20,7 @@ mod collate_predict_bridge;
 mod predict_tch;
 
 mod preprocess_cmd;
+mod device_resolve;
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -107,8 +108,8 @@ enum Commands {
         #[arg(short, long, default_value = "./output")]
         output: String,
 
-        /// Compute device: cpu, cuda, or cuda:N (requires `--features tch` and LibTorch for GPU).
-        #[arg(long, default_value = "cpu")]
+        /// Compute device: `auto` (GPU if LibTorch sees CUDA, else CPU), `cpu`, `gpu` (CUDA required), `cuda`, or `cuda:N` (requires `--features tch` and a CUDA-capable LibTorch for GPU).
+        #[arg(long, default_value = "auto")]
         device: String,
 
         /// Model / asset cache directory.
@@ -262,7 +263,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         preprocess_boltz_cpu: bool,
 
-        /// After Boltz preprocess, run `torch.cuda.empty_cache()` via Python. Env: `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=1`.
+        /// After Boltz preprocess, run `torch.cuda.empty_cache()` via Python. On by default when `--device` resolves to CUDA; set `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=0` to disable.
         #[arg(long, default_value_t = false)]
         preprocess_post_boltz_empty_cache: bool,
     },
@@ -461,6 +462,7 @@ async fn main() -> Result<()> {
         } => {
             let cache = resolve_cache_dir(cache_dir.as_deref());
             let out_dir = Path::new(&output).to_path_buf();
+            // `BOLTR_DEVICE` replaces CLI `--device` when set (may be `auto`, `cuda:1`, …).
             let device_str = std::env::var("BOLTR_DEVICE").unwrap_or(device);
 
             predict_flow(PredictFlowArgs {
@@ -678,7 +680,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         input,
         cache,
         out_dir,
-        device,
+        device: device_in,
         use_msa_server,
         ref msa_server_url,
         msa_pairing_strategy: _,
@@ -717,6 +719,15 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         preprocess_boltz_cpu,
         preprocess_post_boltz_empty_cache,
     } = args;
+
+    let (device, device_requested) = device_resolve::resolve_predict_device(&device_in)?;
+    if let Some(ref req) = device_requested {
+        tracing::info!(requested = %req, resolved = %device, "device resolution");
+    } else if device_in.trim() != device {
+        tracing::info!(requested = %device_in, resolved = %device, "device resolution");
+    } else {
+        tracing::info!(device = %device, "device");
+    }
 
     // 1. Parse input (YAML / FASTA / directory)
     let input_path = Path::new(&input);
@@ -866,7 +877,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
 
     if preprocess_ran_boltz
         && predict_cuda
-        && preprocess_cmd::resolve_post_boltz_empty_cache(preprocess_post_boltz_empty_cache)
+        && preprocess_cmd::resolve_post_boltz_empty_cache(
+            preprocess_post_boltz_empty_cache,
+            predict_cuda,
+        )
     {
         preprocess_cmd::maybe_post_boltz_empty_cache()?;
     }
@@ -887,6 +901,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         &parsed,
         use_msa_server,
         device.as_str(),
+        device_requested.clone(),
         num_samples,
         backend_note,
         affinity,
