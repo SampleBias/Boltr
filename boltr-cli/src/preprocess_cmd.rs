@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use tracing::info;
@@ -122,9 +122,94 @@ pub fn bolt_preprocess_args_for_predict(
     bolt_extra.to_vec()
 }
 
+/// `python` / `python3` next to a `boltz` executable (e.g. `…/venv/bin/boltz` → `…/venv/bin/python`).
+fn sibling_python_candidates(bolt_exe: &str) -> Vec<PathBuf> {
+    let p = Path::new(bolt_exe.trim());
+    if !p.is_file() {
+        return vec![];
+    }
+    let Some(parent) = p.parent() else {
+        return vec![];
+    };
+    vec![parent.join("python"), parent.join("python3")]
+}
+
+fn python_imports_torch(py: &str) -> bool {
+    Command::new(py)
+        .args(["-c", "import torch"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn push_unique_python(candidates: &mut Vec<String>, s: String) {
+    let t = s.trim().to_string();
+    if t.is_empty() || candidates.iter().any(|x| x == &t) {
+        return;
+    }
+    candidates.push(t);
+}
+
+/// Resolve a Python that can `import torch` for post-Boltz helpers.
+///
+/// Tries in order: `BOLTR_PYTHON`, `BOLTR_REPO/.venv/bin/python`, siblings of `BOLTR_BOLTZ_COMMAND`,
+/// siblings of `bolt_command` (from `--bolt-command`), then `python3`.
+pub fn resolve_python_for_torch_scripts(bolt_command: Option<&str>) -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+
+    if let Ok(p) = std::env::var("BOLTR_PYTHON") {
+        push_unique_python(&mut candidates, p);
+    }
+    if let Ok(repo) = std::env::var("BOLTR_REPO") {
+        let v = PathBuf::from(repo).join(".venv/bin/python");
+        if v.is_file() {
+            if let Some(s) = v.to_str() {
+                push_unique_python(&mut candidates, s.to_string());
+            }
+        }
+    }
+    if let Ok(b) = std::env::var("BOLTR_BOLTZ_COMMAND") {
+        for s in sibling_python_candidates(&b) {
+            if s.is_file() {
+                if let Some(ss) = s.to_str() {
+                    push_unique_python(&mut candidates, ss.to_string());
+                }
+            }
+        }
+    }
+    if let Some(bc) = bolt_command {
+        for s in sibling_python_candidates(bc) {
+            if s.is_file() {
+                if let Some(ss) = s.to_str() {
+                    push_unique_python(&mut candidates, ss.to_string());
+                }
+            }
+        }
+    }
+    push_unique_python(&mut candidates, "python3".to_string());
+
+    for py in candidates {
+        if python_imports_torch(&py) {
+            tracing::debug!(%py, "using Python for torch subprocess helpers");
+            return Some(py);
+        }
+    }
+    None
+}
+
 /// After Boltz exits, run a tiny Python stub to `torch.cuda.empty_cache()` on visible CUDA devices (single-GPU fragmentation mitigation).
-pub fn maybe_post_boltz_empty_cache() -> Result<()> {
-    let py = std::env::var("BOLTR_PYTHON").unwrap_or_else(|_| "python3".to_string());
+///
+/// Skips quietly when no interpreter can `import torch` (avoids `ModuleNotFoundError` noise from bare `python3`).
+/// Prefer `BOLTR_PYTHON`, or a venv next to the `boltz` executable (`--bolt-command` / `BOLTR_BOLTZ_COMMAND`).
+pub fn maybe_post_boltz_empty_cache(bolt_command: Option<&str>) -> Result<()> {
+    let Some(py) = resolve_python_for_torch_scripts(bolt_command) else {
+        tracing::info!(
+            "post-Boltz empty_cache skipped: no Python with PyTorch found (set BOLTR_PYTHON to a venv that has torch, or use a full path to boltz so we can use the same venv's python)"
+        );
+        return Ok(());
+    };
     let status = Command::new(&py)
         .args([
             "-c",
@@ -136,10 +221,11 @@ pub fn maybe_post_boltz_empty_cache() -> Result<()> {
     if !status.success() {
         tracing::warn!(
             ?status,
+            py = %py,
             "post-Boltz torch.cuda.empty_cache() subprocess exited non-zero (continuing)"
         );
     } else {
-        tracing::info!("post-Boltz: torch.cuda.empty_cache() ok");
+        tracing::info!(%py, "post-Boltz: torch.cuda.empty_cache() ok");
     }
     Ok(())
 }
@@ -241,6 +327,18 @@ pub fn run_boltz_preprocess(
 #[cfg(test)]
 mod tests {
     use super::{bolt_preprocess_args_for_predict, resolve_post_boltz_empty_cache};
+    use std::path::Path;
+
+    #[test]
+    fn sibling_python_candidates_beside_boltz() {
+        let tmp = tempfile::tempdir().unwrap();
+        let boltz = tmp.path().join("boltz");
+        std::fs::write(&boltz, b"x").unwrap();
+        let c = super::sibling_python_candidates(boltz.to_str().unwrap());
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0], Path::new(tmp.path()).join("python"));
+        assert_eq!(c[1], Path::new(tmp.path()).join("python3"));
+    }
 
     #[test]
     fn boltz_gpu_default_when_boltr_cuda_no_force() {

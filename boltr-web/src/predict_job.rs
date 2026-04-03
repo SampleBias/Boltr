@@ -830,9 +830,16 @@ pub async fn run_predict_job(
     )
     .await;
 
-    let py = find_venv_python().unwrap_or_else(|| PathBuf::from("python3"));
+    let venv_py = find_venv_python();
+    let py = venv_py
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("python3"));
     let mut cmd = Command::new(&boltr);
     prepend_torch_wheel_lib_to_ld_path(&mut cmd, &py);
+    if let Some(ref p) = venv_py {
+        // So `boltr` subprocess can run post-Boltz `torch.cuda.empty_cache()` with the same venv as Boltz.
+        cmd.env("BOLTR_PYTHON", p);
+    }
     let mut child = match cmd
         .args(&argv)
         .stdout(std::process::Stdio::piped())

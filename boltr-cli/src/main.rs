@@ -263,7 +263,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         preprocess_boltz_cpu: bool,
 
-        /// After Boltz preprocess, run `torch.cuda.empty_cache()` via Python. On by default when `--device` resolves to CUDA; set `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=0` to disable.
+        /// After Boltz preprocess, run `torch.cuda.empty_cache()` via a Python that can `import torch` (see `BOLTR_PYTHON`, venv next to `--bolt-command`, or `BOLTR_REPO/.venv`). On by default when `--device` resolves to CUDA; set `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=0` to disable.
         #[arg(long, default_value_t = false)]
         preprocess_post_boltz_empty_cache: bool,
     },
@@ -882,7 +882,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             predict_cuda,
         )
     {
-        preprocess_cmd::maybe_post_boltz_empty_cache()?;
+        preprocess_cmd::maybe_post_boltz_empty_cache(Some(bolt_command.as_str()))?;
     }
 
     // 4. Determine backend note

@@ -179,7 +179,7 @@ If you have no `python3.12` (or 3.11 / 3.10) binary: on **Arch Linux** there is 
 | **Two GPUs** | `--preprocess-cuda-visible-devices 1` (or env `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES=1`) so Boltz only sees the second card; LibTorch keeps `--device cuda` / `cuda:0` on the first. |
 | **One GPU (default)** | Boltz subprocess gets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (override with `BOLTR_BOLTZ_PYTORCH_CUDA_ALLOC_CONF`; empty string disables). Optional `--preprocess-post-boltz-empty-cache` runs `torch.cuda.empty_cache()` between stages. |
 | **OOM after Boltz** | `--preprocess-boltz-cpu` or `BOLTR_PREPROCESS_BOLTZ_CPU=1` forces Boltz to CPU (slow). |
-| **Python for empty_cache** | `BOLTR_PYTHON` selects the interpreter (default `python3`). |
+| **Python for empty_cache** | Boltr picks the first interpreter that can `import torch`: `BOLTR_PYTHON`, `BOLTR_REPO/.venv/bin/python`, `python`/`python3` next to `boltz` (`BOLTR_BOLTZ_COMMAND` or `--bolt-command`), then `python3`. If none have PyTorch, the step is skipped (no traceback). **`boltr-web`** sets `BOLTR_PYTHON` to the repo `.venv` when present. |
 
 **Memory / sampling knobs (upstream Boltz):** repeat `--preprocess-bolt-arg` for flags such as `--max_parallel_samples 1` to cap parallel diffusion work during the Boltz stage. See upstream [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
 
