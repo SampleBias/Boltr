@@ -21,6 +21,8 @@
 - **Unit tests:** [`boltr-io/tests/preprocess_bundle.rs`](../boltr-io/tests/preprocess_bundle.rs) — manifest discovery, `copy_flat_preprocess_bundle`, native bundle smoke.
 - **Parity with Python Boltz** (for future work): follow [`docs/TENSOR_CONTRACT.md`](TENSOR_CONTRACT.md) — export a small fixture from Python `load_input` on the same YAML + compare `StructureV2` npz decode or `tokenize` invariants, not raw zip bytes.
 
+Broader eligibility (fewer `boltz predict` subprocesses): see [`NATIVE_PREPROCESS_ROADMAP.md`](NATIVE_PREPROCESS_ROADMAP.md).
+
 ## Affinity
 
 Native preprocess does **not** produce `pre_affinity_{id}.npz` under `{id}/`. Do not use **`--affinity`** with native-only bundles until that layout is implemented.

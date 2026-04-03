@@ -27,7 +27,7 @@ Update the mark in your PR when you complete a row (`[ ]` → `[~]` → `[x]` as
 | Reference CLI | Upstream Boltz `src/boltz/main.py` ([jwohlwend/boltz](https://github.com/jwohlwend/boltz)) — URLs, preprocess, datamodules, writers. Vendored `boltz-reference/` is model-only (no `main.py`). |
 | Checkpoint | `.ckpt` → [scripts/export_checkpoint_to_safetensors.py](scripts/export_checkpoint_to_safetensors.py); Rust loads `.safetensors` into `tch` (names match after strip-prefix). |
 | Triangle / pair ops | Match PyTorch fallback ([triangular_mult.py](boltz-reference/src/boltz/model/layers/triangular_mult.py), triangular_attention without cuequivariance). |
-| Mixed precision | Mirror Python `autocast("cuda", enabled=False)` islands; explicit F32 where Python disables autocast. |
+| Mixed precision | Mirror Python `autocast("cuda", enabled=False)` islands; explicit F32 where Python disables autocast. **VRAM follow-up:** optional bf16 inference paths where Python uses bf16 under autocast, with golden parity—lowers LibTorch peak on CUDA. |
 | Tests | Golden tensors or explicit v1 scope sign-off. |
 
 ---

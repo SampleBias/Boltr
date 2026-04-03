@@ -210,6 +210,7 @@ ___</pre>
         <option value="cuda:0">cuda:0</option>
       </select>
     </div>
+    <p class="notes" style="max-width:42rem;">With <strong>cuda</strong>, LibTorch uses the GPU. Upstream Boltz preprocess defaults to GPU on the same card (with allocator tweaks); use <strong>Boltz CUDA devices</strong> (e.g. <code>1</code>) to put Boltz on a second GPU, or <strong>Force Boltz CPU</strong> if LibTorch OOMs after preprocess.</p>
     <div class="row">
       <label for="predictPreprocess">Preprocess</label>
       <select id="predictPreprocess" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -224,6 +225,16 @@ ___</pre>
     </div>
     <div class="row">
       <input type="text" id="predictBoltCommand" class="path-wide" placeholder="optional if PATH or BOLTR_BOLTZ_COMMAND is set" autocomplete="off" spellcheck="false" title="--bolt-command: upstream Python boltz; admins can set env BOLTR_BOLTZ_COMMAND instead" />
+    </div>
+    <div class="row">
+      <label for="predictBoltzCudaVis">Boltz CUDA devices</label>
+    </div>
+    <div class="row">
+      <input type="text" id="predictBoltzCudaVis" class="path-wide" placeholder="optional: e.g. 1 for second GPU (CUDA_VISIBLE_DEVICES for Boltz only)" autocomplete="off" spellcheck="false" title="--preprocess-cuda-visible-devices" />
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="predictBoltzCpu" /> Force Boltz CPU (<code>--preprocess-boltz-cpu</code>)</label>
+      <label><input type="checkbox" id="predictPostEmptyCache" /> Post-Boltz GPU cache clear (<code>--preprocess-post-boltz-empty-cache</code>)</label>
     </div>
     <p id="predictPreprocessHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
@@ -465,6 +476,10 @@ ___</pre>
       fd.append("preprocess", $("predictPreprocess").value);
       const boltCmd = $("predictBoltCommand").value.trim();
       if (boltCmd) fd.append("bolt_command", boltCmd);
+      const boltzVis = $("predictBoltzCudaVis").value.trim();
+      if (boltzVis) fd.append("preprocess_cuda_visible_devices", boltzVis);
+      if ($("predictBoltzCpu").checked) fd.append("preprocess_boltz_cpu", "1");
+      if ($("predictPostEmptyCache").checked) fd.append("preprocess_post_boltz_empty_cache", "1");
       fd.append("output_format", $("predictOutputFormat").value);
       if ($("predictUseMsaServer").checked) fd.append("use_msa_server", "1");
       if ($("predictAffinity").checked) fd.append("affinity", "1");

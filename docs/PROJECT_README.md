@@ -56,6 +56,9 @@ Complete implementation of `boltr-cli` — the user-facing command-line interfac
  - `BOLTR_DEVICE` — Override `--device`
  - `BOLTR_CACHE` — Override `--cache-dir`
  - `BOLTR_HPARAMS_JSON` — Path to hyperparameters JSON
+ - `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES` — `CUDA_VISIBLE_DEVICES` for upstream Boltz preprocess only (dual-GPU)
+ - `BOLTR_BOLTZ_PYTORCH_CUDA_ALLOC_CONF` — PyTorch alloc config for Boltz child (empty disables default)
+ - `BOLTR_PREPROCESS_BOLTZ_CPU`, `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE`, `BOLTR_PYTHON` — See [DEVELOPMENT.md](../DEVELOPMENT.md) (Boltz vs LibTorch GPU)
 
  **Output layout** (matches Boltz `predictions/`):
  ```

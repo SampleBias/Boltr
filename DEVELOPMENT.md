@@ -170,6 +170,21 @@ If you have no `python3.12` (or 3.11 / 3.10) binary: on **Arch Linux** there is 
 - **GPU in Boltr** comes from a **CUDA build of LibTorch** plus `--device cuda` (or `cuda:N`) on the CLI. Override with env `BOLTR_DEVICE` if needed.
 - Upstream Boltz’s optional `pip install boltz[cuda]` adds **cuequivariance** fused kernels. Those are **not** available through `tch-rs`; Boltr targets the same numerics as PyTorch with `use_kernels=False` (the pure PyTorch op path).
 
+### Boltz preprocess vs LibTorch GPU (load balancing)
+
+`boltr predict --preprocess boltz|auto` runs upstream **`boltz predict`** in a subprocess, then LibTorch **`predict_step`** in-process. Both are full inferences; peak VRAM on **one** GPU can OOM the second stage.
+
+| Situation | What to use |
+|-----------|-------------|
+| **Two GPUs** | `--preprocess-cuda-visible-devices 1` (or env `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES=1`) so Boltz only sees the second card; LibTorch keeps `--device cuda` / `cuda:0` on the first. |
+| **One GPU (default)** | Boltz subprocess gets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (override with `BOLTR_BOLTZ_PYTORCH_CUDA_ALLOC_CONF`; empty string disables). Optional `--preprocess-post-boltz-empty-cache` runs `torch.cuda.empty_cache()` between stages. |
+| **OOM after Boltz** | `--preprocess-boltz-cpu` or `BOLTR_PREPROCESS_BOLTZ_CPU=1` forces Boltz to CPU (slow). |
+| **Python for empty_cache** | `BOLTR_PYTHON` selects the interpreter (default `python3`). |
+
+**Memory / sampling knobs (upstream Boltz):** repeat `--preprocess-bolt-arg` for flags such as `--max_parallel_samples 1` to cap parallel diffusion work during the Boltz stage. See upstream [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
+
+**LibTorch / Boltr:** `boltr predict` forwards diffusion and trunk overrides (`--diffusion-samples`, `--sampling-steps`, `--max-parallel-samples`, …) into `boltr_predict_args.json` / checkpoint resolution; large complexes may need lower `diffusion_samples` or steps. See [docs/TENSOR_CONTRACT.md](docs/TENSOR_CONTRACT.md) for `predict_args` keys.
+
 ### Checkpoint export for Rust
 
 Lightning `.ckpt` files are not loaded directly in Rust. After `boltr download`, the CLI **attempts** a best-effort export when it can find this repo and a Python with `torch` + `safetensors` (warnings only on failure). Otherwise use:

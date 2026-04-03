@@ -260,6 +260,10 @@ pub struct PredictCliOptions {
     pub preprocess_symlink: bool,
     pub preprocess_bolt_arg: Vec<String>,
     pub preprocess_record_id: Option<String>,
+    /// `CUDA_VISIBLE_DEVICES` for Boltz preprocess only (e.g. second GPU). Same as `--preprocess-cuda-visible-devices`.
+    pub preprocess_cuda_visible_devices: Option<String>,
+    pub preprocess_boltz_cpu: bool,
+    pub preprocess_post_boltz_empty_cache: bool,
 }
 
 /// Build `boltr predict` argv: `predict`, `<input>`, `--output`, …
@@ -413,6 +417,19 @@ pub fn build_predict_argv(
             args.push("--preprocess-record-id".to_string());
             args.push(t.to_string());
         }
+    }
+    if let Some(ref vis) = opts.preprocess_cuda_visible_devices {
+        let t = vis.trim();
+        if !t.is_empty() {
+            args.push("--preprocess-cuda-visible-devices".to_string());
+            args.push(t.to_string());
+        }
+    }
+    if opts.preprocess_boltz_cpu {
+        args.push("--preprocess-boltz-cpu".to_string());
+    }
+    if opts.preprocess_post_boltz_empty_cache {
+        args.push("--preprocess-post-boltz-empty-cache".to_string());
     }
 
     args
@@ -944,6 +961,31 @@ mod tests {
             &opts,
         );
         assert!(!args.iter().any(|a| a == "--preprocess"));
+    }
+
+    #[test]
+    fn build_predict_argv_preprocess_cuda_and_empty_cache_flags() {
+        let opts = PredictCliOptions {
+            device: "cuda".to_string(),
+            preprocess: PreprocessMode::Boltz,
+            preprocess_cuda_visible_devices: Some("1".to_string()),
+            preprocess_boltz_cpu: true,
+            preprocess_post_boltz_empty_cache: true,
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        let i = args
+            .iter()
+            .position(|a| a == "--preprocess-cuda-visible-devices")
+            .unwrap();
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("1"));
+        assert!(args.iter().any(|a| a == "--preprocess-boltz-cpu"));
+        assert!(args.iter().any(|a| a == "--preprocess-post-boltz-empty-cache"));
     }
 
     #[test]

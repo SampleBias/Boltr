@@ -253,6 +253,18 @@ enum Commands {
         /// Ensemble reference indices for atom featurization: `single` (index 0) or `multi` (up to 5 conformers).
         #[arg(long, value_enum, default_value_t = EnsembleRefCli::Single)]
         ensemble_ref: EnsembleRefCli,
+
+        /// `CUDA_VISIBLE_DEVICES` for the Boltz preprocess subprocess only (e.g. `1` so Boltz uses another GPU than LibTorch `cuda:0`). Overrides `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES`.
+        #[arg(long)]
+        preprocess_cuda_visible_devices: Option<String>,
+
+        /// Force upstream Boltz `--accelerator cpu` when `--device` is CUDA (OOM fallback). Env: `BOLTR_PREPROCESS_BOLTZ_CPU=1`.
+        #[arg(long, default_value_t = false)]
+        preprocess_boltz_cpu: bool,
+
+        /// After Boltz preprocess, run `torch.cuda.empty_cache()` via Python. Env: `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=1`.
+        #[arg(long, default_value_t = false)]
+        preprocess_post_boltz_empty_cache: bool,
     },
 
     /// Download model weights and static assets.
@@ -343,6 +355,10 @@ enum Commands {
         /// Extra args for `boltz predict`.
         #[arg(long = "bolt-arg")]
         bolt_arg: Vec<String>,
+
+        /// `CUDA_VISIBLE_DEVICES` for the Boltz subprocess only (e.g. `1`). Env: `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES`.
+        #[arg(long)]
+        cuda_visible_devices: Option<String>,
 
         /// Record id for `mode=native` (`manifest.records[0].id`).
         #[arg(long)]
@@ -439,6 +455,9 @@ async fn main() -> Result<()> {
             constraints_dir,
             preprocess_auto_extras,
             ensemble_ref,
+            preprocess_cuda_visible_devices,
+            preprocess_boltz_cpu,
+            preprocess_post_boltz_empty_cache,
         } => {
             let cache = resolve_cache_dir(cache_dir.as_deref());
             let out_dir = Path::new(&output).to_path_buf();
@@ -483,6 +502,9 @@ async fn main() -> Result<()> {
                 constraints_dir,
                 preprocess_auto_extras,
                 ensemble_ref,
+                preprocess_cuda_visible_devices,
+                preprocess_boltz_cpu,
+                preprocess_post_boltz_empty_cache,
             })
             .await?;
         }
@@ -558,18 +580,29 @@ async fn main() -> Result<()> {
             symlink,
             use_msa_server,
             bolt_arg,
+            cuda_visible_devices,
             record_id,
             max_msa_seqs,
         } => match mode {
-            PreprocessBundleMode::Boltz => preprocess_cmd::run_boltz_preprocess(
-                &input,
-                &bolt_command,
-                staging,
-                use_msa_server,
-                &bolt_arg,
-                symlink,
-                keep_staging,
-            )?,
+            PreprocessBundleMode::Boltz => {
+                let vis = preprocess_cmd::resolve_preprocess_cuda_visible_devices(
+                    cuda_visible_devices.as_deref(),
+                );
+                let child = preprocess_cmd::BoltzChildEnv {
+                    cuda_visible_devices: vis,
+                    pytorch_cuda_alloc_conf: preprocess_cmd::resolve_boltz_pytorch_alloc_conf(true),
+                };
+                preprocess_cmd::run_boltz_preprocess(
+                    &input,
+                    &bolt_command,
+                    staging,
+                    use_msa_server,
+                    &bolt_arg,
+                    symlink,
+                    keep_staging,
+                    &child,
+                )?;
+            }
             PreprocessBundleMode::Native => preprocess_cmd::run_native_preprocess(
                 &input,
                 record_id.as_deref(),
@@ -635,6 +668,9 @@ struct PredictFlowArgs {
     constraints_dir: Option<PathBuf>,
     preprocess_auto_extras: bool,
     ensemble_ref: EnsembleRefCli,
+    preprocess_cuda_visible_devices: Option<String>,
+    preprocess_boltz_cpu: bool,
+    preprocess_post_boltz_empty_cache: bool,
 }
 
 async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
@@ -677,6 +713,9 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         constraints_dir,
         preprocess_auto_extras,
         ensemble_ref,
+        preprocess_cuda_visible_devices,
+        preprocess_boltz_cpu,
+        preprocess_post_boltz_empty_cache,
     } = args;
 
     // 1. Parse input (YAML / FASTA / directory)
@@ -719,6 +758,21 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         && use_msa_server
         && boltr_io::validate_native_eligible(&parsed).is_ok();
 
+    let predict_cuda = preprocess_cmd::predict_device_is_cuda(&device);
+    let force_boltz_cpu =
+        preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu);
+    let bolt_preprocess_args = preprocess_cmd::bolt_preprocess_args_for_predict(
+        &device,
+        &preprocess_bolt_arg,
+        force_boltz_cpu,
+    );
+    let bolt_child_env = preprocess_cmd::BoltzChildEnv {
+        cuda_visible_devices: preprocess_cmd::resolve_preprocess_cuda_visible_devices(
+            preprocess_cuda_visible_devices.as_deref(),
+        ),
+        pytorch_cuda_alloc_conf: preprocess_cmd::resolve_boltz_pytorch_alloc_conf(predict_cuda),
+    };
+
     // 3. Optional MSA server fetch
     if use_msa_server {
         let need = parsed.protein_sequences_for_msa();
@@ -742,6 +796,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     }
 
     // 3b. Optional preprocess bundle next to YAML (for `boltr predict` + `load_input` bridge)
+    let mut preprocess_ran_boltz = false;
     if manifest_missing && preprocess != PreprocessCli::Off {
         match preprocess {
             PreprocessCli::Off => {}
@@ -761,14 +816,16 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             }
             PreprocessCli::Boltz => {
                 tracing::info!("--preprocess boltz: running upstream Boltz");
+                preprocess_ran_boltz = true;
                 preprocess_cmd::run_boltz_preprocess(
                     input_path,
                     &bolt_command,
                     preprocess_staging.clone(),
                     use_msa_server,
-                    &preprocess_bolt_arg,
+                    &bolt_preprocess_args,
                     preprocess_symlink,
                     preprocess_keep_staging,
+                    &bolt_child_env,
                 )?;
             }
             PreprocessCli::Auto => {
@@ -786,14 +843,16 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
                         fetched.as_deref(),
                     )?;
                 } else if command_is_runnable(&bolt_command) {
+                    preprocess_ran_boltz = true;
                     preprocess_cmd::run_boltz_preprocess(
                         input_path,
                         &bolt_command,
                         preprocess_staging.clone(),
                         use_msa_server,
-                        &preprocess_bolt_arg,
+                        &bolt_preprocess_args,
                         preprocess_symlink,
                         preprocess_keep_staging,
+                        &bolt_child_env,
                     )?;
                 } else {
                     bail!(
@@ -803,6 +862,13 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
                 }
             }
         }
+    }
+
+    if preprocess_ran_boltz
+        && predict_cuda
+        && preprocess_cmd::resolve_post_boltz_empty_cache(preprocess_post_boltz_empty_cache)
+    {
+        preprocess_cmd::maybe_post_boltz_empty_cache()?;
     }
 
     // 4. Determine backend note

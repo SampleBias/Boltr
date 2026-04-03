@@ -436,6 +436,20 @@ async fn post_predict(
             opts.preprocess_record_id = Some(t.to_string());
         }
     }
+    if let Some(p) = field_map.get("preprocess_cuda_visible_devices") {
+        let t = p.trim();
+        if !t.is_empty() {
+            opts.preprocess_cuda_visible_devices = Some(t.to_string());
+        }
+    }
+    opts.preprocess_boltz_cpu = field_map
+        .get("preprocess_boltz_cpu")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    opts.preprocess_post_boltz_empty_cache = field_map
+        .get("preprocess_post_boltz_empty_cache")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
 
     if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
         let _ = tokio::fs::remove_dir_all(&base).await;
