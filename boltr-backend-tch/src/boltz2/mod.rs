@@ -5,6 +5,7 @@
 //! `diffusion` the atom score / sampler stack, etc.
 
 pub mod affinity;
+pub mod atom_window_keys;
 pub mod confidence;
 mod confidence_utils;
 pub mod contact_conditioning;

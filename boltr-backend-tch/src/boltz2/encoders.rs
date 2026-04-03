@@ -10,7 +10,8 @@ use tch::{Device, Kind, Tensor};
 use crate::layers::Transition;
 use crate::tch_compat::{layer_norm_1d, linear_no_bias};
 
-use super::transformers::{AtomTransformer, DiffusionTransformer};
+use super::atom_window_keys::{get_indexing_matrix, single_to_keys};
+use super::transformers::AtomTransformer;
 
 // ---------------------------------------------------------------------------
 // FourierEmbedding  (Algorithm 22)
@@ -188,41 +189,8 @@ impl PairwiseConditioning {
 }
 
 // ---------------------------------------------------------------------------
-// Windowed key helpers
+// Windowed key helpers (see `atom_window_keys.rs`)
 // ---------------------------------------------------------------------------
-
-/// Build the static indexing matrix for windowed attention keys.
-/// Equivalent to Python `get_indexing_matrix(K, W, H, device)`.
-fn get_indexing_matrix(k: i64, w: i64, h: i64, device: Device) -> Tensor {
-    assert!(w % 2 == 0, "W must be even");
-    let half_w = w / 2;
-    assert!(h % half_w == 0, "H must be divisible by W/2");
-    let h_ratio = h / half_w;
-    assert!(h_ratio % 2 == 0, "h ratio must be even");
-
-    let arange = Tensor::arange(2 * k, (Kind::Int64, device));
-    let diff = arange.unsqueeze(0) - arange.unsqueeze(1); // [2K, 2K]
-    let index = (diff + h_ratio / 2).clamp(0, h_ratio + 1);
-    // index: [2K, 2K], take every other row: index[::2] effectively = index.view(K, 2, 2K)[:, 0, :]
-    let index = index.reshape(&[k, 2, 2 * k]).select(1, 0); // [K, 2K]
-    let onehot = index.one_hot(h_ratio + 2); // [K, 2K, h_ratio+2]
-                                             // Slice off first and last class
-    let onehot = onehot.slice(2, 1, h_ratio + 1, 1); // [K, 2K, h_ratio]
-    let onehot = onehot.transpose(0, 1); // [2K, K, h_ratio]
-    onehot.reshape(&[2 * k, h_ratio * k]).to_kind(Kind::Float)
-}
-
-/// Map single representation from query windows to key windows.
-/// `single [B, N, D]` → `[B, K, H, D]`.
-fn single_to_keys(single: &Tensor, indexing_matrix: &Tensor, w: i64, h: i64) -> Tensor {
-    let size = single.size();
-    let (b, n, d) = (size[0], size[1], size[2]);
-    let k = n / w;
-    let single_r = single.reshape(&[b, 2 * k, w / 2, d]);
-    // einsum "b j i d, j k -> b k i d"
-    let out = Tensor::einsum("bjid,jk->bkid", &[&single_r, indexing_matrix], None::<i64>);
-    out.reshape(&[b, k, h, d])
-}
 
 /// `z_to_p` einsum output must match `p` as `[B, K, W, H, atom_z]`. Some LibTorch builds return the
 /// window axes swapped (`[B, K, H, W, …]`) when `W != H`, which breaks `p + z_to_p_out`.
@@ -715,9 +683,14 @@ impl AtomAttentionEncoder {
         let c = c.repeat_interleave_self_int(multiplicity, Some(0), None);
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self
-            .atom_encoder
-            .forward(&q, &c, atom_enc_bias, &mask, multiplicity);
+        q = self.atom_encoder.forward(
+            &q,
+            &c,
+            atom_enc_bias,
+            &mask,
+            multiplicity,
+            indexing_matrix,
+        );
 
         let q_skip = q.shallow_clone();
         let c_skip = c.shallow_clone();
@@ -812,9 +785,14 @@ impl AtomAttentionDecoder {
         let mut q = q + a_to_q.to_kind(q.kind());
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self
-            .atom_decoder
-            .forward(&q, c, atom_dec_bias, &mask, multiplicity);
+        q = self.atom_decoder.forward(
+            &q,
+            c,
+            atom_dec_bias,
+            &mask,
+            multiplicity,
+            indexing_matrix,
+        );
 
         self.atom_feat_to_atom_pos_update_linear
             .forward(&self.atom_feat_to_atom_pos_update_norm.forward(&q))

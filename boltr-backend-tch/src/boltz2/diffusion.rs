@@ -181,6 +181,7 @@ impl DiffusionModule {
             Some(&cond.token_trans_bias.to_kind(Kind::Float)),
             &mask,
             multiplicity,
+            None,
         );
         a = self.a_norm.forward(&a);
 

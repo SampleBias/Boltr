@@ -40,6 +40,10 @@ required-features = ["tch-backend"]
 name = "predict_step_smoke"
 required-features = ["tch-backend"]
 
+[[test]]
+name = "atom_transformer_window_w_ne_h"
+required-features = ["tch-backend"]
+
 [[bin]]
 name = "gen_boltz2_smoke_safetensors"
 path = "src/bin/gen_boltz2_smoke_safetensors.rs"

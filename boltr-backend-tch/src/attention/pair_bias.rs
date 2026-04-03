@@ -222,6 +222,9 @@ impl AttentionPairBiasV2 {
         let bias_float = bias.to_kind(Kind::Float);
         let mask_float = mask.to_kind(Kind::Float);
 
+        let q_len = s.size()[1];
+        let k_len = k_in.size()[1];
+
         let attn = Tensor::einsum("bihd,bjhd->bhij", &[&q_float, &k_float], None::<i64>);
 
         let scale = (self.head_dim as f64).sqrt();
@@ -229,7 +232,19 @@ impl AttentionPairBiasV2 {
 
         let attn = attn + bias_float;
 
-        let mask_expanded = mask_float.unsqueeze(1);
+        // Match Python `attentionv2.py`: 3D mask [B, W, H] → (B, 1, W, H); 2D key-only [B, H] for W≠H;
+        // symmetric token mask [B, N] → (B, N, N).
+        let mask_expanded = if mask_float.dim() == 3 {
+            mask_float.unsqueeze(1)
+        } else if mask_float.dim() == 2 && q_len != k_len {
+            mask_float.unsqueeze(1).unsqueeze(1)
+        } else if mask_float.dim() == 2 {
+            mask_float
+                .unsqueeze(1)
+                .expand(&[b, q_len, k_len], false)
+        } else {
+            mask_float.unsqueeze(1)
+        };
         let attn = attn
             + mask_expanded
                 .ones_like()

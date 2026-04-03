@@ -6,7 +6,9 @@
 use crate::attention::AttentionPairBiasV2;
 use crate::tch_compat::{linear_no_bias, LayerNormWeightOnly};
 use tch::nn::{linear, LinearConfig, Module, Path};
-use tch::{Device, Kind, Tensor};
+use tch::{Device, Tensor};
+
+use super::atom_window_keys::windowed_to_keys;
 
 // ---------------------------------------------------------------------------
 // AdaLN  (Algorithm 26)
@@ -159,6 +161,7 @@ impl DiffusionTransformerLayer {
         bias: Option<&Tensor>,
         mask: &Tensor,
         multiplicity: i64,
+        to_keys: Option<&dyn Fn(&Tensor) -> Tensor>,
     ) -> Tensor {
         let b_val = self.adaln.forward(a, s);
 
@@ -170,18 +173,33 @@ impl DiffusionTransformerLayer {
             ),
         };
 
-        // Rust AttentionPairBiasV2 expects a 3D mask [B, I, J].
-        // Expand 2D key mask [B, N] → [B, 1, N] → broadcast inside attention.
-        let mask_3d = if mask.dim() == 2 {
-            mask.unsqueeze(1)
-                .expand(&[mask.size()[0], a.size()[1], mask.size()[1]], false)
+        let (k_in, mask_for_attn) = if let Some(tk) = to_keys {
+            let k_in = tk(&b_val);
+            let mask_m = if mask.dim() == 2 {
+                tk(&mask.unsqueeze(-1)).squeeze_dim(-1)
+            } else {
+                mask.shallow_clone()
+            };
+            (k_in, mask_m)
         } else {
-            mask.shallow_clone()
+            let mask_3d = if mask.dim() == 2 {
+                mask.unsqueeze(1).expand(
+                    &[mask.size()[0], a.size()[1], mask.size()[1]],
+                    false,
+                )
+            } else {
+                mask.shallow_clone()
+            };
+            (b_val.shallow_clone(), mask_3d)
         };
 
-        let b_val =
-            self.pair_bias_attn
-                .forward(&b_val, &bias_t, &mask_3d, &b_val, Some(multiplicity));
+        let b_val = self.pair_bias_attn.forward(
+            &b_val,
+            &bias_t,
+            &mask_for_attn,
+            &k_in,
+            Some(multiplicity),
+        );
 
         let b_val = self.output_projection_linear.forward(s).sigmoid() * b_val;
 
@@ -236,6 +254,7 @@ impl DiffusionTransformer {
         bias: Option<&Tensor>,
         mask: &Tensor,
         multiplicity: i64,
+        to_keys: Option<&dyn Fn(&Tensor) -> Tensor>,
     ) -> Tensor {
         let mut out = a.shallow_clone();
 
@@ -249,16 +268,16 @@ impl DiffusionTransformer {
 
                 for (i, layer) in self.layers.iter().enumerate() {
                     let bias_l = bias_reshaped.select(3, i as i64);
-                    out = layer.forward(&out, s, Some(&bias_l), mask, multiplicity);
+                    out = layer.forward(&out, s, Some(&bias_l), mask, multiplicity, to_keys);
                 }
             } else {
                 for layer in &self.layers {
-                    out = layer.forward(&out, s, None, mask, multiplicity);
+                    out = layer.forward(&out, s, None, mask, multiplicity, to_keys);
                 }
             }
         } else {
             for layer in &self.layers {
-                out = layer.forward(&out, s, None, mask, multiplicity);
+                out = layer.forward(&out, s, None, mask, multiplicity, to_keys);
             }
         }
         out
@@ -308,6 +327,7 @@ impl AtomTransformer {
     /// * `c`: `[B, M, D_cond]` atom conditioning
     /// * `bias`: `[B, K, W, H, D_heads]` pre-windowed pair bias (already expanded for multiplicity outside)
     /// * `mask`: `[B, M]` atom padding mask (float)
+    /// * `indexing_matrix`: same as [`super::encoders::AtomEncoder`] output (Boltz `to_keys`)
     /// * `multiplicity`: how many times the batch was repeated for diffusion sampling
     pub fn forward(
         &self,
@@ -316,6 +336,7 @@ impl AtomTransformer {
         bias: &Tensor,
         mask: &Tensor,
         multiplicity: i64,
+        indexing_matrix: &Tensor,
     ) -> Tensor {
         let w = self.attn_window_queries;
         let h = self.attn_window_keys;
@@ -326,22 +347,29 @@ impl AtomTransformer {
         let q_w = q.reshape(&[b * nw, w, d]);
         let c_w = c.reshape(&[b * nw, w, c.size()[2]]);
 
-        // bias: repeat_interleave(multiplicity, 0) then reshape to windowed
         let bias_exp = bias.repeat_interleave_self_int(multiplicity, Some(0), None);
         let bias_size = bias_exp.size();
-        let bias_w = bias_exp.reshape(&[bias_size[0] * nw, w, h, bias_size[4]]);
+        let bk = bias_size[0] * bias_size[1];
+        let bias_w = bias_exp.reshape(&[bk, w, h, bias_size[4]]);
 
-        // Key mask: for windowed attention, use all-ones since atom masking is handled
-        // by the windowed pair bias construction and the outer mask. Shape [b*nw, W, H]
-        // for the pairwise-style mask expected by AttentionPairBiasV2.
-        let mask_w = Tensor::ones(&[b * nw, w, h], (mask.kind(), mask.device()));
+        let mask_w = mask
+            .repeat_interleave_self_int(multiplicity, Some(0), None)
+            .reshape(&[b * nw, w]);
+
+        let im = indexing_matrix.shallow_clone();
+        let batch = b;
+        let n_atoms = n;
+        let to_keys: Box<dyn Fn(&Tensor) -> Tensor> = Box::new(move |t: &Tensor| {
+            windowed_to_keys(t, batch, n_atoms, w, h, &im)
+        });
 
         let out = self.diffusion_transformer.forward(
             &q_w,
             &c_w,
             Some(&bias_w),
             &mask_w,
-            1, // multiplicity already expanded in bias
+            1,
+            Some(&*to_keys),
         );
 
         out.reshape(&[b, nw * w, d])
@@ -352,6 +380,7 @@ impl AtomTransformer {
 mod tests {
     use super::*;
     use tch::nn::VarStore;
+    use tch::Kind;
 
     #[test]
     fn adaln_forward_shape() {
@@ -395,7 +424,7 @@ mod tests {
         let s = Tensor::randn(&[b, n, dim], (Kind::Float, device));
         let bias = Tensor::randn(&[b, n, n, heads * depth], (Kind::Float, device));
         let mask = Tensor::ones(&[b, n, n], (Kind::Float, device));
-        let out = dt.forward(&a, &s, Some(&bias), &mask, 1);
+        let out = dt.forward(&a, &s, Some(&bias), &mask, 1, None);
         assert_eq!(out.size(), vec![b, n, dim]);
     }
 }
