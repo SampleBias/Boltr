@@ -611,6 +611,16 @@ async fn index() -> Html<&'static str> {
     Html(include_str!("../assets/index.html"))
 }
 
+async fn favicon() -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/svg+xml")
+        .body(Body::from(
+            include_bytes!("../assets/favicon.svg").as_slice(),
+        ))
+        .unwrap()
+}
+
 async fn cleanup_loop(jobs: std::sync::Arc<JobStore>) {
     let mut interval = tokio::time::interval(Duration::from_secs(60));
     loop {
@@ -642,6 +652,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/favicon.svg", get(favicon))
         .route("/api/status", get(get_status))
         .route("/api/validate", post(post_validate))
         .route("/api/predict", post(post_predict))
