@@ -7,6 +7,9 @@ use std::process::{Command, Stdio};
 use anyhow::{bail, Context, Result};
 use tracing::info;
 
+#[cfg(feature = "tch")]
+use tch;
+
 /// Environment applied only to the upstream `boltz predict` subprocess.
 #[derive(Debug, Default, Clone)]
 pub struct BoltzChildEnv {
@@ -90,20 +93,75 @@ pub fn resolve_post_boltz_empty_cache(cli_flag: bool, predict_cuda: bool) -> boo
     cli_flag || true
 }
 
+/// Number of CUDA devices visible to this process (`CUDA_VISIBLE_DEVICES` token count, or LibTorch count when unset).
+///
+/// Used for `--device auto` memory policy: when exactly **one** GPU is visible, Boltz preprocess defaults to CPU
+/// so its peak does not stack with LibTorch on the same card (unless opted out).
+pub fn parent_visible_cuda_device_count() -> usize {
+    if let Ok(s) = std::env::var("CUDA_VISIBLE_DEVICES") {
+        let t = s.trim();
+        if t.is_empty() {
+            return 0;
+        }
+        return t.split(',').filter(|x| !x.trim().is_empty()).count();
+    }
+    #[cfg(feature = "tch")]
+    {
+        tch::maybe_init_cuda();
+        if tch::Cuda::is_available() {
+            return tch::Cuda::device_count().max(0) as usize;
+        }
+    }
+    0
+}
+
+/// Opt out of `--device auto` defaulting Boltz to CPU on a single visible GPU (restore Boltz GPU for speed).
+///
+/// CLI `--preprocess-auto-boltz-gpu` or env `BOLTR_AUTO_BOLTZ_GPU=1` / `true`.
+pub fn resolve_auto_boltz_gpu_opt_out(cli_flag: bool) -> bool {
+    cli_flag
+        || std::env::var("BOLTR_AUTO_BOLTZ_GPU")
+            .map(|v| {
+                let t = v.trim();
+                t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
+            })
+            .unwrap_or(false)
+}
+
+/// When true, Boltz subprocess should use `--accelerator cpu` for memory: only for `--device auto` with LibTorch on CUDA,
+/// a single visible GPU, and no opt-out.
+#[must_use]
+pub fn auto_default_boltz_cpu_for_memory(
+    device_requested: Option<&str>,
+    predict_cuda: bool,
+    auto_boltz_gpu_opt_out: bool,
+) -> bool {
+    if auto_boltz_gpu_opt_out || !predict_cuda {
+        return false;
+    }
+    if device_requested.map(str::trim) != Some("auto") {
+        return false;
+    }
+    parent_visible_cuda_device_count() == 1
+}
+
 /// Extra args for `boltz predict` when invoked from `boltr predict --preprocess …`.
 ///
 /// - With **`--preprocess-cuda-visible-devices`** (or env), Boltz runs on that GPU; LibTorch uses `--device` (typically another physical GPU).
 /// - On a **single** GPU, Boltz defaults to **`--accelerator gpu`** (upstream default); set **`--preprocess-boltz-cpu`** to force CPU Boltz if LibTorch OOMs after Boltz.
+/// - When **`--device auto`** resolves to CUDA and exactly one GPU is visible, **`auto_default_boltz_cpu`** defaults Boltz to CPU unless **`--preprocess-auto-boltz-gpu`** / `BOLTR_AUTO_BOLTZ_GPU`.
 /// - When **`--device cpu`** for LibTorch, upstream Boltz must also get **`--accelerator cpu`**, or it keeps the default GPU path and can fail (e.g. cuSOLVER) despite the user choosing CPU.
 pub fn bolt_preprocess_args_for_predict(
     device: &str,
     bolt_extra: &[String],
     force_boltz_cpu: bool,
+    auto_default_boltz_cpu: bool,
 ) -> Vec<String> {
     if user_set_boltz_accelerator(bolt_extra) {
         return bolt_extra.to_vec();
     }
-    let need_boltz_cpu = !predict_device_is_cuda(device) || force_boltz_cpu;
+    let need_boltz_cpu =
+        !predict_device_is_cuda(device) || force_boltz_cpu || auto_default_boltz_cpu;
     if need_boltz_cpu {
         let mut out = bolt_extra.to_vec();
         if !predict_device_is_cuda(device) {
@@ -342,13 +400,13 @@ mod tests {
 
     #[test]
     fn boltz_gpu_default_when_boltr_cuda_no_force() {
-        let out = bolt_preprocess_args_for_predict("cuda", &[], false);
+        let out = bolt_preprocess_args_for_predict("cuda", &[], false, false);
         assert!(out.is_empty());
     }
 
     #[test]
     fn boltz_cpu_when_force() {
-        let out = bolt_preprocess_args_for_predict("cuda", &[], true);
+        let out = bolt_preprocess_args_for_predict("cuda", &[], true, false);
         assert_eq!(
             out,
             vec!["--accelerator".to_string(), "cpu".to_string()]
@@ -357,7 +415,7 @@ mod tests {
 
     #[test]
     fn boltz_cpu_when_boltr_cpu() {
-        let out = bolt_preprocess_args_for_predict("cpu", &[], false);
+        let out = bolt_preprocess_args_for_predict("cpu", &[], false, false);
         assert_eq!(
             out,
             vec!["--accelerator".to_string(), "cpu".to_string()]
@@ -367,8 +425,28 @@ mod tests {
     #[test]
     fn user_bolt_arg_accelerator_untouched() {
         let extra = vec!["--accelerator".to_string(), "gpu".to_string()];
-        let out = bolt_preprocess_args_for_predict("cuda", &extra, true);
+        let out = bolt_preprocess_args_for_predict("cuda", &extra, true, false);
         assert_eq!(out, extra);
+    }
+
+    #[test]
+    fn auto_default_boltz_cpu_flag_adds_accelerator() {
+        let out = bolt_preprocess_args_for_predict("cuda", &[], false, true);
+        assert_eq!(
+            out,
+            vec!["--accelerator".to_string(), "cpu".to_string()]
+        );
+    }
+
+    #[test]
+    fn auto_default_boltz_cpu_requires_auto_request() {
+        assert!(!super::auto_default_boltz_cpu_for_memory(Some("gpu"), true, false));
+        assert!(!super::auto_default_boltz_cpu_for_memory(None, true, false));
+    }
+
+    #[test]
+    fn auto_default_boltz_cpu_respects_opt_out() {
+        assert!(!super::auto_default_boltz_cpu_for_memory(Some("auto"), true, true));
     }
 
     #[test]

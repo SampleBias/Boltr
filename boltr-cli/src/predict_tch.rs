@@ -83,6 +83,13 @@ fn diffusion_sample_coords_to_xyz_vec(coord_tensor: &Tensor) -> Result<Vec<[f32;
     Ok(v)
 }
 
+fn is_likely_cuda_oom(err_msg: &str) -> bool {
+    let l = err_msg.to_lowercase();
+    l.contains("out of memory")
+        || l.contains("cuda out of memory")
+        || (l.contains("cuda") && l.contains("alloc") && l.contains("fail"))
+}
+
 /// When `manifest.json` + preprocess `.npz` live next to the input YAML, run collate → `predict_step` → structure writer.
 fn try_predict_from_preprocess(
     input_path: &Path,
@@ -96,6 +103,7 @@ fn try_predict_from_preprocess(
     constraints_dir: Option<&Path>,
     preprocess_auto_extras: bool,
     ensemble_mode: InferenceEnsembleMode,
+    device_requested: Option<&str>,
 ) -> Result<Option<String>> {
     let preprocess_dir = match canonical_yaml_parent(input_path) {
         Ok(p) => p,
@@ -171,16 +179,38 @@ fn try_predict_from_preprocess(
     let coll = collate_inference_batches(std::slice::from_ref(&fb), 0.0, 0, 0)
         .map_err(|e| anyhow::anyhow!("collate_inference_batches: {e}"))?;
 
-    let out = crate::collate_predict_bridge::predict_step_from_collate(
-        model,
-        &coll,
-        Some(resolved.recycling_steps),
-        resolved.sampling_steps,
-        resolved.diffusion_samples,
-        resolved.max_parallel_samples,
-        use_potentials && !affinity,
-    )
-    .context("predict_step_from_collate")?;
+    let mut max_parallel = resolved.max_parallel_samples;
+    let mut retried_oom = false;
+    let out = loop {
+        match crate::collate_predict_bridge::predict_step_from_collate(
+            model,
+            &coll,
+            Some(resolved.recycling_steps),
+            resolved.sampling_steps,
+            resolved.diffusion_samples,
+            max_parallel,
+            use_potentials && !affinity,
+        ) {
+            Ok(o) => break o,
+            Err(e) => {
+                let msg = e.to_string();
+                if !retried_oom
+                    && device_requested == Some("auto")
+                    && is_likely_cuda_oom(&msg)
+                    && max_parallel != Some(1)
+                {
+                    let _ = crate::preprocess_cmd::maybe_post_boltz_empty_cache(None);
+                    retried_oom = true;
+                    max_parallel = Some(1);
+                    tracing::warn!(
+                        "predict_step OOM; retrying once with max_parallel_samples=1 after best-effort CUDA cache flush"
+                    );
+                    continue;
+                }
+                return Err(e).context("predict_step_from_collate");
+            }
+        }
+    };
 
     let raw_shape = out.diffusion.sample_atom_coords.size();
     let xyz = diffusion_sample_coords_to_xyz_vec(&out.diffusion.sample_atom_coords)
@@ -399,6 +429,8 @@ pub struct PredictTchArgs<'a> {
     pub preprocess_auto_extras: bool,
     /// Atom-feature ensemble policy for trunk featurization (default single index 0).
     pub ensemble_mode: InferenceEnsembleMode,
+    /// Original `--device` request when `auto` or `gpu` (OOM retry policy).
+    pub device_requested: Option<String>,
     pub parsed: &'a BoltzInput,
 }
 
@@ -798,6 +830,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         constraints_dir,
         preprocess_auto_extras,
         ensemble_mode,
+        device_requested,
         parsed: _,
     } = args;
 
@@ -920,6 +953,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         constraints_dir.as_deref(),
         preprocess_auto_extras,
         ensemble_mode,
+        device_requested.as_deref(),
     );
 
     match &predict_result {

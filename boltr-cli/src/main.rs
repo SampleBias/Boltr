@@ -19,6 +19,8 @@ mod collate_predict_bridge;
 #[cfg(feature = "tch")]
 mod predict_tch;
 
+#[cfg(feature = "tch")]
+mod cuda_mem;
 mod preprocess_cmd;
 mod device_resolve;
 
@@ -263,6 +265,10 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         preprocess_boltz_cpu: bool,
 
+        /// With `--device auto` on a single visible GPU, allow Boltz preprocess to use GPU (faster; higher peak VRAM vs LibTorch). Env: `BOLTR_AUTO_BOLTZ_GPU=1`.
+        #[arg(long, default_value_t = false)]
+        preprocess_auto_boltz_gpu: bool,
+
         /// After Boltz preprocess, run `torch.cuda.empty_cache()` via a Python that can `import torch` (see `BOLTR_PYTHON`, venv next to `--bolt-command`, or `BOLTR_REPO/.venv`). On by default when `--device` resolves to CUDA; set `BOLTR_PREPROCESS_POST_BOLTZ_EMPTY_CACHE=0` to disable.
         #[arg(long, default_value_t = false)]
         preprocess_post_boltz_empty_cache: bool,
@@ -458,6 +464,7 @@ async fn main() -> Result<()> {
             ensemble_ref,
             preprocess_cuda_visible_devices,
             preprocess_boltz_cpu,
+            preprocess_auto_boltz_gpu,
             preprocess_post_boltz_empty_cache,
         } => {
             let cache = resolve_cache_dir(cache_dir.as_deref());
@@ -506,6 +513,7 @@ async fn main() -> Result<()> {
                 ensemble_ref,
                 preprocess_cuda_visible_devices,
                 preprocess_boltz_cpu,
+                preprocess_auto_boltz_gpu,
                 preprocess_post_boltz_empty_cache,
             })
             .await?;
@@ -672,6 +680,7 @@ struct PredictFlowArgs {
     ensemble_ref: EnsembleRefCli,
     preprocess_cuda_visible_devices: Option<String>,
     preprocess_boltz_cpu: bool,
+    preprocess_auto_boltz_gpu: bool,
     preprocess_post_boltz_empty_cache: bool,
 }
 
@@ -717,10 +726,12 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         ensemble_ref,
         preprocess_cuda_visible_devices,
         preprocess_boltz_cpu,
+        preprocess_auto_boltz_gpu,
         preprocess_post_boltz_empty_cache,
     } = args;
 
-    let (device, device_requested) = device_resolve::resolve_predict_device(&device_in)?;
+    let (mut device, device_requested) = device_resolve::resolve_predict_device(&device_in)?;
+    device = device_resolve::maybe_apply_auto_vram_gate(device, device_requested.as_deref());
     if let Some(ref req) = device_requested {
         tracing::info!(requested = %req, resolved = %device, "device resolution");
     } else if device_in.trim() != device {
@@ -772,10 +783,23 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     let predict_cuda = preprocess_cmd::predict_device_is_cuda(&device);
     let force_boltz_cpu =
         preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu);
+    let auto_boltz_gpu_opt_out =
+        preprocess_cmd::resolve_auto_boltz_gpu_opt_out(preprocess_auto_boltz_gpu);
+    let auto_default_boltz_cpu = preprocess_cmd::auto_default_boltz_cpu_for_memory(
+        device_requested.as_deref(),
+        predict_cuda,
+        auto_boltz_gpu_opt_out,
+    );
+    if auto_default_boltz_cpu {
+        tracing::info!(
+            "preprocess: Boltz subprocess --accelerator cpu (--device auto, single visible GPU; use --preprocess-auto-boltz-gpu or BOLTR_AUTO_BOLTZ_GPU=1 for GPU Boltz)"
+        );
+    }
     let bolt_preprocess_args = preprocess_cmd::bolt_preprocess_args_for_predict(
         &device,
         &preprocess_bolt_arg,
         force_boltz_cpu,
+        auto_default_boltz_cpu,
     );
     let bolt_child_env = preprocess_cmd::BoltzChildEnv {
         cuda_visible_devices: preprocess_cmd::resolve_preprocess_cuda_visible_devices(
@@ -956,6 +980,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             constraints_dir: constraints_dir.clone(),
             preprocess_auto_extras,
             ensemble_mode,
+            device_requested,
             parsed: &parsed,
         })
         .await?;
