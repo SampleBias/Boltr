@@ -264,6 +264,7 @@ pub struct PredictCliOptions {
     /// `CUDA_VISIBLE_DEVICES` for Boltz preprocess only (e.g. second GPU). Same as `--preprocess-cuda-visible-devices`.
     pub preprocess_cuda_visible_devices: Option<String>,
     pub preprocess_boltz_cpu: bool,
+    pub preprocess_auto_boltz_gpu: bool,
     pub preprocess_post_boltz_empty_cache: bool,
 }
 
@@ -303,6 +304,7 @@ impl Default for PredictCliOptions {
             preprocess_record_id: None,
             preprocess_cuda_visible_devices: None,
             preprocess_boltz_cpu: false,
+            preprocess_auto_boltz_gpu: false,
             preprocess_post_boltz_empty_cache: false,
         }
     }
@@ -469,6 +471,9 @@ pub fn build_predict_argv(
     }
     if opts.preprocess_boltz_cpu {
         args.push("--preprocess-boltz-cpu".to_string());
+    }
+    if opts.preprocess_auto_boltz_gpu {
+        args.push("--preprocess-auto-boltz-gpu".to_string());
     }
     if opts.preprocess_post_boltz_empty_cache {
         args.push("--preprocess-post-boltz-empty-cache".to_string());
@@ -1034,6 +1039,21 @@ mod tests {
         assert_eq!(args.get(i + 1).map(String::as_str), Some("1"));
         assert!(args.iter().any(|a| a == "--preprocess-boltz-cpu"));
         assert!(args.iter().any(|a| a == "--preprocess-post-boltz-empty-cache"));
+    }
+
+    #[test]
+    fn build_predict_argv_preprocess_auto_boltz_gpu() {
+        let opts = PredictCliOptions {
+            preprocess_auto_boltz_gpu: true,
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        assert!(args.iter().any(|a| a == "--preprocess-auto-boltz-gpu"));
     }
 
     #[test]

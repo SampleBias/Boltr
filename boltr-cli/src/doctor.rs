@@ -40,6 +40,15 @@ pub fn run(json: bool) -> Result<()> {
         if let Some(ref d) = out.device_auto_resolves_to {
             println!("  --device auto resolves to: {d}");
         }
+        #[cfg(feature = "tch")]
+        if out.cuda_available == Some(true) {
+            let n = crate::preprocess_cmd::parent_visible_cuda_device_count();
+            if n == 1 {
+                println!(
+                    "  GPU memory hint: Boltz preprocess + LibTorch on one visible GPU can OOM; use --preprocess-boltz-cpu, or a second GPU via --preprocess-cuda-visible-devices, or --preprocess-auto-boltz-gpu only if you need Boltz on GPU with --device auto."
+                );
+            }
+        }
     }
     if out.tch_feature && out.libtorch_runtime_ok == Some(false) {
         std::process::exit(1);

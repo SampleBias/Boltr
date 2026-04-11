@@ -113,6 +113,7 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("--ensemble-ref"));
     assert!(stdout.contains("--preprocess-cuda-visible-devices"));
     assert!(stdout.contains("--preprocess-boltz-cpu"));
+    assert!(stdout.contains("--preprocess-auto-boltz-gpu"));
     assert!(stdout.contains("--preprocess-post-boltz-empty-cache"));
     assert!(stdout.contains("--device"));
     assert!(stdout.contains("auto"));

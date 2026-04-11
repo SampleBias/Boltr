@@ -457,6 +457,10 @@ async fn post_predict(
         .get("preprocess_boltz_cpu")
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
+    opts.preprocess_auto_boltz_gpu = field_map
+        .get("preprocess_auto_boltz_gpu")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     opts.preprocess_post_boltz_empty_cache = field_map
         .get("preprocess_post_boltz_empty_cache")
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))

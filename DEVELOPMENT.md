@@ -174,11 +174,16 @@ If you have no `python3.12` (or 3.11 / 3.10) binary: on **Arch Linux** there is 
 
 `boltr predict --preprocess boltz|auto` runs upstream **`boltz predict`** in a subprocess, then LibTorch **`predict_step`** in-process. Both are full inferences; peak VRAM on **one** GPU can OOM the second stage.
 
+**`--device auto` (memory policy):** When LibTorch resolves to CUDA and **exactly one** GPU is visible to the process (`CUDA_VISIBLE_DEVICES` unset with a single device, or a single id such as `0`), Boltr **defaults** upstream Boltz to **`--accelerator cpu`** so Boltz and LibTorch do not stack peaks on the same card. Use **`--preprocess-auto-boltz-gpu`** or **`BOLTR_AUTO_BOLTZ_GPU=1`** to keep Boltz on GPU (faster; higher VRAM). When **two or more** GPUs are visible, this default is **not** applied (same as explicit `--device cuda`). **`--preprocess-boltz-cpu`** / **`BOLTR_PREPROCESS_BOLTZ_CPU=1`** still force Boltz CPU for any device mode.
+
+**`BOLTR_AUTO_MIN_FREE_VRAM_MB`:** If set (MiB), and `--device auto` would use CUDA, Boltr queries free VRAM via `nvidia-smi` for LibTorch’s CUDA index; if free memory is **below** the threshold, **`auto` falls back to CPU** for LibTorch (fail-open if `nvidia-smi` is missing).
+
 | Situation | What to use |
 |-----------|-------------|
 | **Two GPUs** | `--preprocess-cuda-visible-devices 1` (or env `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES=1`) so Boltz only sees the second card; LibTorch keeps `--device cuda` / `cuda:0` on the first. |
-| **One GPU (default)** | Boltz subprocess gets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (override with `BOLTR_BOLTZ_PYTORCH_CUDA_ALLOC_CONF`; empty string disables). Optional `--preprocess-post-boltz-empty-cache` runs `torch.cuda.empty_cache()` between stages. |
+| **One GPU (default)** | Boltz subprocess gets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (override with `BOLTR_BOLTZ_PYTORCH_CUDA_ALLOC_CONF`; empty string disables). Optional `--preprocess-post-boltz-empty-cache` runs `torch.cuda.empty_cache()` between stages. With `--device auto` and one visible GPU, Boltz defaults to CPU unless overridden (see above). |
 | **OOM after Boltz** | `--preprocess-boltz-cpu` or `BOLTR_PREPROCESS_BOLTZ_CPU=1` forces Boltz to CPU (slow). |
+| **OOM during LibTorch `predict_step` with `--device auto`** | Boltr retries **once** with `max_parallel_samples=1` after a best-effort CUDA cache flush (requires a Python with `torch` for `empty_cache`, same as post-Boltz). |
 | **Python for empty_cache** | Boltr picks the first interpreter that can `import torch`: `BOLTR_PYTHON`, `BOLTR_REPO/.venv/bin/python`, `python`/`python3` next to `boltz` (`BOLTR_BOLTZ_COMMAND` or `--bolt-command`), then `python3`. If none have PyTorch, the step is skipped (no traceback). **`boltr-web`** sets `BOLTR_PYTHON` to the repo `.venv` when present. |
 
 **Memory / sampling knobs (upstream Boltz):** repeat `--preprocess-bolt-arg` for flags such as `--max_parallel_samples 1` to cap parallel diffusion work during the Boltz stage. See upstream [boltz-reference/docs/prediction.md](boltz-reference/docs/prediction.md).
