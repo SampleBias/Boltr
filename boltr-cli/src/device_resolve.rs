@@ -1,10 +1,17 @@
 //! Resolve `--device auto` / `--device gpu` and validate explicit GPU requests before preprocess / LibTorch.
 //!
+<<<<<<< HEAD
 //! **Modes:** `auto` picks CUDA when LibTorch reports a GPU (`tch` / CUDA build), else CPU.
 //! After resolution, [`maybe_apply_auto_vram_gate`] may downgrade `auto`→`cuda` to `cpu` when
 //! `BOLTR_AUTO_MIN_FREE_VRAM_MB` is set and free VRAM is below threshold.
 //! `gpu` requires CUDA and maps to LibTorch `cuda`. `BOLTR_DEVICE` overrides the CLI `--device` value
 //! before resolution (see the `predict` command).
+=======
+//! **Modes:** `auto` picks CUDA when LibTorch reports a GPU (`tch` / CUDA build), free VRAM is
+//! sufficient when `BOLTR_AUTO_MIN_FREE_VRAM_MB` is set (probe fail-open keeps CUDA), else CPU.
+//! `gpu` / explicit `cuda:N` require CUDA and are never downgraded. `cpu` is fixed CPU.
+//! `BOLTR_DEVICE` overrides the CLI `--device` value before resolution (see the `predict` command).
+>>>>>>> afdffbc (Refactor code for improved readability and consistency)
 
 use anyhow::Result;
 
@@ -28,7 +35,7 @@ pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
 
     if lower == "auto" {
         #[cfg(feature = "tch")]
-        let resolved = if cuda_is_available() {
+        let resolved = if cuda_is_available() && crate::gpu_mem::auto_vram_allows_cuda() {
             "cuda".to_string()
         } else {
             "cpu".to_string()
@@ -49,9 +56,7 @@ pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
             return Ok(("cuda".to_string(), Some("gpu".to_string())));
         }
         #[cfg(not(feature = "tch"))]
-        anyhow::bail!(
-            "GPU requested (--device gpu) but boltr was built without --features tch"
-        );
+        anyhow::bail!("GPU requested (--device gpu) but boltr was built without --features tch");
     }
 
     if lower == "cpu" {

@@ -23,16 +23,7 @@ fn atom_transformer_forward_w32_h128() {
     let im = get_indexing_matrix(k, w, h, device);
 
     let vs = VarStore::new(device);
-    let at = AtomTransformer::new(
-        vs.root(),
-        w,
-        h,
-        depth,
-        heads,
-        dim,
-        Some(dim),
-        device,
-    );
+    let at = AtomTransformer::new(vs.root(), w, h, depth, heads, dim, Some(dim), device);
 
     let q = Tensor::randn(&[b, n_atoms, dim], (Kind::Float, device));
     let c = Tensor::randn(&[b, n_atoms, dim], (Kind::Float, device));

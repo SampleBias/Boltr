@@ -239,9 +239,7 @@ impl AttentionPairBiasV2 {
         } else if mask_float.dim() == 2 && q_len != k_len {
             mask_float.unsqueeze(1).unsqueeze(1)
         } else if mask_float.dim() == 2 {
-            mask_float
-                .unsqueeze(1)
-                .expand(&[b, q_len, k_len], false)
+            mask_float.unsqueeze(1).expand(&[b, q_len, k_len], false)
         } else {
             mask_float.unsqueeze(1)
         };

@@ -19,10 +19,15 @@ mod collate_predict_bridge;
 #[cfg(feature = "tch")]
 mod predict_tch;
 
+<<<<<<< HEAD
 #[cfg(feature = "tch")]
 mod cuda_mem;
 mod preprocess_cmd;
+=======
+>>>>>>> afdffbc (Refactor code for improved readability and consistency)
 mod device_resolve;
+mod gpu_mem;
+mod preprocess_cmd;
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -110,7 +115,7 @@ enum Commands {
         #[arg(short, long, default_value = "./output")]
         output: String,
 
-        /// Compute device: `auto` (GPU if LibTorch sees CUDA, else CPU), `cpu`, `gpu` (CUDA required), `cuda`, or `cuda:N` (requires `--features tch` and a CUDA-capable LibTorch for GPU).
+        /// Compute device: `auto` (CUDA if LibTorch sees a GPU and optional VRAM check via `BOLTR_AUTO_MIN_FREE_VRAM_MB`; else CPU), `cpu`, `gpu` (CUDA required), `cuda`, or `cuda:N` (requires `--features tch` and a CUDA-capable LibTorch for GPU).
         #[arg(long, default_value = "auto")]
         device: String,
 
@@ -261,7 +266,7 @@ enum Commands {
         #[arg(long)]
         preprocess_cuda_visible_devices: Option<String>,
 
-        /// Force upstream Boltz `--accelerator cpu` when `--device` is CUDA (OOM fallback). Env: `BOLTR_PREPROCESS_BOLTZ_CPU=1`.
+        /// Force upstream Boltz `--accelerator cpu` when LibTorch uses CUDA (OOM fallback). Env: `BOLTR_PREPROCESS_BOLTZ_CPU=1`. With `--device auto` on a single visible GPU, Boltz defaults to CPU unless `BOLTR_AUTO_PREPROCESS_BOLTZ_CPU=0`.
         #[arg(long, default_value_t = false)]
         preprocess_boltz_cpu: bool,
 
@@ -781,6 +786,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         && boltr_io::validate_native_eligible(&parsed).is_ok();
 
     let predict_cuda = preprocess_cmd::predict_device_is_cuda(&device);
+<<<<<<< HEAD
     let force_boltz_cpu =
         preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu);
     let auto_boltz_gpu_opt_out =
@@ -795,6 +801,13 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             "preprocess: Boltz subprocess --accelerator cpu (--device auto, single visible GPU; use --preprocess-auto-boltz-gpu or BOLTR_AUTO_BOLTZ_GPU=1 for GPU Boltz)"
         );
     }
+=======
+    let force_boltz_cpu = preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu)
+        || preprocess_cmd::resolve_auto_default_boltz_cpu(
+            device_requested.as_deref(),
+            predict_cuda,
+        );
+>>>>>>> afdffbc (Refactor code for improved readability and consistency)
     let bolt_preprocess_args = preprocess_cmd::bolt_preprocess_args_for_predict(
         &device,
         &preprocess_bolt_arg,

@@ -180,7 +180,11 @@ impl Boltz2Hparams {
     #[must_use]
     pub fn resolved_atoms_per_window_queries(&self) -> i64 {
         self.atoms_per_window_queries
-            .or_else(|| self.other.get("atoms_per_window_queries").and_then(|v| v.as_i64()))
+            .or_else(|| {
+                self.other
+                    .get("atoms_per_window_queries")
+                    .and_then(|v| v.as_i64())
+            })
             .unwrap_or(32)
     }
 
@@ -188,7 +192,11 @@ impl Boltz2Hparams {
     #[must_use]
     pub fn resolved_atoms_per_window_keys(&self) -> i64 {
         self.atoms_per_window_keys
-            .or_else(|| self.other.get("atoms_per_window_keys").and_then(|v| v.as_i64()))
+            .or_else(|| {
+                self.other
+                    .get("atoms_per_window_keys")
+                    .and_then(|v| v.as_i64())
+            })
             .unwrap_or(128)
     }
 
@@ -255,10 +263,8 @@ mod tests {
             "atoms_per_window_queries".to_string(),
             serde_json::json!(40),
         );
-        h.other.insert(
-            "atoms_per_window_keys".to_string(),
-            serde_json::json!(80),
-        );
+        h.other
+            .insert("atoms_per_window_keys".to_string(), serde_json::json!(80));
         assert_eq!(h.resolved_atoms_per_window_queries(), 40);
         assert_eq!(h.resolved_atoms_per_window_keys(), 80);
     }

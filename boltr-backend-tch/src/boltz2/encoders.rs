@@ -683,14 +683,9 @@ impl AtomAttentionEncoder {
         let c = c.repeat_interleave_self_int(multiplicity, Some(0), None);
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self.atom_encoder.forward(
-            &q,
-            &c,
-            atom_enc_bias,
-            &mask,
-            multiplicity,
-            indexing_matrix,
-        );
+        q = self
+            .atom_encoder
+            .forward(&q, &c, atom_enc_bias, &mask, multiplicity, indexing_matrix);
 
         let q_skip = q.shallow_clone();
         let c_skip = c.shallow_clone();
@@ -785,14 +780,9 @@ impl AtomAttentionDecoder {
         let mut q = q + a_to_q.to_kind(q.kind());
         let mask = atom_pad_mask.repeat_interleave_self_int(multiplicity, Some(0), None);
 
-        q = self.atom_decoder.forward(
-            &q,
-            c,
-            atom_dec_bias,
-            &mask,
-            multiplicity,
-            indexing_matrix,
-        );
+        q = self
+            .atom_decoder
+            .forward(&q, c, atom_dec_bias, &mask, multiplicity, indexing_matrix);
 
         self.atom_feat_to_atom_pos_update_linear
             .forward(&self.atom_feat_to_atom_pos_update_norm.forward(&q))

@@ -27,14 +27,17 @@ pub fn predict_device_is_cuda(device: &str) -> bool {
 
 /// True when the user already passed `--accelerator …` to the Boltz subprocess.
 fn user_set_boltz_accelerator(bolt_extra: &[String]) -> bool {
-    bolt_extra.iter().any(|arg| {
-        arg == "--accelerator" || arg.starts_with("--accelerator=")
-    })
+    bolt_extra
+        .iter()
+        .any(|arg| arg == "--accelerator" || arg.starts_with("--accelerator="))
 }
 
 /// Merge CLI (`--preprocess-cuda-visible-devices`) with `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES` (CLI wins).
 pub fn resolve_preprocess_cuda_visible_devices(cli: Option<&str>) -> Option<String> {
-    let from_cli = cli.map(str::trim).filter(|s| !s.is_empty()).map(String::from);
+    let from_cli = cli
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from);
     if from_cli.is_some() {
         return from_cli;
     }
@@ -72,6 +75,24 @@ pub fn resolve_force_boltz_cpu(cli_flag: bool) -> bool {
         || std::env::var("BOLTR_PREPROCESS_BOLTZ_CPU")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false)
+}
+
+/// When `--device auto` resolves to CUDA and a single GPU is visible, default Boltz preprocess to
+/// CPU so Boltz and LibTorch do not both peak on the same card. Disabled with
+/// `BOLTR_AUTO_PREPROCESS_BOLTZ_CPU=0` / `false` / `no` / `off`.
+pub fn resolve_auto_default_boltz_cpu(device_requested: Option<&str>, predict_cuda: bool) -> bool {
+    if device_requested != Some("auto") || !predict_cuda {
+        return false;
+    }
+    if let Ok(s) = std::env::var("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU") {
+        if matches!(
+            s.trim().to_lowercase().as_str(),
+            "0" | "false" | "no" | "off"
+        ) {
+            return false;
+        }
+    }
+    crate::gpu_mem::single_gpu_visible_for_cuda()
 }
 
 /// After Boltz preprocess, run `torch.cuda.empty_cache()` when LibTorch uses CUDA.
@@ -165,9 +186,7 @@ pub fn bolt_preprocess_args_for_predict(
     if need_boltz_cpu {
         let mut out = bolt_extra.to_vec();
         if !predict_device_is_cuda(device) {
-            tracing::info!(
-                "preprocess: Boltz subprocess --accelerator cpu (boltr --device cpu)"
-            );
+            tracing::info!("preprocess: Boltz subprocess --accelerator cpu (boltr --device cpu)");
         } else {
             tracing::info!(
                 "preprocess: Boltz subprocess --accelerator cpu (--preprocess-boltz-cpu or BOLTR_PREPROCESS_BOLTZ_CPU)"
@@ -406,20 +425,30 @@ mod tests {
 
     #[test]
     fn boltz_cpu_when_force() {
+<<<<<<< HEAD
         let out = bolt_preprocess_args_for_predict("cuda", &[], true, false);
         assert_eq!(
             out,
             vec!["--accelerator".to_string(), "cpu".to_string()]
         );
+=======
+        let out = bolt_preprocess_args_for_predict("cuda", &[], true);
+        assert_eq!(out, vec!["--accelerator".to_string(), "cpu".to_string()]);
+>>>>>>> afdffbc (Refactor code for improved readability and consistency)
     }
 
     #[test]
     fn boltz_cpu_when_boltr_cpu() {
+<<<<<<< HEAD
         let out = bolt_preprocess_args_for_predict("cpu", &[], false, false);
         assert_eq!(
             out,
             vec!["--accelerator".to_string(), "cpu".to_string()]
         );
+=======
+        let out = bolt_preprocess_args_for_predict("cpu", &[], false);
+        assert_eq!(out, vec!["--accelerator".to_string(), "cpu".to_string()]);
+>>>>>>> afdffbc (Refactor code for improved readability and consistency)
     }
 
     #[test]
@@ -453,6 +482,21 @@ mod tests {
     fn post_empty_cache_never_when_cpu_predict() {
         assert!(!resolve_post_boltz_empty_cache(false, false));
         assert!(!resolve_post_boltz_empty_cache(true, false));
+    }
+
+    #[test]
+    fn auto_default_boltz_cpu_disabled_by_env() {
+        std::env::set_var("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU", "0");
+        let r = super::resolve_auto_default_boltz_cpu(Some("auto"), true);
+        std::env::remove_var("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU");
+        assert!(!r);
+    }
+
+    #[test]
+    fn auto_default_boltz_cpu_only_for_auto_cuda() {
+        std::env::remove_var("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU");
+        assert!(!super::resolve_auto_default_boltz_cpu(Some("cuda"), true));
+        assert!(!super::resolve_auto_default_boltz_cpu(Some("auto"), false));
     }
 }
 

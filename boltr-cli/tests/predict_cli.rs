@@ -52,7 +52,11 @@ fn predict_summary_json_no_tch() {
     let text = fs::read_to_string(&summary_path).unwrap();
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(v["use_msa_server"], false);
-    assert_eq!(v["device"], "cpu");
+    let dev = v["device"].as_str().expect("device string");
+    assert!(
+        dev == "cpu" || dev == "cuda" || dev.starts_with("cuda:"),
+        "unexpected resolved device: {dev}"
+    );
     assert_eq!(v["device_requested"], "auto");
     assert_eq!(v["affinity"], false);
 }
@@ -117,6 +121,8 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("--preprocess-post-boltz-empty-cache"));
     assert!(stdout.contains("--device"));
     assert!(stdout.contains("auto"));
+    assert!(stdout.contains("BOLTR_AUTO_MIN_FREE_VRAM_MB"));
+    assert!(stdout.contains("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU"));
 }
 
 #[test]
@@ -131,7 +137,7 @@ fn download_help() {
 }
 
 #[test]
-fn doctor_json_without_tch_feature() {
+fn doctor_json_reports_tch_feature() {
     let output = Command::new(boltr_bin())
         .args(["doctor", "--json"])
         .output()
@@ -142,6 +148,10 @@ fn doctor_json_without_tch_feature() {
         String::from_utf8_lossy(&output.stderr)
     );
     let v: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    #[cfg(feature = "tch")]
+    assert_eq!(v["tch_feature"], true);
+    #[cfg(not(feature = "tch"))]
     assert_eq!(v["tch_feature"], false);
+    #[cfg(not(feature = "tch"))]
     assert!(v["libtorch_runtime_ok"].is_null());
 }

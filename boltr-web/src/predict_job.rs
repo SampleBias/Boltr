@@ -836,9 +836,7 @@ pub async fn run_predict_job(
     .await;
 
     let venv_py = find_venv_python();
-    let py = venv_py
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("python3"));
+    let py = venv_py.clone().unwrap_or_else(|| PathBuf::from("python3"));
     let mut cmd = Command::new(&boltr);
     prepend_torch_wheel_lib_to_ld_path(&mut cmd, &py);
     if let Some(ref p) = venv_py {
@@ -1038,7 +1036,9 @@ mod tests {
             .unwrap();
         assert_eq!(args.get(i + 1).map(String::as_str), Some("1"));
         assert!(args.iter().any(|a| a == "--preprocess-boltz-cpu"));
-        assert!(args.iter().any(|a| a == "--preprocess-post-boltz-empty-cache"));
+        assert!(args
+            .iter()
+            .any(|a| a == "--preprocess-post-boltz-empty-cache"));
     }
 
     #[test]

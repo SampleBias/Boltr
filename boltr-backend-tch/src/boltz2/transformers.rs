@@ -183,23 +183,17 @@ impl DiffusionTransformerLayer {
             (k_in, mask_m)
         } else {
             let mask_3d = if mask.dim() == 2 {
-                mask.unsqueeze(1).expand(
-                    &[mask.size()[0], a.size()[1], mask.size()[1]],
-                    false,
-                )
+                mask.unsqueeze(1)
+                    .expand(&[mask.size()[0], a.size()[1], mask.size()[1]], false)
             } else {
                 mask.shallow_clone()
             };
             (b_val.shallow_clone(), mask_3d)
         };
 
-        let b_val = self.pair_bias_attn.forward(
-            &b_val,
-            &bias_t,
-            &mask_for_attn,
-            &k_in,
-            Some(multiplicity),
-        );
+        let b_val =
+            self.pair_bias_attn
+                .forward(&b_val, &bias_t, &mask_for_attn, &k_in, Some(multiplicity));
 
         let b_val = self.output_projection_linear.forward(s).sigmoid() * b_val;
 
@@ -359,9 +353,8 @@ impl AtomTransformer {
         let im = indexing_matrix.shallow_clone();
         let batch = b;
         let n_atoms = n;
-        let to_keys: Box<dyn Fn(&Tensor) -> Tensor> = Box::new(move |t: &Tensor| {
-            windowed_to_keys(t, batch, n_atoms, w, h, &im)
-        });
+        let to_keys: Box<dyn Fn(&Tensor) -> Tensor> =
+            Box::new(move |t: &Tensor| windowed_to_keys(t, batch, n_atoms, w, h, &im));
 
         let out = self.diffusion_transformer.forward(
             &q_w,

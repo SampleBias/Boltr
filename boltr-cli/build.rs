@@ -64,7 +64,10 @@ fn main() {
         .join("build");
 
     let (from_dl, other) = lib_dirs_from_torch_sys_outputs(&build_root);
-    let lib = from_dl.into_iter().next().or_else(|| other.into_iter().next());
+    let lib = from_dl
+        .into_iter()
+        .next()
+        .or_else(|| other.into_iter().next());
 
     if let Some(lib) = lib {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib.display());
