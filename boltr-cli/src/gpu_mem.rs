@@ -2,7 +2,7 @@
 //!
 //! With `--features tch`, auto mode can require minimum free VRAM (`BOLTR_AUTO_MIN_FREE_VRAM_MB`)
 //! before choosing CUDA; if the probe fails, CUDA is still used when LibTorch reports a GPU (**fail-open**).
-//! [`single_gpu_visible_for_cuda`] defaults Boltz preprocess to CPU when auto resolves to CUDA on one GPU.
+//! Single-GPU Boltz defaults live in [`crate::preprocess_cmd::auto_default_boltz_cpu_for_memory`].
 
 use std::process::Command;
 
@@ -130,27 +130,6 @@ fn query_free_vram_nvidia_smi() -> Option<u64> {
     let line = text.lines().next()?.trim();
     let mib: u64 = line.parse().ok()?;
     Some(mib.saturating_mul(1024 * 1024))
-}
-
-/// `true` when a single GPU is visible to CUDA (one entry in `CUDA_VISIBLE_DEVICES`, or exactly
-/// one GPU reported by `nvidia-smi -L`). Used to default Boltz preprocess to CPU for auto+cuda.
-pub fn single_gpu_visible_for_cuda() -> bool {
-    if let Ok(s) = std::env::var("CUDA_VISIBLE_DEVICES") {
-        let t = s.trim();
-        if !t.is_empty() {
-            let parts: Vec<&str> = t.split(',').filter(|x| !x.trim().is_empty()).collect();
-            return parts.len() == 1;
-        }
-    }
-    let Some(out) = Command::new("nvidia-smi").args(["-L"]).output().ok() else {
-        return false;
-    };
-    if !out.status.success() {
-        return false;
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let n = text.lines().filter(|l| !l.trim().is_empty()).count();
-    n == 1
 }
 
 #[cfg(test)]

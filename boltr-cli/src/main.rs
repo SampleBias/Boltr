@@ -19,12 +19,6 @@ mod collate_predict_bridge;
 #[cfg(feature = "tch")]
 mod predict_tch;
 
-<<<<<<< HEAD
-#[cfg(feature = "tch")]
-mod cuda_mem;
-mod preprocess_cmd;
-=======
->>>>>>> afdffbc (Refactor code for improved readability and consistency)
 mod device_resolve;
 mod gpu_mem;
 mod preprocess_cmd;
@@ -735,8 +729,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         preprocess_post_boltz_empty_cache,
     } = args;
 
-    let (mut device, device_requested) = device_resolve::resolve_predict_device(&device_in)?;
-    device = device_resolve::maybe_apply_auto_vram_gate(device, device_requested.as_deref());
+    let (device, device_requested) = device_resolve::resolve_predict_device(&device_in)?;
     if let Some(ref req) = device_requested {
         tracing::info!(requested = %req, resolved = %device, "device resolution");
     } else if device_in.trim() != device {
@@ -786,9 +779,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         && boltr_io::validate_native_eligible(&parsed).is_ok();
 
     let predict_cuda = preprocess_cmd::predict_device_is_cuda(&device);
-<<<<<<< HEAD
-    let force_boltz_cpu =
-        preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu);
+    let force_boltz_cpu = preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu);
     let auto_boltz_gpu_opt_out =
         preprocess_cmd::resolve_auto_boltz_gpu_opt_out(preprocess_auto_boltz_gpu);
     let auto_default_boltz_cpu = preprocess_cmd::auto_default_boltz_cpu_for_memory(
@@ -801,13 +792,6 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             "preprocess: Boltz subprocess --accelerator cpu (--device auto, single visible GPU; use --preprocess-auto-boltz-gpu or BOLTR_AUTO_BOLTZ_GPU=1 for GPU Boltz)"
         );
     }
-=======
-    let force_boltz_cpu = preprocess_cmd::resolve_force_boltz_cpu(preprocess_boltz_cpu)
-        || preprocess_cmd::resolve_auto_default_boltz_cpu(
-            device_requested.as_deref(),
-            predict_cuda,
-        );
->>>>>>> afdffbc (Refactor code for improved readability and consistency)
     let bolt_preprocess_args = preprocess_cmd::bolt_preprocess_args_for_predict(
         &device,
         &preprocess_bolt_arg,
