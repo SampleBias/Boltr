@@ -59,7 +59,6 @@ fn take_msa_mask(batch: &FeatureBatch, device: Device) -> Result<Tensor> {
 
 /// Owned tensors for [`InputEmbedderFeats`] / [`PredictStepFeats`] (single batch, `B>=1`).
 pub struct OwnedPredictTensors {
-    device: Device,
     ref_pos: Tensor,
     ref_charge: Tensor,
     ref_element: Tensor,
@@ -69,6 +68,8 @@ pub struct OwnedPredictTensors {
     res_type: Tensor,
     profile: Tensor,
     deletion_mean: Tensor,
+    profile_affinity: Option<Tensor>,
+    deletion_mean_affinity: Option<Tensor>,
     asym_id: Tensor,
     residue_index: Tensor,
     entity_id: Tensor,
@@ -95,6 +96,8 @@ pub struct OwnedPredictTensors {
     atom_backbone_feat: Option<Tensor>,
     /// Token-level `modified` (int); used when checkpoint enables `use_residue_feats_atoms`.
     modified: Tensor,
+    affinity_token_mask: Option<Tensor>,
+    affinity_mw: Option<Tensor>,
 }
 
 impl OwnedPredictTensors {
@@ -107,6 +110,12 @@ impl OwnedPredictTensors {
         let res_type = take_f32(batch, "res_type", device)?;
         let profile = take_f32(batch, "profile", device)?;
         let deletion_mean = take_f32(batch, "deletion_mean", device)?;
+        let profile_affinity = batch
+            .get_f32("profile_affinity")
+            .map(|a| f32_to_tensor(a, device));
+        let deletion_mean_affinity = batch
+            .get_f32("deletion_mean_affinity")
+            .map(|a| f32_to_tensor(a, device));
         let asym_id = take_i64(batch, "asym_id", device)?;
         let residue_index = take_i64(batch, "residue_index", device)?;
         let entity_id = take_i64(batch, "entity_id", device)?;
@@ -150,9 +159,14 @@ impl OwnedPredictTensors {
             .get_f32("atom_backbone_feat")
             .map(|a| f32_to_tensor(a, device));
         let modified = take_i64(batch, "modified", device)?;
+        let affinity_token_mask = batch
+            .get_f32("affinity_token_mask")
+            .map(|a| f32_to_tensor(a, device));
+        let affinity_mw = batch
+            .get_f32("affinity_mw")
+            .map(|a| f32_to_tensor(a, device));
 
         Ok(Self {
-            device,
             ref_pos,
             ref_charge,
             ref_element,
@@ -162,6 +176,8 @@ impl OwnedPredictTensors {
             res_type,
             profile,
             deletion_mean,
+            profile_affinity,
+            deletion_mean_affinity,
             asym_id,
             residue_index,
             entity_id,
@@ -184,6 +200,8 @@ impl OwnedPredictTensors {
             ref_atom_name_chars,
             atom_backbone_feat,
             modified,
+            affinity_token_mask,
+            affinity_mw,
         })
     }
 
@@ -201,8 +219,8 @@ impl OwnedPredictTensors {
             res_type: &self.res_type,
             profile: &self.profile,
             deletion_mean: &self.deletion_mean,
-            profile_affinity: None,
-            deletion_mean_affinity: None,
+            profile_affinity: self.profile_affinity.as_ref(),
+            deletion_mean_affinity: self.deletion_mean_affinity.as_ref(),
             atom_encoder_batch,
         }
     }
@@ -253,8 +271,8 @@ impl OwnedPredictTensors {
             ref_space_uid: &self.ref_space_uid,
             atom_to_token: &self.atom_to_token,
             atom_encoder_batch,
-            affinity_token_mask: None,
-            affinity_mw: None,
+            affinity_token_mask: self.affinity_token_mask.as_ref(),
+            affinity_mw: self.affinity_mw.as_ref(),
         }
     }
 }
@@ -316,7 +334,7 @@ pub fn predict_step_from_collate(
         steering,
         None,
         max_parallel_samples,
-        None,
+        Some(&emb),
         false,
     )
 }

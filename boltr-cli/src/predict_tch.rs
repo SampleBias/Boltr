@@ -15,14 +15,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use boltr_backend_tch::{
-    resolve_predict_args, AtomDiffusionConfig, Boltz2DiffusionArgs, Boltz2Hparams, Boltz2Model,
-    Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures, SteeringParams,
+    resolve_predict_args, AffinityModuleConfig, AtomDiffusionConfig, Boltz2DiffusionArgs,
+    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures,
+    SteeringParams,
 };
 use boltr_io::config::BoltzInput;
 use boltr_io::{
     canonical_yaml_parent, collate_inference_batches, copy_msa_a3m_to_output,
     featurized_atom_token_sum, load_input, parse_manifest_path, resolve_preprocess_load_dirs,
-    trunk_smoke_feature_batch_from_inference_input_with_ensemble, InferenceEnsembleMode,
+    trunk_smoke_feature_batch_from_inference_input_with_ensemble, AffinitySummary,
+    InferenceEnsembleMode,
 };
 use tch::{self, Kind, Tensor};
 
@@ -258,6 +260,24 @@ fn try_predict_from_preprocess(
         output_format,
         &inference_input.structure,
     )?;
+    if let Some(ref aff) = out.affinity {
+        let pred = aff
+            .affinity_pred_value
+            .to_kind(Kind::Float)
+            .to_device(tch::Device::Cpu)
+            .reshape(&[-1])
+            .double_value(&[0]);
+        let prob = aff
+            .affinity_logits_binary
+            .sigmoid()
+            .to_kind(Kind::Float)
+            .to_device(tch::Device::Cpu)
+            .reshape(&[-1])
+            .double_value(&[0]);
+        let summary = AffinitySummary::single(pred, prob);
+        boltr_io::write_affinity_json(out_dir, &record_id, &summary)
+            .context("write affinity JSON")?;
+    }
     copy_msa_a3m_to_output(&preprocess_dir, out_dir).context("copy MSA .a3m into output dir")?;
 
     tracing::info!(
@@ -818,9 +838,9 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         num_samples: _,
         checkpoint,
         affinity_checkpoint,
-        affinity_mw_correction: _,
-        sampling_steps_affinity: _,
-        diffusion_samples_affinity: _,
+        affinity_mw_correction,
+        sampling_steps_affinity,
+        diffusion_samples_affinity,
         preprocessing_threads: _,
         override_flag: _,
         write_full_pae,
@@ -876,8 +896,11 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     if aff_path.is_some() {
         tracing::info!(path = %aff_path.as_ref().unwrap().display(), "using affinity checkpoint");
     }
-    let _ = aff_path;
-
+    if affinity && aff_path.is_none() {
+        bail!(
+            "--affinity requested but no affinity safetensors checkpoint was found (set --affinity-checkpoint or place boltz2_aff.safetensors in the cache)"
+        );
+    }
     // 4. Load hyperparameters and build model on target device
     let hparams = load_hparams_for_predict(&cache)?;
     let token_s = hparams.resolved_token_s();
@@ -898,6 +921,17 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         "building Boltz2Model from hparams"
     );
 
+    let affinity_config = if affinity {
+        Some(AffinityModuleConfig::from_affinity_model_args(
+            hparams.affinity_model_args.as_ref(),
+            token_s,
+        ))
+    } else {
+        None
+    };
+    let affinity_mw_correction_enabled = affinity && affinity_mw_correction
+        || (affinity && hparams.affinity_mw_correction.unwrap_or(false));
+
     let mut model = Boltz2Model::with_all_options(
         device,
         token_s,
@@ -907,8 +941,8 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         diff_args,
         diff_config,
         None,
-        None,
-        false,
+        affinity_config,
+        affinity_mw_correction_enabled,
     )
     .context("Boltz2Model::with_all_options")?;
 
@@ -935,11 +969,33 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
             }
         }
     }
+    if let Some(ref path) = aff_path {
+        match model.load_partial_from_safetensors(path) {
+            Ok(missing) => {
+                tracing::info!(
+                    model_params = model.var_store().len(),
+                    missing_keys = missing.len(),
+                    "loaded affinity checkpoint weights"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "affinity checkpoint partial load failed");
+            }
+        }
+    }
 
-    let pargs = match &resolved {
+    let mut pargs = match &resolved {
         Ok(a) => *a,
         Err(_) => Boltz2PredictArgs::default(),
     };
+    if affinity {
+        if let Some(n) = sampling_steps_affinity {
+            pargs.sampling_steps = Some(n);
+        }
+        if let Some(n) = diffusion_samples_affinity {
+            pargs.diffusion_samples = n;
+        }
+    }
 
     let predict_result = try_predict_from_preprocess(
         &input_path,

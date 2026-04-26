@@ -165,6 +165,15 @@ ___</pre>
       <span class="pill" id="bootstrapPill" title="Boltr_Boltz_bootstrap status (see below)"></span>
     </div>
     <div id="statusMount"></div>
+    <div class="help-box" style="margin-top:0.75rem;">
+      <p><strong>RunPod GPU</strong> — optional remote CUDA target over SSH. Configure the server with <code>BOLTR_RUNPOD_HOST</code>, optional <code>BOLTR_RUNPOD_USER</code>/<code>PORT</code>/<code>KEY</code>, plus <code>BOLTR_RUNPOD_WORKDIR</code>, <code>BOLTR_RUNPOD_BOLTR</code>, and <code>BOLTR_RUNPOD_CACHE</code>.</p>
+      <p class="notes">The browser never sends SSH credentials; it only asks this web server to probe or run the configured pod.</p>
+      <div class="row">
+        <button type="button" id="btnRunpodRefresh">Refresh RunPod</button>
+        <span class="pill" id="runpodPill">RunPod …</span>
+      </div>
+      <div id="runpodMount"></div>
+    </div>
   </section>
 
   <section>
@@ -203,6 +212,14 @@ ___</pre>
       <p><strong>Preprocess</strong> — if <code>manifest.json</code> is missing next to the YAML, choose <code>auto</code>, <code>native</code>, or <code>boltz</code> (same as <code>boltr predict --preprocess …</code>). <strong>Native</strong> is protein-only: no non-empty <code>templates:</code>/<code>constraints:</code>, no ligands/DNA/RNA, no affinity bundle — use <code>boltz</code> or place a Boltz-generated bundle next to the YAML for complexes. <strong>Boltz / auto</strong> need the upstream <code>boltz</code> CLI on <code>PATH</code> unless you set <strong>Bolt command</strong> to the full path (e.g. a venv <code>…/bin/boltz</code>). <code>auto</code> tries native first, then Boltz; it errors if neither applies (no silent “MSA-only” run).</p>
       <p class="notes"><strong>Output format</strong> — structures are written as <code>.cif</code> (mmCIF) or <code>.pdb</code> per <code>boltr predict --output-format</code>. Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
     </div>
+    <div class="row">
+      <label for="predictTarget">Target</label>
+      <select id="predictTarget" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
+        <option value="local" selected>Local machine</option>
+        <option value="runpod">RunPod GPU over SSH</option>
+      </select>
+    </div>
+    <p id="predictTargetHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
       <label for="predictCompute">Compute</label>
       <select id="predictCompute" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -271,6 +288,14 @@ ___</pre>
       <input type="text" id="predictSamplingSteps" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
     </div>
     <div class="row">
+      <span class="tag">max_parallel</span>
+      <input type="text" id="predictMaxParallelSamples" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+      <span class="tag">aff_steps</span>
+      <input type="text" id="predictAffinitySamplingSteps" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+      <span class="tag">aff_samples</span>
+      <input type="text" id="predictAffinityDiffusionSamples" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+    </div>
+    <div class="row">
       <button type="button" id="btnPredict" disabled>Run predict</button>
       <span class="pill" id="predictPill"></span>
     </div>
@@ -287,6 +312,7 @@ ___</pre>
   <script>
     const $ = (id) => document.getElementById(id);
     const statusMount = $("statusMount");
+    const runpodMount = $("runpodMount");
     const validateMount = $("validateMount");
     const cachePill = $("cachePill");
     const uploadBar = $("uploadBar");
@@ -311,6 +337,16 @@ ___</pre>
       } else {
         el.style.display = "none";
         el.textContent = "";
+      }
+    }
+
+    function updatePredictTargetHint() {
+      const el = $("predictTargetHint");
+      if (!el) return;
+      if ($("predictTarget").value === "runpod") {
+        el.innerHTML = "<strong>RunPod:</strong> uploads the YAML/job folder to the configured pod, runs <code>boltr predict --device cuda</code> remotely, streams SSH logs here, then downloads the output folder back into this job.";
+      } else {
+        el.innerHTML = "<strong>Local:</strong> runs <code>boltr predict</code> on this machine with the selected compute mode.";
       }
     }
 
@@ -375,6 +411,35 @@ ___</pre>
       statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${bootstrapHtml}${probe}${notes}`;
     }
 
+    function renderRunpodStatus(data) {
+      const pill = $("runpodPill");
+      if (!data.configured) {
+        pill.textContent = "RunPod not configured";
+        pill.className = "pill not-ready";
+      } else if (data.connected) {
+        pill.textContent = "RunPod connected";
+        pill.className = "pill ready";
+      } else {
+        pill.textContent = "RunPod offline";
+        pill.className = "pill not-ready";
+      }
+
+      const gpus = (data.gpus || []).map((g) => {
+        const mem = g.memory_free_mb != null && g.memory_total_mb != null
+          ? `${g.memory_free_mb}/${g.memory_total_mb} MB free`
+          : "memory unknown";
+        return `<div class="row"><span class="tag">GPU</span><span>${esc(g.name || "unknown")}</span><span class="notes">${esc(mem)}</span></div>`;
+      }).join("");
+      const bits = [];
+      if (data.target) bits.push(`<p class="notes">SSH target: <code>${esc(data.target)}</code></p>`);
+      if (data.workdir) bits.push(`<p class="notes">Workdir: <code>${esc(data.workdir)}</code></p>`);
+      if (data.cache) bits.push(`<p class="notes">Cache: <code>${esc(data.cache)}</code> ${data.remote_cache_ready === true ? '<span class="ok">ready</span>' : data.remote_cache_ready === false ? '<span class="no">missing required files</span>' : ''}</p>`);
+      if (data.boltr_doctor) bits.push(`<pre class="notes">${esc(JSON.stringify(data.boltr_doctor, null, 2))}</pre>`);
+      const warnings = (data.warnings || []).map((w) => `<p class="notes">${esc(w)}</p>`).join("");
+      const err = data.error ? `<pre>${esc(data.error)}</pre>` : "";
+      runpodMount.innerHTML = bits.join("") + gpus + warnings + err;
+    }
+
     function renderValidate(data) {
       const jobReady = data.job_ready_for_native;
       const relaxed = data.yaml_ready_relaxed;
@@ -420,8 +485,17 @@ ___</pre>
       renderStatus(await r.json());
     }
 
+    async function fetchRunpodStatus() {
+      const r = await fetch("/api/runpod/status");
+      if (!r.ok) throw new Error(await r.text());
+      renderRunpodStatus(await r.json());
+    }
+
     $("btnRefresh").onclick = () => {
       fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
+    };
+    $("btnRunpodRefresh").onclick = () => {
+      fetchRunpodStatus().catch((e) => { runpodMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
     };
 
     $("yamlFile").onchange = () => {
@@ -430,6 +504,7 @@ ___</pre>
     };
     $("jobDir").addEventListener("input", updatePredictButton);
     $("predictPreprocess").addEventListener("change", updatePreprocessHint);
+    $("predictTarget").addEventListener("change", updatePredictTargetHint);
 
     $("btnValidate").onclick = () => {
       const f = $("yamlFile").files[0];
@@ -481,6 +556,7 @@ ___</pre>
       const c = $("cacheDir").value.trim();
       if (c) fd.append("cache_dir", c);
       if (jd) fd.append("job_dir", jd);
+      fd.append("predict_target", $("predictTarget").value);
       fd.append("compute", $("predictCompute").value);
       fd.append("preprocess", $("predictPreprocess").value);
       const boltCmd = $("predictBoltCommand").value.trim();
@@ -500,6 +576,12 @@ ___</pre>
       if (ds) fd.append("diffusion_samples", ds);
       const ss = $("predictSamplingSteps").value.trim();
       if (ss) fd.append("sampling_steps", ss);
+      const mp = $("predictMaxParallelSamples").value.trim();
+      if (mp) fd.append("max_parallel_samples", mp);
+      const ass = $("predictAffinitySamplingSteps").value.trim();
+      if (ass) fd.append("sampling_steps_affinity", ass);
+      const ads = $("predictAffinityDiffusionSamples").value.trim();
+      if (ads) fd.append("diffusion_samples_affinity", ads);
 
       predictBar.value = 0;
       try { predictBar.indeterminate = true; } catch (e) {}
@@ -580,7 +662,9 @@ ___</pre>
 
     updatePredictButton();
     updatePreprocessHint();
+    updatePredictTargetHint();
     fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
+    fetchRunpodStatus().catch((e) => { runpodMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
   </script>
 </body>
 </html>

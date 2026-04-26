@@ -9,6 +9,7 @@
 mod paths;
 mod predict_job;
 mod prereq;
+mod runpod;
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -38,6 +39,9 @@ use crate::predict_job::{
     JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
+use crate::runpod::{
+    status_from_env as runpod_status_from_env, RemotePredictRequest, RunPodConfig,
+};
 
 #[derive(Clone)]
 struct AppState {
@@ -74,6 +78,11 @@ async fn get_status(
         .unwrap_or_else(|| state.default_cache.clone());
     let s = gather_status(&cache);
     let s = enrich_status(s).await;
+    Json(serde_json::to_value(s).unwrap_or(serde_json::Value::Null))
+}
+
+async fn get_runpod_status() -> Json<serde_json::Value> {
+    let s = runpod_status_from_env().await;
     Json(serde_json::to_value(s).unwrap_or(serde_json::Value::Null))
 }
 
@@ -219,13 +228,6 @@ async fn post_predict(
         ));
     }
 
-    let boltr = resolve_boltr_exe().ok_or_else(|| {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "boltr binary not found: set BOLTR or install boltr on PATH".to_string(),
-        )
-    })?;
-
     let mut file_name: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut cache_override: Option<String> = None;
@@ -268,6 +270,16 @@ async fn post_predict(
     }
 
     let name = file_name.unwrap_or_else(|| "input.yaml".to_string());
+    let predict_target = field_map
+        .get("predict_target")
+        .map(|s| s.trim().to_ascii_lowercase())
+        .unwrap_or_else(|| "local".to_string());
+    if predict_target != "local" && predict_target != "runpod" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "predict_target: invalid value (use local or runpod)".to_string(),
+        ));
+    }
 
     let job_id = format!("{:016x}", rand::random::<u64>());
     let base = std::env::temp_dir().join("boltr-web-jobs").join(&job_id);
@@ -276,7 +288,7 @@ async fn post_predict(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let out_dir = base.join("out");
 
-    let input_path: PathBuf = if let Some(ref dir) = job_dir {
+    let (input_path, remote_input_root): (PathBuf, PathBuf) = if let Some(ref dir) = job_dir {
         let p = dir.join(&name);
         if !p.is_file() {
             let _ = tokio::fs::remove_dir_all(&base).await;
@@ -286,8 +298,13 @@ async fn post_predict(
             ));
         }
         path_under_job_dir(dir, &p).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-        p.canonicalize()
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+        let canon = p
+            .canonicalize()
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        let root = dir
+            .canonicalize()
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+        (canon, root)
     } else {
         let bytes = file_bytes.ok_or_else(|| {
             (
@@ -299,8 +316,16 @@ async fn post_predict(
         tokio::fs::write(&p, &bytes)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        p.canonicalize()
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        let canon = p
+            .canonicalize()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let root = canon.parent().map(PathBuf::from).ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "uploaded file has no parent directory".to_string(),
+            )
+        })?;
+        (canon, root)
     };
 
     // Compute: prefer `compute` (auto|gpu|cpu); else legacy `device` (cpu|cuda|cuda:N|auto|gpu).
@@ -466,14 +491,48 @@ async fn post_predict(
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
-        let _ = tokio::fs::remove_dir_all(&base).await;
-        return Err((StatusCode::BAD_REQUEST, msg));
+    if predict_target == "local" {
+        if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
+            let _ = tokio::fs::remove_dir_all(&base).await;
+            return Err((StatusCode::BAD_REQUEST, msg));
+        }
     }
 
-    let cache = cache_from_form_override(cache_override.as_deref(), &state.default_cache);
+    if predict_target == "runpod" && opts.device == "cpu" {
+        opts.device = "cuda".to_string();
+    }
 
-    let argv = build_predict_argv(&input_path, &out_dir, &cache, &opts);
+    if predict_target == "runpod" && opts.max_parallel_samples.is_none() {
+        opts.max_parallel_samples = Some(1);
+    }
+
+    if predict_target == "runpod" && opts.diffusion_samples.is_none() {
+        opts.diffusion_samples = Some(2);
+    }
+
+    if predict_target == "runpod" && opts.sampling_steps.is_none() {
+        opts.sampling_steps = Some(200);
+    }
+
+    if predict_target == "runpod" && opts.affinity && opts.diffusion_samples_affinity.is_none() {
+        opts.diffusion_samples_affinity = Some(2);
+    }
+
+    if predict_target == "runpod" && opts.affinity && opts.sampling_steps_affinity.is_none() {
+        opts.sampling_steps_affinity = Some(200);
+    }
+
+    if predict_target == "runpod" && opts.preprocess_auto_boltz_gpu == false {
+        opts.preprocess_auto_boltz_gpu = true;
+    }
+
+    if predict_target == "local" && opts.device.trim().is_empty() {
+        let _ = tokio::fs::remove_dir_all(&base).await;
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "device cannot be blank".to_string(),
+        ));
+    }
 
     let job = std::sync::Arc::new(PredictJob::new(base, out_dir.clone()));
     state
@@ -483,9 +542,37 @@ async fn post_predict(
 
     let sem = state.jobs.semaphore();
     let jid = job_id.clone();
-    tokio::spawn(async move {
-        run_predict_job(jid, job, boltr, argv, sem).await;
-    });
+    if predict_target == "runpod" {
+        let config = RunPodConfig::from_env().ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "RunPod is not configured: set BOLTR_RUNPOD_HOST and related BOLTR_RUNPOD_* env vars"
+                    .to_string(),
+            )
+        })?;
+        let req = RemotePredictRequest {
+            config,
+            local_input_root: remote_input_root,
+            local_input_path: input_path,
+            local_out_dir: out_dir,
+            opts,
+        };
+        tokio::spawn(async move {
+            crate::runpod::run_remote_predict_job(jid, job, req, sem).await;
+        });
+    } else {
+        let boltr = resolve_boltr_exe().ok_or_else(|| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "boltr binary not found: set BOLTR or install boltr on PATH".to_string(),
+            )
+        })?;
+        let cache = cache_from_form_override(cache_override.as_deref(), &state.default_cache);
+        let argv = build_predict_argv(&input_path, &out_dir, &cache, &opts);
+        tokio::spawn(async move {
+            run_predict_job(jid, job, boltr, argv, sem).await;
+        });
+    }
 
     Ok((StatusCode::ACCEPTED, Json(PredictStartResponse { job_id })))
 }
@@ -658,6 +745,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(index))
         .route("/favicon.svg", get(favicon))
         .route("/api/status", get(get_status))
+        .route("/api/runpod/status", get(get_runpod_status))
         .route("/api/validate", post(post_validate))
         .route("/api/predict", post(post_predict))
         .route("/api/predict/:id", get(get_predict_status))
