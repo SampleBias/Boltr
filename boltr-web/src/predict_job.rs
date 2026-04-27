@@ -29,6 +29,8 @@ pub enum PreprocessMode {
     Auto,
     /// Upstream Boltz subprocess + copy bundle next to YAML.
     Boltz,
+    /// Upstream Boltz subprocess, named for quality-focused prediction jobs.
+    HighFidelity,
     /// Rust-only protein-only bundle.
     Native,
 }
@@ -39,6 +41,7 @@ impl PreprocessMode {
             PreprocessMode::Off => None,
             PreprocessMode::Native => Some("native"),
             PreprocessMode::Boltz => Some("boltz"),
+            PreprocessMode::HighFidelity => Some("high-fidelity"),
             PreprocessMode::Auto => Some("auto"),
         }
     }
@@ -56,10 +59,16 @@ pub fn parse_preprocess_mode(s: &str) -> Result<PreprocessMode, &'static str> {
     if t.eq_ignore_ascii_case("boltz") {
         return Ok(PreprocessMode::Boltz);
     }
+    if t.eq_ignore_ascii_case("high-fidelity")
+        || t.eq_ignore_ascii_case("high_fidelity")
+        || t.eq_ignore_ascii_case("quality")
+    {
+        return Ok(PreprocessMode::HighFidelity);
+    }
     if t.eq_ignore_ascii_case("auto") {
         return Ok(PreprocessMode::Auto);
     }
-    Err("invalid preprocess (use off, native, boltz, auto)")
+    Err("invalid preprocess (use off, native, boltz, high-fidelity, auto)")
 }
 
 /// True if `cmd` is an existing file path, or resolves via [`which::which`] (matches `boltr-cli`).
@@ -205,7 +214,7 @@ pub fn preprocess_preflight(input_path: &Path, opts: &mut PredictCliOptions) -> 
                 )
             })
         }
-        PreprocessMode::Boltz => resolve_boltz_for_preprocess(opts),
+        PreprocessMode::Boltz | PreprocessMode::HighFidelity => resolve_boltz_for_preprocess(opts),
         PreprocessMode::Auto => {
             let input =
                 boltr_io::parse_input_path(input_path).map_err(|e| format!("parse YAML: {e}"))?;
@@ -980,6 +989,7 @@ mod tests {
             device: "cuda:0".to_string(),
             use_msa_server: true,
             recycling_steps: Some(3),
+            step_scale: Some(1.638),
             r#override: true,
             spike_only: false,
             ..Default::default()
@@ -993,6 +1003,8 @@ mod tests {
         assert!(args.contains(&"--use-msa-server".to_string()));
         assert!(args.contains(&"--recycling-steps".to_string()));
         assert!(args.contains(&"3".to_string()));
+        assert!(args.contains(&"--step-scale".to_string()));
+        assert!(args.contains(&"1.638".to_string()));
         assert!(args.contains(&"--override".to_string()));
         assert!(args.contains(&"--device".to_string()));
         assert!(args.contains(&"cuda:0".to_string()));
@@ -1074,10 +1086,34 @@ mod tests {
     }
 
     #[test]
+    fn build_predict_argv_preprocess_high_fidelity() {
+        let opts = PredictCliOptions {
+            preprocess: PreprocessMode::HighFidelity,
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        let i = args.iter().position(|a| a == "--preprocess").unwrap();
+        assert_eq!(args.get(i + 1).map(String::as_str), Some("high-fidelity"));
+    }
+
+    #[test]
     fn parse_preprocess_mode_accepts_aliases() {
         assert_eq!(parse_preprocess_mode("").unwrap(), PreprocessMode::Off);
         assert_eq!(parse_preprocess_mode("off").unwrap(), PreprocessMode::Off);
         assert_eq!(parse_preprocess_mode("AUTO").unwrap(), PreprocessMode::Auto);
+        assert_eq!(
+            parse_preprocess_mode("high_fidelity").unwrap(),
+            PreprocessMode::HighFidelity
+        );
+        assert_eq!(
+            parse_preprocess_mode("quality").unwrap(),
+            PreprocessMode::HighFidelity
+        );
         assert!(parse_preprocess_mode("nope").is_err());
     }
 

@@ -209,7 +209,7 @@ ___</pre>
     <h2>3. Run predict</h2>
     <div class="help-box">
       <p>Runs <code>boltr predict</code> on this machine (needs <code>BOLTR</code> or <code>boltr</code> on <code>PATH</code>). Uses the same <strong>cache</strong> and <strong>job folder</strong> as above. Upload a YAML <em>or</em> set a job folder (uses <code>input.yaml</code> in that folder if no file is chosen).</p>
-      <p><strong>Preprocess</strong> — if <code>manifest.json</code> is missing next to the YAML, choose <code>auto</code>, <code>native</code>, or <code>boltz</code> (same as <code>boltr predict --preprocess …</code>). <strong>Native</strong> is protein-only: no non-empty <code>templates:</code>/<code>constraints:</code>, no ligands/DNA/RNA, no affinity bundle — use <code>boltz</code> or place a Boltz-generated bundle next to the YAML for complexes. <strong>Boltz / auto</strong> need the upstream <code>boltz</code> CLI on <code>PATH</code> unless you set <strong>Bolt command</strong> to the full path (e.g. a venv <code>…/bin/boltz</code>). <code>auto</code> tries native first, then Boltz; it errors if neither applies (no silent “MSA-only” run).</p>
+      <p><strong>Preprocess</strong> — if <code>manifest.json</code> is missing next to the YAML, choose <code>auto</code>, <code>high-fidelity</code>, <code>native</code>, or <code>boltz</code> (same as <code>boltr predict --preprocess …</code>). <strong>High-Fidelity Preprocess</strong> forces upstream Boltz and avoids native placeholder geometry. <strong>Native</strong> is protein-only: no non-empty <code>templates:</code>/<code>constraints:</code>, no ligands/DNA/RNA, no affinity bundle — use <code>high-fidelity</code>/<code>boltz</code> or place a Boltz-generated bundle next to the YAML for complexes. <strong>Boltz / auto</strong> need the upstream <code>boltz</code> CLI on <code>PATH</code> unless you set <strong>Bolt command</strong> to the full path (e.g. a venv <code>…/bin/boltz</code>). <code>auto</code> tries native first, then Boltz; it errors if neither applies (no silent “MSA-only” run).</p>
       <p class="notes"><strong>Output format</strong> — structures are written as <code>.cif</code> (mmCIF) or <code>.pdb</code> per <code>boltr predict --output-format</code>. Only one run at a time. Logs stream below; on success, download a <code>.tar.gz</code> of the output folder. Disable with <code>BOLTR_WEB_ENABLE_PREDICT=0</code>.</p>
     </div>
     <div class="row">
@@ -220,6 +220,10 @@ ___</pre>
       </select>
     </div>
     <p id="predictTargetHint" class="notes" style="max-width:42rem;"></p>
+    <div class="row">
+      <label><input type="checkbox" id="predictQualityPreset" /> Quality preset (<code>recycling=3</code>, <code>sampling_steps=200</code>, <code>diffusion_samples=2</code>, High-Fidelity Preprocess when Auto)</label>
+    </div>
+    <p id="predictQualityHint" class="notes" style="max-width:42rem;"></p>
     <div class="row">
       <label for="predictCompute">Compute</label>
       <select id="predictCompute" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -233,6 +237,7 @@ ___</pre>
       <label for="predictPreprocess">Preprocess</label>
       <select id="predictPreprocess" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
         <option value="auto" selected>auto</option>
+        <option value="high-fidelity">high-fidelity</option>
         <option value="boltz">boltz</option>
         <option value="native">native</option>
         <option value="off">off</option>
@@ -282,6 +287,12 @@ ___</pre>
       <label><input type="checkbox" id="predictFullPae" /> Full PAE (<code>--write-full-pae</code>)</label>
     </div>
     <div class="row">
+      <span class="tag">recycling</span>
+      <input type="text" id="predictRecyclingSteps" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+      <span class="tag">step_scale</span>
+      <input type="text" id="predictStepScale" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
+    </div>
+    <div class="row">
       <span class="tag">diffusion_samples</span>
       <input type="text" id="predictDiffusionSamples" placeholder="optional" class="path-wide" style="max-width:8rem" autocomplete="off" />
       <span class="tag">sampling_steps</span>
@@ -318,6 +329,7 @@ ___</pre>
     const uploadBar = $("uploadBar");
     const predictLog = $("predictLog");
     const predictBar = $("predictBar");
+    let lastRunpodStatus = null;
 
     function updatePredictButton() {
       const ok = $("yamlFile").files.length > 0 || $("jobDir").value.trim().length > 0;
@@ -331,6 +343,9 @@ ___</pre>
       if (m === "boltz" || m === "auto") {
         el.style.display = "block";
         el.innerHTML = "<strong>Boltz CLI:</strong> the server tries <code>boltz</code> on <code>PATH</code>, then common install paths (venv next to the repo, conda, pip user, etc.). If still missing, set env <code>BOLTR_BOLTZ_COMMAND</code> or paste the path here. Not the Rust <code>boltr</code> binary.";
+      } else if (m === "high-fidelity") {
+        el.style.display = "block";
+        el.innerHTML = "<strong>High-Fidelity Preprocess:</strong> always runs upstream Boltz and avoids native placeholder geometry. Recommended for quality runs, ligands, templates, constraints, and affinity.";
       } else if (m === "native") {
         el.style.display = "block";
         el.innerHTML = "<strong>Native:</strong> only for protein-only YAML with empty or absent <code>templates:</code>/<code>constraints:</code>. Complexes with real templates/constraints need <code>boltz</code> + Bolt command above.";
@@ -345,9 +360,26 @@ ___</pre>
       if (!el) return;
       if ($("predictTarget").value === "runpod") {
         el.innerHTML = "<strong>RunPod:</strong> uploads the YAML/job folder to the configured pod, runs <code>boltr predict --device cuda</code> remotely, streams SSH logs here, then downloads the output folder back into this job.";
+        $("predictQualityPreset").checked = true;
       } else {
         el.innerHTML = "<strong>Local:</strong> runs <code>boltr predict</code> on this machine with the selected compute mode.";
       }
+      updateQualityHint();
+    }
+
+    function updateQualityHint() {
+      const el = $("predictQualityHint");
+      if (!el) return;
+      if (!$("predictQualityPreset").checked) {
+        el.textContent = "";
+        return;
+      }
+      let msg = "Quality preset fills omitted values with Boltz-like inference settings and promotes Auto preprocess to High-Fidelity Preprocess.";
+      const free = lastRunpodStatus && lastRunpodStatus.gpus && lastRunpodStatus.gpus[0] ? lastRunpodStatus.gpus[0].memory_free_mb : null;
+      if ($("predictTarget").value === "runpod" && free != null && free < 16000) {
+        msg += " Warning: remote free VRAM is below 16 GB; consider lowering diffusion_samples or keeping max_parallel=1.";
+      }
+      el.textContent = msg;
     }
 
     function esc(s) {
@@ -412,6 +444,7 @@ ___</pre>
     }
 
     function renderRunpodStatus(data) {
+      lastRunpodStatus = data;
       const pill = $("runpodPill");
       if (!data.configured) {
         pill.textContent = "RunPod not configured";
@@ -438,6 +471,7 @@ ___</pre>
       const warnings = (data.warnings || []).map((w) => `<p class="notes">${esc(w)}</p>`).join("");
       const err = data.error ? `<pre>${esc(data.error)}</pre>` : "";
       runpodMount.innerHTML = bits.join("") + gpus + warnings + err;
+      updateQualityHint();
     }
 
     function renderValidate(data) {
@@ -505,6 +539,7 @@ ___</pre>
     $("jobDir").addEventListener("input", updatePredictButton);
     $("predictPreprocess").addEventListener("change", updatePreprocessHint);
     $("predictTarget").addEventListener("change", updatePredictTargetHint);
+    $("predictQualityPreset").addEventListener("change", updateQualityHint);
 
     $("btnValidate").onclick = () => {
       const f = $("yamlFile").files[0];
@@ -557,6 +592,7 @@ ___</pre>
       if (c) fd.append("cache_dir", c);
       if (jd) fd.append("job_dir", jd);
       fd.append("predict_target", $("predictTarget").value);
+      if ($("predictQualityPreset").checked) fd.append("quality_preset", "1");
       fd.append("compute", $("predictCompute").value);
       fd.append("preprocess", $("predictPreprocess").value);
       const boltCmd = $("predictBoltCommand").value.trim();
@@ -572,6 +608,10 @@ ___</pre>
       if ($("predictOverride").checked) fd.append("override", "1");
       if ($("predictSpikeOnly").checked) fd.append("spike_only", "1");
       if ($("predictFullPae").checked) fd.append("write_full_pae", "1");
+      const rs = $("predictRecyclingSteps").value.trim();
+      if (rs) fd.append("recycling_steps", rs);
+      const stepScale = $("predictStepScale").value.trim();
+      if (stepScale) fd.append("step_scale", stepScale);
       const ds = $("predictDiffusionSamples").value.trim();
       if (ds) fd.append("diffusion_samples", ds);
       const ss = $("predictSamplingSteps").value.trim();
@@ -663,6 +703,7 @@ ___</pre>
     updatePredictButton();
     updatePreprocessHint();
     updatePredictTargetHint();
+    updateQualityHint();
     fetchStatus().catch((e) => { statusMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
     fetchRunpodStatus().catch((e) => { runpodMount.innerHTML = `<pre>${esc(e.message)}</pre>`; });
   </script>

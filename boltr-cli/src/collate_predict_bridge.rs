@@ -306,6 +306,11 @@ pub fn predict_step_from_collate(
     let msa = owned.msa_feats();
     let contact = owned.contact_feats();
     let feats = owned.predict_step_feats(Some(&atom_encoder_batch));
+    if model.affinity_mw_correction() && feats.affinity_mw.is_none() {
+        bail!(
+            "affinity_mw_correction is enabled, but affinity_mw is missing from collated features"
+        );
+    }
 
     let type_bonds = if model.bond_type_feature() {
         owned.type_bonds.as_ref()

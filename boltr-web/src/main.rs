@@ -491,6 +491,31 @@ async fn post_predict(
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
+    let quality_preset = field_map
+        .get("quality_preset")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("on"))
+        .unwrap_or(predict_target == "runpod");
+    if quality_preset {
+        if opts.recycling_steps.is_none() {
+            opts.recycling_steps = Some(3);
+        }
+        if opts.sampling_steps.is_none() {
+            opts.sampling_steps = Some(200);
+        }
+        if opts.diffusion_samples.is_none() {
+            opts.diffusion_samples = Some(2);
+        }
+        if opts.max_parallel_samples.is_none() {
+            opts.max_parallel_samples = Some(1);
+        }
+        if opts.step_scale.is_none() {
+            opts.step_scale = Some(1.638);
+        }
+        if opts.preprocess == crate::predict_job::PreprocessMode::Auto {
+            opts.preprocess = crate::predict_job::PreprocessMode::HighFidelity;
+        }
+    }
+
     if predict_target == "local" {
         if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
             let _ = tokio::fs::remove_dir_all(&base).await;
@@ -500,18 +525,6 @@ async fn post_predict(
 
     if predict_target == "runpod" && opts.device == "cpu" {
         opts.device = "cuda".to_string();
-    }
-
-    if predict_target == "runpod" && opts.max_parallel_samples.is_none() {
-        opts.max_parallel_samples = Some(1);
-    }
-
-    if predict_target == "runpod" && opts.diffusion_samples.is_none() {
-        opts.diffusion_samples = Some(2);
-    }
-
-    if predict_target == "runpod" && opts.sampling_steps.is_none() {
-        opts.sampling_steps = Some(200);
     }
 
     if predict_target == "runpod" && opts.affinity && opts.diffusion_samples_affinity.is_none() {

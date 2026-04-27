@@ -15,7 +15,6 @@ pub const INFERENCE_COLLATE_EXCLUDED_KEYS: &[&str] = &[
     "amino_acids_symmetries",
     "ligand_symmetries",
     "record",
-    "affinity_mw",
 ];
 
 use std::collections::HashMap;

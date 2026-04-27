@@ -79,6 +79,8 @@ enum PreprocessCli {
     Auto,
     /// Run upstream `boltz predict` in a staging dir and copy `manifest.json` + `.npz` next to the YAML.
     Boltz,
+    /// Quality-focused mode: force upstream Boltz preprocess and never use native placeholder geometry.
+    HighFidelity,
     /// Rust-only protein-only bundle (placeholder coordinates); see `docs/PREPROCESS_NATIVE.md`.
     Native,
 }
@@ -846,8 +848,14 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
                     fetched.as_deref(),
                 )?;
             }
-            PreprocessCli::Boltz => {
-                tracing::info!("--preprocess boltz: running upstream Boltz");
+            PreprocessCli::Boltz | PreprocessCli::HighFidelity => {
+                if preprocess == PreprocessCli::HighFidelity {
+                    tracing::info!(
+                        "--preprocess high-fidelity: running upstream Boltz; native placeholder preprocess is disabled"
+                    );
+                } else {
+                    tracing::info!("--preprocess boltz: running upstream Boltz");
+                }
                 preprocess_ran_boltz = true;
                 preprocess_cmd::run_boltz_preprocess(
                     input_path,

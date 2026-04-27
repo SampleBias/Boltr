@@ -33,6 +33,19 @@ impl Default for Boltz2PredictArgs {
     }
 }
 
+impl Boltz2PredictArgs {
+    /// Quality-oriented inference values matching common Boltz prediction settings.
+    #[must_use]
+    pub fn quality_preset() -> Self {
+        Self {
+            recycling_steps: 3,
+            sampling_steps: Some(200),
+            diffusion_samples: 2,
+            max_parallel_samples: Some(1),
+        }
+    }
+}
+
 /// CLI-only overrides (unset = do not override the merged checkpoint/YAML value).
 #[derive(Debug, Clone, Copy, Default, Serialize)]
 pub struct PredictArgsCliOverrides {
@@ -128,6 +141,15 @@ mod tests {
         assert_eq!(p.sampling_steps, Some(200));
         assert_eq!(p.diffusion_samples, 2);
         assert_eq!(p.max_parallel_samples, Some(4));
+    }
+
+    #[test]
+    fn quality_preset_uses_boltz_like_values() {
+        let p = Boltz2PredictArgs::quality_preset();
+        assert_eq!(p.recycling_steps, 3);
+        assert_eq!(p.sampling_steps, Some(200));
+        assert_eq!(p.diffusion_samples, 2);
+        assert_eq!(p.max_parallel_samples, Some(1));
     }
 
     #[test]

@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use boltr_backend_tch::{
     resolve_predict_args, AffinityModuleConfig, AtomDiffusionConfig, Boltz2DiffusionArgs,
-    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, PredictArgsCliOverrides, RelPosFeatures,
-    SteeringParams,
+    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, ConfidenceModuleConfig, PredictArgsCliOverrides,
+    RelPosFeatures, SteeringParams,
 };
 use boltr_io::config::BoltzInput;
 use boltr_io::{
@@ -35,7 +35,10 @@ use crate::OutputFormat;
 /// Boltz uses `[batch_or_multiplicity, N_atoms, 3]`. Some layouts may appear as `[N, 3]` or wrongly
 /// transposed `[3, N]` (xyz major). Mis-reading `[3, N]` as `[N, 3]` assigns nonsense coordinates
 /// (often degenerate / line-like in the viewer).
-fn diffusion_sample_coords_to_xyz_vec(coord_tensor: &Tensor) -> Result<Vec<[f32; 3]>> {
+fn diffusion_sample_coords_to_xyz_vec(
+    coord_tensor: &Tensor,
+    sample_idx: i64,
+) -> Result<Vec<[f32; 3]>> {
     let mut t = coord_tensor.shallow_clone();
     if t.dim() == 3 {
         let sz = t.size();
@@ -46,7 +49,13 @@ fn diffusion_sample_coords_to_xyz_vec(coord_tensor: &Tensor) -> Result<Vec<[f32;
             );
         }
         if sz[0] > 1 {
-            t = t.narrow(0, 0, 1);
+            if sample_idx < 0 || sample_idx >= sz[0] {
+                bail!(
+                    "sample_atom_coords: sample index {sample_idx} outside batch/multiplicity {}",
+                    sz[0]
+                );
+            }
+            t = t.narrow(0, sample_idx, 1);
         }
         t = t.squeeze_dim(0);
     }
@@ -85,6 +94,100 @@ fn diffusion_sample_coords_to_xyz_vec(coord_tensor: &Tensor) -> Result<Vec<[f32;
     Ok(v)
 }
 
+#[derive(Debug, Clone)]
+struct SampleRanking {
+    selected_sample: i64,
+    ranking_metric: String,
+    ranking_score: Option<f64>,
+    confidence_available: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PredictBridgeSuccess {
+    record_id: String,
+    ranking: SampleRanking,
+}
+
+fn tensor_scalar_at(t: &Tensor, idx: i64) -> Option<f64> {
+    let t = t
+        .to_kind(Kind::Float)
+        .to_device(tch::Device::Cpu)
+        .reshape(&[-1]);
+    let n = t.size().first().copied().unwrap_or(0);
+    if idx < 0 || idx >= n {
+        return None;
+    }
+    Some(t.double_value(&[idx]))
+}
+
+fn select_best_sample(
+    out: &boltr_backend_tch::PredictStepOutput,
+    confidence_ranking_enabled: bool,
+) -> SampleRanking {
+    let sample_count = out
+        .diffusion
+        .sample_atom_coords
+        .size()
+        .first()
+        .copied()
+        .unwrap_or(1)
+        .max(1);
+    let Some(conf) = out
+        .confidence
+        .as_ref()
+        .filter(|_| confidence_ranking_enabled)
+    else {
+        return SampleRanking {
+            selected_sample: 0,
+            ranking_metric: "sample0_no_confidence".to_string(),
+            ranking_score: None,
+            confidence_available: false,
+        };
+    };
+    let scores = if conf.iptm.numel() as i64 >= sample_count {
+        Some((
+            "iptm",
+            conf.iptm
+                .to_kind(Kind::Float)
+                .to_device(tch::Device::Cpu)
+                .reshape(&[-1]),
+        ))
+    } else if conf.complex_plddt.numel() as i64 >= sample_count {
+        Some((
+            "complex_plddt",
+            conf.complex_plddt
+                .to_kind(Kind::Float)
+                .to_device(tch::Device::Cpu)
+                .reshape(&[-1]),
+        ))
+    } else {
+        None
+    };
+    let Some((metric, scores)) = scores else {
+        return SampleRanking {
+            selected_sample: 0,
+            ranking_metric: "sample0_confidence_unrankable".to_string(),
+            ranking_score: None,
+            confidence_available: true,
+        };
+    };
+    let mut best_idx = 0_i64;
+    let mut best_score = f64::NEG_INFINITY;
+    for i in 0..sample_count {
+        let score = scores.double_value(&[i]);
+        if score.is_finite() && score > best_score {
+            best_idx = i;
+            best_score = score;
+        }
+    }
+    SampleRanking {
+        selected_sample: best_idx,
+        ranking_metric: metric.to_string(),
+        ranking_score: Some(best_score),
+        confidence_available: true,
+    }
+}
+
 fn is_likely_cuda_oom(err_msg: &str) -> bool {
     let l = err_msg.to_lowercase();
     l.contains("out of memory")
@@ -106,7 +209,8 @@ fn try_predict_from_preprocess(
     preprocess_auto_extras: bool,
     ensemble_mode: InferenceEnsembleMode,
     device_requested: Option<&str>,
-) -> Result<Option<String>> {
+    confidence_ranking_enabled: bool,
+) -> Result<Option<PredictBridgeSuccess>> {
     let preprocess_dir = match canonical_yaml_parent(input_path) {
         Ok(p) => p,
         Err(e) => {
@@ -124,6 +228,17 @@ fn try_predict_from_preprocess(
         .records
         .first()
         .context("manifest.json has no records")?;
+    if record
+        .templates
+        .as_ref()
+        .map(|templates| !templates.is_empty())
+        .unwrap_or(false)
+    {
+        tracing::warn!(
+            record_id = %record.id,
+            "preprocess bridge: manifest contains templates, but template bias is not wired into the current Rust predict_step path"
+        );
+    }
 
     // `--affinity` normally uses `pre_affinity_{id}.npz` for affinity-specific tensors, but the
     // structure diffusion bridge always reads the flat `{id}.npz` (same as `load_input(..., false)`).
@@ -214,9 +329,13 @@ fn try_predict_from_preprocess(
         }
     };
 
+    let ranking = select_best_sample(&out, confidence_ranking_enabled);
     let raw_shape = out.diffusion.sample_atom_coords.size();
-    let xyz = diffusion_sample_coords_to_xyz_vec(&out.diffusion.sample_atom_coords)
-        .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
+    let xyz = diffusion_sample_coords_to_xyz_vec(
+        &out.diffusion.sample_atom_coords,
+        ranking.selected_sample,
+    )
+    .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
     let n_from_model = xyz.len();
     let n_featurized = featurized_atom_token_sum(&inference_input);
     let n_atoms_struct = inference_input.structure.atoms.len();
@@ -261,19 +380,8 @@ fn try_predict_from_preprocess(
         &inference_input.structure,
     )?;
     if let Some(ref aff) = out.affinity {
-        let pred = aff
-            .affinity_pred_value
-            .to_kind(Kind::Float)
-            .to_device(tch::Device::Cpu)
-            .reshape(&[-1])
-            .double_value(&[0]);
-        let prob = aff
-            .affinity_logits_binary
-            .sigmoid()
-            .to_kind(Kind::Float)
-            .to_device(tch::Device::Cpu)
-            .reshape(&[-1])
-            .double_value(&[0]);
+        let pred = tensor_scalar_at(&aff.affinity_pred_value, 0).unwrap_or(f64::NAN);
+        let prob = tensor_scalar_at(&aff.affinity_logits_binary.sigmoid(), 0).unwrap_or(f64::NAN);
         let summary = AffinitySummary::single(pred, prob);
         boltr_io::write_affinity_json(out_dir, &record_id, &summary)
             .context("write affinity JSON")?;
@@ -282,10 +390,12 @@ fn try_predict_from_preprocess(
 
     tracing::info!(
         record_id = %record_id,
+        selected_sample = ranking.selected_sample,
+        ranking_metric = %ranking.ranking_metric,
         "wrote predicted structure (preprocess dir + predict_step)"
     );
 
-    Ok(Some(record_id))
+    Ok(Some(PredictBridgeSuccess { record_id, ranking }))
 }
 
 /// Write mmCIF/PDB from preprocess `StructureV2` only (reference/input geometry, no diffusion).
@@ -832,7 +942,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         affinity,
         use_potentials,
         overrides,
-        step_scale: _,
+        step_scale,
         output_format,
         max_msa_seqs: _,
         num_samples: _,
@@ -909,7 +1019,8 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
 
     let device = boltr_backend_tch::parse_device_spec(&device)?;
     let diff_args = Boltz2DiffusionArgs::from_boltz2_hparams(&hparams);
-    let diff_config = AtomDiffusionConfig::from_boltz2_hparams(&hparams);
+    let mut diff_config = AtomDiffusionConfig::from_boltz2_hparams(&hparams);
+    diff_config.step_scale = step_scale;
     tracing::info!(
         token_s,
         token_z,
@@ -931,6 +1042,13 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     };
     let affinity_mw_correction_enabled = affinity && affinity_mw_correction
         || (affinity && hparams.affinity_mw_correction.unwrap_or(false));
+    let confidence_config = if hparams.confidence_prediction == Some(true) {
+        let mut cfg = ConfidenceModuleConfig::default();
+        cfg.pairformer_num_blocks = num_blocks;
+        Some(cfg)
+    } else {
+        None
+    };
 
     let mut model = Boltz2Model::with_all_options(
         device,
@@ -940,15 +1058,21 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         hparams.resolved_bond_type_feature(),
         diff_args,
         diff_config,
-        None,
+        confidence_config,
         affinity_config,
         affinity_mw_correction_enabled,
     )
     .context("Boltz2Model::with_all_options")?;
 
     // 5. Load weights
+    let mut confidence_ranking_enabled = model.confidence_module().is_some();
     match model.load_partial_from_safetensors(&conf_path) {
         Ok(missing) => {
+            if missing.iter().any(|k| k.starts_with("confidence_module.")) {
+                bail!(
+                    "confidence_prediction is enabled, but the checkpoint is missing confidence_module weights"
+                );
+            }
             tracing::info!(
                 model_params = model.var_store().len(),
                 missing_keys = missing.len(),
@@ -963,6 +1087,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
             }
         }
         Err(e) => {
+            confidence_ranking_enabled = false;
             tracing::warn!(error = %e, "partial load failed; trying s_init only");
             if let Err(e2) = model.load_s_init_from_safetensors(&conf_path) {
                 tracing::warn!(error = %e2, "s_init load also failed");
@@ -972,6 +1097,11 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     if let Some(ref path) = aff_path {
         match model.load_partial_from_safetensors(path) {
             Ok(missing) => {
+                if missing.iter().any(|k| k.starts_with("affinity_module.")) {
+                    bail!(
+                        "affinity checkpoint is missing affinity_module weights; refusing partial default-initialized affinity prediction"
+                    );
+                }
                 tracing::info!(
                     model_params = model.var_store().len(),
                     missing_keys = missing.len(),
@@ -1010,20 +1140,25 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         preprocess_auto_extras,
         ensemble_mode,
         device_requested.as_deref(),
+        confidence_ranking_enabled,
     );
 
     match &predict_result {
-        Ok(Some(rid)) => {
-            let record_dir = out_dir.join(rid.as_str());
+        Ok(Some(success)) => {
+            let record_dir = out_dir.join(success.record_id.as_str());
             let marker = record_dir.join("boltr_predict_complete.txt");
             let predict_args = resolved.as_ref().ok();
             let info = serde_json::json!({
-                "record_id": rid,
+                "record_id": &success.record_id,
                 "status": "predict_step_complete",
                 "affinity": affinity,
                 "use_potentials": use_potentials,
                 "predict_args": predict_args,
                 "output_format": output_format.to_string(),
+                "selected_sample": success.ranking.selected_sample,
+                "ranking_metric": &success.ranking.ranking_metric,
+                "ranking_score": success.ranking.ranking_score,
+                "confidence_available": success.ranking.confidence_available,
                 "note": "Structure written from preprocess dir (manifest + npz) + collate + predict_step."
             });
             let j = serde_json::to_string_pretty(&info)?;
