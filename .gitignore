@@ -39,6 +39,8 @@ weights/
 
 # Data and outputs
 data/
+!boltr-io/data/
+!boltr-io/data/ambiguous_atoms.json
 output/
 results/
 *.pdb

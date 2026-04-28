@@ -15,6 +15,9 @@ if ! "$VENV_BIN/python" -c 'import sys; v=sys.version_info; raise SystemExit(0 i
   echo "Recreate: bash scripts/bootstrap_dev_venv.sh --force   (Arch: yay -S python312 or pyenv 3.12 — see DEVELOPMENT.md)" >&2
   exit 1
 fi
+if ! command -v cargo >/dev/null 2>&1 && [[ -x "$HOME/.cargo/bin/cargo" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
 export PATH="$VENV_BIN:$PATH"
 export LIBTORCH_USE_PYTORCH=1
 # tch 0.16 expects LibTorch ~2.3; newer pip `torch` (e.g. 2.11) triggers a build-script check unless bypassed.

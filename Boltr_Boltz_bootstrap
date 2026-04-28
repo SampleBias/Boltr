@@ -21,6 +21,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
+if ! command -v cargo >/dev/null 2>&1 && [ -x "$HOME/.cargo/bin/cargo" ]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+
 CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
 export BOLTZ_CACHE="$CACHE"
 mkdir -p "$CACHE"
