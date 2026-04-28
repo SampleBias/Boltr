@@ -42,8 +42,10 @@ pub fn probe_cuda_runtime() -> Result<()> {
     if !tch::Cuda::is_available() {
         anyhow::bail!("LibTorch reports no visible CUDA device");
     }
-    let t = Tensor::ones(&[1], (Kind::Float, Device::Cuda(0)));
-    let cpu = t.to_device(Device::Cpu);
-    let _ = cpu.double_value(&[0]);
+    let t = Tensor::f_ones(&[1], (Kind::Float, Device::Cuda(0))).context("create CUDA tensor")?;
+    let cpu = t
+        .f_to_device(Device::Cpu)
+        .context("copy CUDA tensor to CPU")?;
+    let _ = cpu.f_double_value(&[0]).context("read CUDA tensor value")?;
     Ok(())
 }
