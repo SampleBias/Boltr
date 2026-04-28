@@ -26,7 +26,7 @@ The **RunPod GPU** target supports two modes:
 
 ## Preprocess and upstream Boltz
 
-For **`--preprocess boltz`** / **`auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv/bin/boltz`, and walking parents for `.venv/bin/boltz`). If found, it sets **`--bolt-command`** automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** on the server or use the Web UI **Bolt command** field.
+For **`--preprocess boltz`** / **`auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`$BOLTR_BOLTZ_VENV/bin/boltz`, `/workspace/boltr-envs/boltz-gpu/bin/boltz`, `~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv-boltz/bin/boltz` / `.venv/bin/boltz`, and walking parents for repo venvs). If found, it sets **`--bolt-command`** automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** on the server or use the Web UI **Bolt command** field.
 
 The status panel checks this at startup/page load and shows the resolved upstream **Boltz CLI** path, or a missing dependency warning before you submit a prediction. To install it into the repo venv:
 
@@ -36,6 +36,15 @@ pip install boltz
 # optional for future bootstrap runs:
 BOLTR_INSTALL_BOLTZ=1 bash scripts/bootstrap_dev_venv.sh
 ```
+
+On RunPod/Blackwell GPUs, prefer a separate upstream-Boltz env with a newer CUDA PyTorch:
+
+```bash
+bash scripts/bootstrap_boltz_gpu_venv.sh
+export BOLTR_BOLTZ_COMMAND=/workspace/boltr-envs/boltz-gpu/bin/boltz
+```
+
+Boltr passes upstream Boltz’s `--no_kernels` flag by default. This keeps predictions off the optional cuEquivariance import path that raises `ModuleNotFoundError: cuequivariance_torch` when those wheels are absent or incompatible. Set `BOLTR_BOLTZ_USE_KERNELS=1` only after installing compatible cuEquivariance wheels for the selected PyTorch/CUDA stack.
 
 **Model bootstrap ≠ Boltz CLI:** [`bootstrap_webui_env.sh`](../scripts/bootstrap_webui_env.sh) and **`Boltr_Boltz_bootstrap`** download **weights** into `BOLTZ_CACHE`; they do **not** install the **`boltz`** PyPI package. Install **`boltz`** separately if you rely on **`boltz`** preprocess.
 

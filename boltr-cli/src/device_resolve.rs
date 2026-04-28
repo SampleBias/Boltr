@@ -12,7 +12,7 @@ use crate::preprocess_cmd;
 #[cfg(feature = "tch")]
 use anyhow::Context;
 #[cfg(feature = "tch")]
-use boltr_backend_tch::device::{cuda_is_available, parse_device_spec};
+use boltr_backend_tch::device::{cuda_is_available, parse_device_spec, probe_cuda_runtime};
 
 /// Resolve `auto` / `gpu` and validate explicit `cuda` / `cuda:N`. Returns `(resolved, requested_for_summary)`.
 pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
@@ -24,7 +24,10 @@ pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
 
     if lower == "auto" {
         #[cfg(feature = "tch")]
-        let resolved = if cuda_is_available() && crate::gpu_mem::auto_vram_allows_cuda() {
+        let resolved = if cuda_is_available()
+            && crate::gpu_mem::auto_vram_allows_cuda()
+            && probe_cuda_runtime().is_ok()
+        {
             "cuda".to_string()
         } else {
             "cpu".to_string()
@@ -42,6 +45,8 @@ pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
                     "CUDA requested (--device gpu) but no GPU is available; use --device cpu or --device auto"
                 );
             }
+            probe_cuda_runtime()
+                .context("CUDA requested (--device gpu) but LibTorch CUDA kernel smoke failed")?;
             return Ok(("cuda".to_string(), Some("gpu".to_string())));
         }
         #[cfg(not(feature = "tch"))]
@@ -56,6 +61,7 @@ pub fn resolve_predict_device(raw: &str) -> Result<(String, Option<String>)> {
         #[cfg(feature = "tch")]
         {
             parse_device_spec(t).context("invalid GPU device for LibTorch")?;
+            probe_cuda_runtime().context("CUDA requested but LibTorch CUDA kernel smoke failed")?;
         }
     }
 

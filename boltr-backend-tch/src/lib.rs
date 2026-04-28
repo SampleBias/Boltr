@@ -62,7 +62,7 @@ pub use checkpoint::{
     var_store_keys_missing_in_safetensors,
 };
 #[cfg(feature = "tch-backend")]
-pub use device::{cuda_is_available, parse_device_spec};
+pub use device::{cuda_is_available, parse_device_spec, probe_cuda_runtime};
 #[cfg(feature = "tch-backend")]
 pub use model::BoltzModel;
 

@@ -125,6 +125,16 @@ fn shutil_which_boltz_with_venv_bin(py: &Path) -> Option<PathBuf> {
 
 /// Search common install locations when `boltz` is not on `PATH` (repo `.venv`, pip user, conda, etc.).
 fn discover_boltz_executable() -> Option<PathBuf> {
+    if let Ok(raw) = std::env::var("BOLTR_BOLTZ_VENV") {
+        let p = Path::new(raw.trim()).join("bin/boltz");
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let workspace_gpu = PathBuf::from("/workspace/boltr-envs/boltz-gpu/bin/boltz");
+    if workspace_gpu.is_file() {
+        return Some(workspace_gpu);
+    }
     if let Some(h) = dirs::home_dir() {
         let p = h.join(".local/bin/boltz");
         if p.is_file() {

@@ -108,6 +108,8 @@ Everything below is spelled out in [`DEVELOPMENT.md`](DEVELOPMENT.md) and [`QUIC
 | **`BOLTR`** | Absolute path to the **`boltr`** binary for **`boltr-web`** status (`boltr doctor --json`) and tooling. |
 | **`BOLTR_REPO`** | Optional; helps tools find **`.venv/bin/python`** when probing from **`boltr-web`**. |
 | **`BOLTR_BOLTZ_COMMAND`** | Full path to upstream Python **`boltz`** for **`boltr predict --preprocess boltz`** / **`auto`** when `boltz` is not on `PATH` (also settable in **boltr-web** “Bolt command”). |
+| **`BOLTR_BOLTZ_VENV`** | Optional venv root for upstream Boltz. The Web UI probes `$BOLTR_BOLTZ_VENV/bin/boltz`, then `/workspace/boltr-envs/boltz-gpu/bin/boltz`, before repo-local venvs. |
+| **`BOLTR_BOLTZ_USE_KERNELS`** | Set to `1` only when the selected upstream Boltz env has compatible `cuequivariance` wheels. By default Boltr passes `--no_kernels` to avoid `cuequivariance_torch` import/runtime failures. |
 | **`BOLTR_DEVICE`** | Overrides CLI **`--device`** if set. |
 | **`LIBTORCH`** | Root of unpacked standalone LibTorch (Path A). |
 | **`LIBTORCH_USE_PYTORCH`** | Set to **`1`** when linking against PyTorch’s LibTorch (Path B). |
@@ -186,7 +188,9 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 | **`--preprocess boltz`** | Runs upstream **`boltz predict`** into a staging dir, then copies the bundle next to your YAML. Requires the **`boltz`** executable (`pip install boltz` or conda; use **`--bolt-command`** if it is not on `PATH`). |
 | **`--preprocess auto`** | Tries **native** when eligible, otherwise **`boltz`** if runnable. |
 
-**Important:** [`Boltr_Boltz_bootstrap`](./Boltr_Boltz_bootstrap) / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build **`boltr`** — they do **not** install the Python **`boltz`** CLI by default. For **`--preprocess boltz`** / **`auto`** fallback to Boltz, install **`boltz`** in a venv and ensure **`boltz`** is on `PATH`, or pass **`--bolt-command`** with the full path to the `boltz` executable. The Web UI status panel checks this dependency up front; set `BOLTR_INSTALL_BOLTZ=1` when running `scripts/bootstrap_dev_venv.sh` if you want the repo venv to include the upstream CLI.
+**Important:** [`Boltr_Boltz_bootstrap`](./Boltr_Boltz_bootstrap) / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build **`boltr`** — they do **not** install the Python **`boltz`** CLI by default. For **`--preprocess boltz`** / **`auto`** fallback to Boltz, install **`boltz`** in a venv and ensure **`boltz`** is on `PATH`, or pass **`--bolt-command`** with the full path to the `boltz` executable. The Web UI status panel checks this dependency up front. On RunPod/Blackwell GPUs, prefer `scripts/bootstrap_boltz_gpu_venv.sh`; it keeps upstream Boltz in a separate CUDA-compatible env so the repo `.venv` can remain pinned for `tch`. Set `BOLTR_INSTALL_BOLTZ=1` when running `scripts/bootstrap_dev_venv.sh` only if you want the repo venv to include the upstream CLI for CPU or compatible-GPU use.
+
+By default Boltr adds upstream Boltz’s `--no_kernels` flag. This avoids `ModuleNotFoundError: cuequivariance_torch` and kernel-image mismatches. If you intentionally install compatible cuEquivariance wheels, set `BOLTR_BOLTZ_USE_KERNELS=1` or pass explicit upstream Boltz args.
 
 Upstream Boltz writes preprocess artifacts under a **`boltz_results_<yaml_stem>/`** directory; Boltr discovers **`manifest.json`** under `processed/` and copies structure/MSA npz from **`structures/`**, **`msa/`**, etc., into the flat layout next to your YAML.
 

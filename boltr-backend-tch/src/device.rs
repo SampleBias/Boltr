@@ -1,7 +1,7 @@
 //! Resolve compute device strings to LibTorch devices (CUDA when available).
 
 use anyhow::{Context, Result};
-use tch::Device;
+use tch::{Device, Kind, Tensor};
 
 /// Parse CLI/device spec: `cpu`, `cuda`, or `cuda:N` (e.g. `cuda:1`).
 pub fn parse_device_spec(spec: &str) -> Result<Device> {
@@ -35,4 +35,15 @@ fn cuda_device(index: usize) -> Result<Device> {
 /// True if LibTorch reports at least one CUDA device.
 pub fn cuda_is_available() -> bool {
     tch::Cuda::is_available()
+}
+
+/// Verify that CUDA kernels can actually execute, not only that a GPU is visible.
+pub fn probe_cuda_runtime() -> Result<()> {
+    if !tch::Cuda::is_available() {
+        anyhow::bail!("LibTorch reports no visible CUDA device");
+    }
+    let t = Tensor::ones(&[1], (Kind::Float, Device::Cuda(0)));
+    let cpu = t.to_device(Device::Cpu);
+    let _ = cpu.double_value(&[0]);
+    Ok(())
 }
