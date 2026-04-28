@@ -1,0 +1,13 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+  - protein:
+      id: B
+      sequence: "YWVTSRQPNMLKIHGFEDCA"
+constraints:
+  - contact:
+      token1: [A, 5]
+      token2: [B, 10]
+      max_distance: 10.0
+      force: false

@@ -1,0 +1,16 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+  - protein:
+      id: B
+      sequence: "YWVTSRQPNMLKIHGFEDCA"
+  - dna:
+      id: C
+      sequence: "ATCGATCG"
+  - rna:
+      id: D
+      sequence: "AUCGAUCG"
+  - ligand:
+      id: E
+      ccd: HEM

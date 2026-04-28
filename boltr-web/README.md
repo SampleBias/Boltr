@@ -17,9 +17,25 @@ scripts/with_dev_venv.sh ./target/release/boltr-web
 
 Set **`BOLTR=/path/to/target/release/boltr`** so status checks and predict use the **same** `boltr` binary (required for **`boltr doctor --json`** probes and consistent behavior). The bootstrap script [`Boltr_Boltz_bootstrap`](../Boltr_Boltz_bootstrap) / `./Boltr_go` prints a suggested `export BOLTR=...` line when it finishes.
 
+## RunPod GPU Target
+
+The **RunPod GPU** target supports two modes:
+
+- **Launched on the pod:** if `boltr-web` is started inside your SSH RunPod session and `nvidia-smi` sees a GPU, the RunPod status auto-connects to the local CUDA device. No `BOLTR_RUNPOD_HOST` is needed.
+- **Launched elsewhere:** set `BOLTR_RUNPOD_HOST` so the web server can SSH to the pod. Optional variables are `BOLTR_RUNPOD_USER`, `BOLTR_RUNPOD_PORT`, `BOLTR_RUNPOD_KEY`, `BOLTR_RUNPOD_WORKDIR`, `BOLTR_RUNPOD_BOLTR`, and `BOLTR_RUNPOD_CACHE`.
+
 ## Preprocess and upstream Boltz
 
 For **`--preprocess boltz`** / **`auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv/bin/boltz`, and walking parents for `.venv/bin/boltz`). If found, it sets **`--bolt-command`** automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** on the server or use the Web UI **Bolt command** field.
+
+The status panel checks this at startup/page load and shows the resolved upstream **Boltz CLI** path, or a missing dependency warning before you submit a prediction. To install it into the repo venv:
+
+```bash
+source .venv/bin/activate
+pip install boltz
+# optional for future bootstrap runs:
+BOLTR_INSTALL_BOLTZ=1 bash scripts/bootstrap_dev_venv.sh
+```
 
 **Model bootstrap ≠ Boltz CLI:** [`bootstrap_webui_env.sh`](../scripts/bootstrap_webui_env.sh) and **`Boltr_Boltz_bootstrap`** download **weights** into `BOLTZ_CACHE`; they do **not** install the **`boltz`** PyPI package. Install **`boltz`** separately if you rely on **`boltz`** preprocess.
 

@@ -1,0 +1,10 @@
+sequences:
+  - protein:
+      id: [A, B]
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+templates:
+  - pdb: template.pdb
+    chain_id: [A, B]
+    template_id: [X, Y]
+    force: true
+    threshold: 5.0

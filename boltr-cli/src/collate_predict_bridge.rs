@@ -8,7 +8,7 @@ use boltr_backend_tch::{
     PredictStepFeats, PredictStepOutput, RelPosFeatures, SteeringParams,
 };
 use boltr_io::{FeatureBatch, FeatureTensor, InferenceCollateResult};
-use ndarray::ArrayD;
+use ndarray::{stack, ArrayD, Axis};
 use tch::{Device, Kind, Tensor};
 
 fn f32_to_tensor(a: &ArrayD<f32>, device: Device) -> Tensor {
@@ -57,6 +57,26 @@ fn take_msa_mask(batch: &FeatureBatch, device: Device) -> Result<Tensor> {
     bail!("missing msa_mask")
 }
 
+fn excluded_f32_to_tensor(
+    coll: &InferenceCollateResult,
+    key: &str,
+    device: Device,
+) -> Result<Option<Tensor>> {
+    let Some(values) = coll.excluded.get(key) else {
+        return Ok(None);
+    };
+    let mut arrays = Vec::with_capacity(values.len());
+    for value in values {
+        match value {
+            FeatureTensor::F32(a) => arrays.push(a.view()),
+            _ => bail!("excluded key {key}: expected f32"),
+        }
+    }
+    let stacked = stack(Axis(0), &arrays)
+        .with_context(|| format!("stack excluded key {key} along batch axis"))?;
+    Ok(Some(f32_to_tensor(&stacked, device)))
+}
+
 /// Owned tensors for [`InputEmbedderFeats`] / [`PredictStepFeats`] (single batch, `B>=1`).
 pub struct OwnedPredictTensors {
     ref_pos: Tensor,
@@ -101,7 +121,8 @@ pub struct OwnedPredictTensors {
 }
 
 impl OwnedPredictTensors {
-    pub fn from_collate_batch(batch: &FeatureBatch, device: Device) -> Result<Self> {
+    pub fn from_collate(coll: &InferenceCollateResult, device: Device) -> Result<Self> {
+        let batch = &coll.batch;
         let ref_pos = take_f32(batch, "ref_pos", device)?;
         let ref_charge = take_f32(batch, "ref_charge", device)?;
         let ref_element = take_f32(batch, "ref_element", device)?;
@@ -162,9 +183,11 @@ impl OwnedPredictTensors {
         let affinity_token_mask = batch
             .get_f32("affinity_token_mask")
             .map(|a| f32_to_tensor(a, device));
-        let affinity_mw = batch
-            .get_f32("affinity_mw")
-            .map(|a| f32_to_tensor(a, device));
+        let affinity_mw = excluded_f32_to_tensor(coll, "affinity_mw", device)?.or_else(|| {
+            batch
+                .get_f32("affinity_mw")
+                .map(|a| f32_to_tensor(a, device))
+        });
 
         Ok(Self {
             ref_pos,
@@ -292,7 +315,7 @@ pub fn predict_step_from_collate(
     use_potentials: bool,
 ) -> Result<PredictStepOutput> {
     let device = model.device();
-    let owned = OwnedPredictTensors::from_collate_batch(&coll.batch, device)?;
+    let owned = OwnedPredictTensors::from_collate(coll, device)?;
     let atom_encoder_batch = AtomEncoderBatchFeats {
         ref_atom_name_chars: Some(&owned.ref_atom_name_chars),
         atom_backbone_feat: owned.atom_backbone_feat.as_ref(),

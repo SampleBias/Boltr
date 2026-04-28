@@ -166,8 +166,8 @@ ___</pre>
     </div>
     <div id="statusMount"></div>
     <div class="help-box" style="margin-top:0.75rem;">
-      <p><strong>RunPod GPU</strong> — optional remote CUDA target over SSH. Configure the server with <code>BOLTR_RUNPOD_HOST</code>, optional <code>BOLTR_RUNPOD_USER</code>/<code>PORT</code>/<code>KEY</code>, plus <code>BOLTR_RUNPOD_WORKDIR</code>, <code>BOLTR_RUNPOD_BOLTR</code>, and <code>BOLTR_RUNPOD_CACHE</code>.</p>
-      <p class="notes">The browser never sends SSH credentials; it only asks this web server to probe or run the configured pod.</p>
+      <p><strong>RunPod GPU</strong> — optional CUDA target. If this web server is already running inside your SSH RunPod session, it auto-detects the local GPU. Otherwise configure SSH with <code>BOLTR_RUNPOD_HOST</code>, optional <code>BOLTR_RUNPOD_USER</code>/<code>PORT</code>/<code>KEY</code>, plus <code>BOLTR_RUNPOD_WORKDIR</code>, <code>BOLTR_RUNPOD_BOLTR</code>, and <code>BOLTR_RUNPOD_CACHE</code>.</p>
+      <p class="notes">The browser never sends SSH credentials; it only asks this web server to probe or run the configured pod, or the local CUDA GPU when launched on RunPod.</p>
       <div class="row">
         <button type="button" id="btnRunpodRefresh">Refresh RunPod</button>
         <span class="pill" id="runpodPill">RunPod …</span>
@@ -216,7 +216,7 @@ ___</pre>
       <label for="predictTarget">Target</label>
       <select id="predictTarget" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
         <option value="local" selected>Local machine</option>
-        <option value="runpod">RunPod GPU over SSH</option>
+        <option value="runpod">RunPod GPU (auto/local or SSH)</option>
       </select>
     </div>
     <p id="predictTargetHint" class="notes" style="max-width:42rem;"></p>
@@ -232,7 +232,7 @@ ___</pre>
         <option value="cpu">CPU</option>
       </select>
     </div>
-    <p class="notes" style="max-width:42rem;"><strong>Auto</strong> sets <code>--device auto</code>: LibTorch uses CUDA when available (unless free VRAM is below <code>BOLTR_AUTO_MIN_FREE_VRAM_MB</code>), otherwise CPU. With a <strong>single visible GPU</strong>, Boltz preprocess defaults to CPU so VRAM does not stack with LibTorch; use <code>--preprocess-auto-boltz-gpu</code> or <code>BOLTR_AUTO_BOLTZ_GPU=1</code> to run Boltz on GPU. <strong>GPU</strong> requires CUDA. For a specific card index, use the CLI <code>--device cuda:N</code> or set <code>BOLTR_DEVICE</code>.</p>
+    <p class="notes" style="max-width:42rem;"><strong>Auto</strong> sets <code>--device auto</code>: LibTorch uses CUDA when available (unless free VRAM is below <code>BOLTR_AUTO_MIN_FREE_VRAM_MB</code>), otherwise CPU. With a <strong>single visible GPU</strong>, Boltz preprocess defaults to CPU so VRAM does not stack with LibTorch; RunPod also defaults Boltz preprocess to CPU because some pod GPUs need newer PyTorch than the repo venv. Use <code>--preprocess-auto-boltz-gpu</code> / <code>BOLTR_AUTO_BOLTZ_GPU=1</code> only when your upstream Boltz PyTorch supports the GPU. <strong>GPU</strong> requires CUDA. For a specific card index, use the CLI <code>--device cuda:N</code> or set <code>BOLTR_DEVICE</code>.</p>
     <div class="row">
       <label for="predictPreprocess">Preprocess</label>
       <select id="predictPreprocess" style="background:#111;border:1px solid var(--border);color:var(--fg);font-family:inherit;font-size:12px;padding:0.25rem 0.4rem;">
@@ -261,7 +261,7 @@ ___</pre>
         <label><input type="checkbox" id="predictBoltzCpu" /> Force Boltz CPU (<code>--preprocess-boltz-cpu</code>) — OOM fallback when LibTorch uses GPU</label>
       </div>
       <div class="row">
-        <label><input type="checkbox" id="predictAutoBoltzGpu" /> GPU Boltz with Auto (<code>--preprocess-auto-boltz-gpu</code>) — opt out of default CPU Boltz when <code>--device auto</code> and one GPU</label>
+        <label><input type="checkbox" id="predictAutoBoltzGpu" /> GPU Boltz with Auto (<code>--preprocess-auto-boltz-gpu</code>) — only use when upstream Boltz's PyTorch supports this GPU</label>
       </div>
       <div class="row">
         <label><input type="checkbox" id="predictPostEmptyCache" /> Post-Boltz GPU cache clear (<code>--preprocess-post-boltz-empty-cache</code>) — usually on by default for GPU; enable here to force</label>
@@ -359,7 +359,7 @@ ___</pre>
       const el = $("predictTargetHint");
       if (!el) return;
       if ($("predictTarget").value === "runpod") {
-        el.innerHTML = "<strong>RunPod:</strong> uploads the YAML/job folder to the configured pod, runs <code>boltr predict --device cuda</code> remotely, streams SSH logs here, then downloads the output folder back into this job.";
+        el.innerHTML = "<strong>RunPod:</strong> uses the RunPod/local target and defaults upstream Boltz preprocess to CPU. Opt into GPU Boltz only when the selected Boltz/PyTorch env supports the pod GPU; choose Compute CPU if this pod's CUDA stack is incompatible.";
         $("predictQualityPreset").checked = true;
       } else {
         el.innerHTML = "<strong>Local:</strong> runs <code>boltr predict</code> on this machine with the selected compute mode.";
@@ -426,6 +426,11 @@ ___</pre>
       else if (data.torch_import_ok === false) probe += `<p class="notes no">torch import: no ${esc(data.torch_import_error || "")}</p>`;
       if (data.boltr_doctor_error) probe += `<p class="notes">${esc(data.boltr_doctor_error)}</p>`;
       else if (data.boltr_doctor) probe += `<pre class="notes">${esc(JSON.stringify(data.boltr_doctor, null, 2))}</pre>`;
+      if (data.boltz_cuda_warning) probe += `<p class="notes no">${esc(data.boltz_cuda_warning)}</p>`;
+      const boltz = data.boltz_cli || {};
+      const boltzHtml = boltz.available
+        ? `<p class="notes ok"><strong>Upstream Boltz CLI:</strong> found <code>${esc(boltz.command || "boltz")}</code>${boltz.source ? ` (${esc(boltz.source)})` : ""}</p>`
+        : `<p class="notes no"><strong>Upstream Boltz CLI:</strong> missing. ${esc(boltz.error || "Install boltz or set BOLTR_BOLTZ_COMMAND.")}</p>`;
       let bootstrapHtml = "";
       if (data.boltr_go_bootstrap) {
         const b = data.boltr_go_bootstrap;
@@ -440,7 +445,7 @@ ___</pre>
           (b.repo_root ? ` · repo <code>${esc(b.repo_root)}</code>` : "") +
           `</p><p class="notes">Steps: ${esc(bits.join(", "))}. Status file: <code>${esc(data.cache_dir + "/boltr_go_bootstrap.json")}</code></p></div>`;
       }
-      statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${bootstrapHtml}${probe}${notes}`;
+      statusMount.innerHTML = `<p class="notes"><code>${esc(data.cache_dir)}</code></p>${rows}${bootstrapHtml}${probe}${boltzHtml}${notes}`;
     }
 
     function renderRunpodStatus(data) {

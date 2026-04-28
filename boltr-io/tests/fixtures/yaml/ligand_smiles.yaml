@@ -1,0 +1,4 @@
+sequences:
+  - ligand:
+      id: B
+      smiles: "CC(=O)OC1=CC=CC=C1C(=O)O"

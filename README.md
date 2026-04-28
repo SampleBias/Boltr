@@ -88,7 +88,7 @@ Everything below is spelled out in [`DEVELOPMENT.md`](DEVELOPMENT.md) and [`QUIC
 | Item | Notes |
 |------|--------|
 | **Interpreter** | **3.10, 3.11, or 3.12** for [`bootstrap_dev_venv.sh`](scripts/bootstrap_dev_venv.sh). **Avoid 3.13+** for that script (wheel / header mismatch with `tch` 0.16). Override pick with **`BOLTR_VENV_PYTHON`**. |
-| **Packages** | **`torch==2.3.0`**, **`safetensors`**, **`setuptools`**, **`wheel`** (installed by bootstrap). |
+| **Packages** | **`torch==2.3.0`**, **`safetensors`**, **`numpy`**, **`omegaconf`**, **`setuptools`**, **`wheel`** (installed by bootstrap). |
 | **Uses** | Checkpoint **`.ckpt` → `.safetensors`** ([`scripts/export_checkpoint_to_safetensors.py`](scripts/export_checkpoint_to_safetensors.py)), golden generators, optional post-`download` export in **`boltr download`**, and **`torch-sys`** discovery when **`LIBTORCH_USE_PYTORCH=1`**. |
 | **Arch / PEP 668** | Do not `pip install` into system Python; use the repo **`.venv`** ([`DEVELOPMENT.md`](DEVELOPMENT.md)). |
 
@@ -186,7 +186,7 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 | **`--preprocess boltz`** | Runs upstream **`boltz predict`** into a staging dir, then copies the bundle next to your YAML. Requires the **`boltz`** executable (`pip install boltz` or conda; use **`--bolt-command`** if it is not on `PATH`). |
 | **`--preprocess auto`** | Tries **native** when eligible, otherwise **`boltz`** if runnable. |
 
-**Important:** [`Boltr_Boltz_bootstrap`](./Boltr_Boltz_bootstrap) / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build **`boltr`** — they do **not** install the Python **`boltz`** CLI. For **`--preprocess boltz`** / **`auto`** fallback to Boltz, install **`boltz`** in a venv and ensure **`boltz`** is on `PATH`, or pass **`--bolt-command`** with the full path to the `boltz` executable.
+**Important:** [`Boltr_Boltz_bootstrap`](./Boltr_Boltz_bootstrap) / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build **`boltr`** — they do **not** install the Python **`boltz`** CLI by default. For **`--preprocess boltz`** / **`auto`** fallback to Boltz, install **`boltz`** in a venv and ensure **`boltz`** is on `PATH`, or pass **`--bolt-command`** with the full path to the `boltz` executable. The Web UI status panel checks this dependency up front; set `BOLTR_INSTALL_BOLTZ=1` when running `scripts/bootstrap_dev_venv.sh` if you want the repo venv to include the upstream CLI.
 
 Upstream Boltz writes preprocess artifacts under a **`boltz_results_<yaml_stem>/`** directory; Boltr discovers **`manifest.json`** under `processed/` and copies structure/MSA npz from **`structures/`**, **`msa/`**, etc., into the flat layout next to your YAML.
 

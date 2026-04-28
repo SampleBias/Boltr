@@ -8,7 +8,7 @@ Python utilities for checkpoint export, golden tensors, and layout checks. **Rus
 
 | Script group | Typical `pip install` |
 |--------------|----------------------|
-| Checkpoint / safetensors | `torch`, `safetensors` |
+| Checkpoint / safetensors | `torch`, `safetensors`, `numpy` |
 | Golden exports from `boltz.model` | `torch`, `safetensors`, full **`boltz`** with `boltz.data` on `PYTHONPATH` (or `BOLTZ_SRC` where documented) — model-only [`boltz-reference/`](../boltz-reference/) is **not** enough for data/featurizer imports |
 | NumPy-only / layout | `numpy` (+ `safetensors` where noted) |
 

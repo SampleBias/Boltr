@@ -35,12 +35,13 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use crate::paths::resolve_boltr_exe;
 use crate::predict_job::{
     build_predict_argv, cache_from_form_override, inspect_predict_output, parse_preprocess_mode,
-    path_under_job_dir, predict_enabled, preprocess_preflight, run_predict_job, tarball_out_dir,
-    JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
+    path_under_job_dir, predict_enabled, preprocess_preflight, probe_boltz_cli, run_predict_job,
+    tarball_out_dir, JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 use crate::runpod::{
-    status_from_env as runpod_status_from_env, RemotePredictRequest, RunPodConfig,
+    local_cuda_available, status_from_env as runpod_status_from_env, RemotePredictRequest,
+    RunPodConfig,
 };
 
 #[derive(Clone)]
@@ -516,15 +517,19 @@ async fn post_predict(
         }
     }
 
-    if predict_target == "local" {
+    let runpod_config = if predict_target == "runpod" {
+        RunPodConfig::from_env()
+    } else {
+        None
+    };
+    let runpod_local_cuda =
+        predict_target == "runpod" && runpod_config.is_none() && local_cuda_available().await;
+
+    if predict_target == "local" || runpod_local_cuda {
         if let Err(msg) = preprocess_preflight(&input_path, &mut opts) {
             let _ = tokio::fs::remove_dir_all(&base).await;
             return Err((StatusCode::BAD_REQUEST, msg));
         }
-    }
-
-    if predict_target == "runpod" && opts.device == "cpu" {
-        opts.device = "cuda".to_string();
     }
 
     if predict_target == "runpod" && opts.affinity && opts.diffusion_samples_affinity.is_none() {
@@ -535,8 +540,8 @@ async fn post_predict(
         opts.sampling_steps_affinity = Some(200);
     }
 
-    if predict_target == "runpod" && opts.preprocess_auto_boltz_gpu == false {
-        opts.preprocess_auto_boltz_gpu = true;
+    if predict_target == "runpod" && !opts.preprocess_auto_boltz_gpu {
+        opts.preprocess_boltz_cpu = true;
     }
 
     if predict_target == "local" && opts.device.trim().is_empty() {
@@ -556,23 +561,36 @@ async fn post_predict(
     let sem = state.jobs.semaphore();
     let jid = job_id.clone();
     if predict_target == "runpod" {
-        let config = RunPodConfig::from_env().ok_or_else(|| {
-            (
+        if let Some(config) = runpod_config {
+            let req = RemotePredictRequest {
+                config,
+                local_input_root: remote_input_root,
+                local_input_path: input_path,
+                local_out_dir: out_dir,
+                opts,
+            };
+            tokio::spawn(async move {
+                crate::runpod::run_remote_predict_job(jid, job, req, sem).await;
+            });
+        } else if runpod_local_cuda {
+            let boltr = resolve_boltr_exe().ok_or_else(|| {
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "boltr binary not found: set BOLTR or install boltr on PATH".to_string(),
+                )
+            })?;
+            let cache = cache_from_form_override(cache_override.as_deref(), &state.default_cache);
+            let argv = build_predict_argv(&input_path, &out_dir, &cache, &opts);
+            tokio::spawn(async move {
+                run_predict_job(jid, job, boltr, argv, sem).await;
+            });
+        } else {
+            return Err((
                 StatusCode::SERVICE_UNAVAILABLE,
-                "RunPod is not configured: set BOLTR_RUNPOD_HOST and related BOLTR_RUNPOD_* env vars"
+                "RunPod is not configured: set BOLTR_RUNPOD_HOST and related BOLTR_RUNPOD_* env vars, or launch boltr-web on a host with a visible CUDA GPU"
                     .to_string(),
-            )
-        })?;
-        let req = RemotePredictRequest {
-            config,
-            local_input_root: remote_input_root,
-            local_input_path: input_path,
-            local_out_dir: out_dir,
-            opts,
-        };
-        tokio::spawn(async move {
-            crate::runpod::run_remote_predict_job(jid, job, req, sem).await;
-        });
+            ));
+        }
     } else {
         let boltr = resolve_boltr_exe().ok_or_else(|| {
             (
@@ -772,6 +790,19 @@ async fn main() -> anyhow::Result<()> {
         .parse()
         .with_context(|| format!("invalid --listen {:?}", args.listen))?;
 
+    let boltz_probe = probe_boltz_cli();
+    if boltz_probe.available {
+        tracing::info!(
+            command = boltz_probe.command.as_deref().unwrap_or("boltz"),
+            source = boltz_probe.source.as_deref().unwrap_or("unknown"),
+            "upstream boltz CLI available for preprocess"
+        );
+    } else {
+        tracing::warn!(
+            error = boltz_probe.error.as_deref().unwrap_or("not found"),
+            "upstream boltz CLI unavailable; high-fidelity/Boltz preprocess will fail until configured"
+        );
+    }
     tracing::info!(%addr, cache = %resolve_cache_dir(args.cache_dir.as_deref()).display(), "boltr-web listening");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

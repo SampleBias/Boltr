@@ -1,0 +1,4 @@
+sequences:
+  - ligand:
+      id: B
+      ccd: [HEM, HEC]

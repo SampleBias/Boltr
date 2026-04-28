@@ -7,6 +7,7 @@
 #
 # Run:  bash scripts/bootstrap_dev_venv.sh
 #       bash scripts/bootstrap_dev_venv.sh --force   # remove existing .venv first
+#       BOLTR_INSTALL_BOLTZ=1 bash scripts/bootstrap_dev_venv.sh   # also install upstream boltz CLI
 #
 # Then: scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
 
@@ -77,10 +78,18 @@ fi
 .venv/bin/pip install -U pip
 # torch-sys probes Python via torch.utils.cpp_extension → requires setuptools (not always pulled by torch wheels).
 # omegaconf: Lightning/Boltz .ckpt unpickling (torch.load) resolves OmegaConf types in the checkpoint.
-.venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors omegaconf
+# numpy: safetensors.torch serializes tensors through NumPy when exporting checkpoints.
+# Keep NumPy <2 so the optional upstream `boltz` CLI remains dependency-compatible.
+.venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors omegaconf "numpy<2"
+if [[ "${BOLTR_INSTALL_BOLTZ:-0}" == "1" ]]; then
+  .venv/bin/pip install boltz
+fi
 
 echo
-echo "Installed setuptools, torch==${TORCH_PIN}, safetensors, omegaconf into $ROOT/.venv"
+echo "Installed setuptools, torch==${TORCH_PIN}, safetensors, omegaconf, numpy into $ROOT/.venv"
+if [[ "${BOLTR_INSTALL_BOLTZ:-0}" == "1" ]]; then
+  echo "Installed upstream boltz CLI into $ROOT/.venv"
+fi
 .venv/bin/python -c "import torch; print('torch:', torch.__version__, 'python:', __import__('sys').version.split()[0])"
 echo
 echo "Build:"

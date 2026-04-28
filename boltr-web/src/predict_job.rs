@@ -144,7 +144,7 @@ fn discover_boltz_executable() -> Option<PathBuf> {
         }
     }
     if let Some(repo) = repo_root_hint() {
-        for sub in [".venv/bin/boltz", "venv/bin/boltz"] {
+        for sub in [".venv-boltz/bin/boltz", ".venv/bin/boltz", "venv/bin/boltz"] {
             let p = repo.join(sub);
             if p.is_file() {
                 return Some(p);
@@ -159,7 +159,7 @@ fn discover_boltz_executable() -> Option<PathBuf> {
     }
     let mut d = std::env::current_dir().ok()?;
     for _ in 0..12 {
-        for sub in [".venv/bin/boltz", "venv/bin/boltz"] {
+        for sub in [".venv-boltz/bin/boltz", ".venv/bin/boltz", "venv/bin/boltz"] {
             let p = d.join(sub);
             if p.is_file() {
                 return Some(p);
@@ -177,8 +177,81 @@ fn discover_boltz_executable() -> Option<PathBuf> {
     None
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BoltzCliProbe {
+    pub available: bool,
+    pub command: Option<String>,
+    pub source: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Resolve the upstream Python `boltz` CLI before prediction so the UI can fail early.
+pub fn probe_boltz_cli() -> BoltzCliProbe {
+    if let Ok(raw) = std::env::var("BOLTR_BOLTZ_COMMAND") {
+        let cmd = raw.trim();
+        if !cmd.is_empty() {
+            return if command_is_runnable(cmd) {
+                BoltzCliProbe {
+                    available: true,
+                    command: Some(cmd.to_string()),
+                    source: Some("BOLTR_BOLTZ_COMMAND".to_string()),
+                    error: None,
+                }
+            } else {
+                BoltzCliProbe {
+                    available: false,
+                    command: Some(cmd.to_string()),
+                    source: Some("BOLTR_BOLTZ_COMMAND".to_string()),
+                    error: Some(format!(
+                        "BOLTR_BOLTZ_COMMAND points to {cmd:?}, but it is not executable"
+                    )),
+                }
+            };
+        }
+    }
+
+    if command_is_runnable("boltz") {
+        let command = which::which("boltz")
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "boltz".to_string());
+        return BoltzCliProbe {
+            available: true,
+            command: Some(command),
+            source: Some("PATH".to_string()),
+            error: None,
+        };
+    }
+
+    if let Some(p) = discover_boltz_executable() {
+        return BoltzCliProbe {
+            available: true,
+            command: Some(p.display().to_string()),
+            source: Some("auto-discovered".to_string()),
+            error: None,
+        };
+    }
+
+    BoltzCliProbe {
+        available: false,
+        command: None,
+        source: None,
+        error: Some(
+            "Upstream `boltz` CLI not found. Install it in the dev venv (`.venv/bin/pip install boltz`) or set BOLTR_BOLTZ_COMMAND / Web UI Bolt command to the full executable path."
+                .to_string(),
+        ),
+    }
+}
+
 /// Ensure upstream Boltz CLI can be spawned: use `PATH`, explicit `--bolt-command`, or auto-discover.
 fn resolve_boltz_for_preprocess(opts: &mut PredictCliOptions) -> Result<(), String> {
+    if opts.bolt_command.is_none() {
+        if let Ok(raw) = std::env::var("BOLTR_BOLTZ_COMMAND") {
+            let cmd = raw.trim();
+            if !cmd.is_empty() {
+                opts.bolt_command = Some(cmd.to_string());
+            }
+        }
+    }
     let cmd = opts.bolt_command.as_deref().unwrap_or("boltz");
     if command_is_runnable(cmd) {
         return Ok(());
@@ -199,6 +272,20 @@ fn resolve_boltz_for_preprocess(opts: &mut PredictCliOptions) -> Result<(), Stri
     Err(
         "Boltz preprocess: could not find the upstream `boltz` executable. Install: `pip install boltz` (or conda) into your dev venv, then ensure `BOLTR` points at `…/target/release/boltr` so the server can locate `…/repo/.venv/bin/boltz`, or set `BOLTR_REPO` to the repo root, or set `BOLTR_BOLTZ_COMMAND` / Web UI Bolt command to the full path to `boltz`.".to_string(),
     )
+}
+
+fn user_set_boltz_kernel_mode(args: &[String]) -> bool {
+    args.iter()
+        .any(|arg| arg == "--no_kernels" || arg == "--no-kernels")
+}
+
+fn should_disable_boltz_kernels_by_default() -> bool {
+    !std::env::var("BOLTR_BOLTZ_USE_KERNELS")
+        .map(|v| {
+            let t = v.trim();
+            t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
+        })
+        .unwrap_or(false)
 }
 
 /// Validate preprocess choices before spawning `boltr predict` (clear 400 instead of failing mid-job).
@@ -223,7 +310,16 @@ pub fn preprocess_preflight(input_path: &Path, opts: &mut PredictCliOptions) -> 
             }
             resolve_boltz_for_preprocess(opts)
         }
+    }?;
+    if matches!(
+        opts.preprocess,
+        PreprocessMode::Boltz | PreprocessMode::HighFidelity | PreprocessMode::Auto
+    ) && should_disable_boltz_kernels_by_default()
+        && !user_set_boltz_kernel_mode(&opts.preprocess_bolt_arg)
+    {
+        opts.preprocess_bolt_arg.push("--no_kernels".to_string());
     }
+    Ok(())
 }
 
 /// `BOLTR_WEB_ENABLE_PREDICT=0` disables predict endpoints (default: enabled).

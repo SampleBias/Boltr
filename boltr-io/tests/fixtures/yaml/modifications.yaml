@@ -1,0 +1,9 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+      modifications:
+        - position: 5
+          ccd: SEP
+        - position: 10
+          ccd: TPO

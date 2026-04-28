@@ -1,0 +1,5 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+      msa: ./msa.a3m

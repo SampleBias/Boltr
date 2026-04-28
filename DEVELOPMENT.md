@@ -80,7 +80,7 @@ Or manually (use **python3.12** etc., not 3.13+, and pin torch):
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install setuptools wheel 'torch==2.3.0' safetensors
+pip install setuptools wheel 'torch==2.3.0' safetensors numpy omegaconf
 export LIBTORCH_USE_PYTORCH=1
 python3 -c "import torch; print('PyTorch', torch.__version__)"
 cargo test -p boltr-backend-tch --features tch-backend

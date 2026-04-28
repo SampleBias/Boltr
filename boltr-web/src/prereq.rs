@@ -8,6 +8,8 @@ use boltr_io::parse_manifest_path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::predict_job::{probe_boltz_cli, BoltzCliProbe};
+
 /// Resolve cache directory: same rules as `boltr` CLI.
 pub fn resolve_cache_dir(cli_cache: Option<&Path>) -> PathBuf {
     if let Some(p) = cli_cache {
@@ -80,6 +82,12 @@ pub struct StatusResponse {
     pub boltr_doctor: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boltr_doctor_error: Option<String>,
+    /// Upstream Python `boltz` CLI used for `--preprocess boltz` / high-fidelity preprocess.
+    pub boltz_cli: BoltzCliProbe,
+    /// Whether the Python/PyTorch environment used by upstream Boltz supports the visible CUDA GPU.
+    pub boltz_cuda_compatible: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boltz_cuda_warning: Option<String>,
     /// Cache + torch import + `boltr doctor` reports tch + LibTorch runtime OK.
     pub environment_ready: bool,
     /// `true` when preprocess bridge inputs could work (manifest + npz checks are per-upload).
@@ -185,6 +193,9 @@ pub fn gather_status(cache: &Path) -> StatusResponse {
         torch_import_error: None,
         boltr_doctor: None,
         boltr_doctor_error: None,
+        boltz_cli: probe_boltz_cli(),
+        boltz_cuda_compatible: None,
+        boltz_cuda_warning: None,
         environment_ready: false,
         notes,
         boltr_go_bootstrap,
@@ -231,8 +242,89 @@ async fn probe_import_torch(py: &Path) -> (Option<bool>, Option<String>) {
     }
 }
 
+async fn probe_torch_cuda_compat(py: &Path) -> (Option<bool>, Option<String>) {
+    let script = r#"
+import json
+import torch
+
+if not torch.cuda.is_available():
+    print(json.dumps({"ok": True, "reason": "cuda not available"}))
+else:
+    cap = torch.cuda.get_device_capability(0)
+    sm = f"sm_{cap[0]}{cap[1]}"
+    archs = torch.cuda.get_arch_list()
+    ok = sm in archs
+    name = torch.cuda.get_device_name(0)
+    print(json.dumps({"ok": ok, "sm": sm, "archs": archs, "name": name, "torch": torch.__version__}))
+"#;
+    let fut = tokio::process::Command::new(py)
+        .args(["-c", script])
+        .output();
+    let res = tokio::time::timeout(Duration::from_secs(8), fut).await;
+    let out = match res {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return (None, Some(e.to_string())),
+        Err(_) => {
+            return (
+                None,
+                Some("timeout checking PyTorch CUDA compatibility".to_string()),
+            )
+        }
+    };
+    if !out.status.success() {
+        return (
+            None,
+            Some(format!(
+                "PyTorch CUDA compatibility probe failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            )),
+        );
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let v: Value = match serde_json::from_str(s.trim()) {
+        Ok(v) => v,
+        Err(e) => return (None, Some(format!("PyTorch CUDA probe JSON: {e}"))),
+    };
+    let ok = v.get("ok").and_then(|x| x.as_bool());
+    if ok == Some(false) {
+        let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("CUDA GPU");
+        let sm = v.get("sm").and_then(|x| x.as_str()).unwrap_or("unknown SM");
+        let torch = v.get("torch").and_then(|x| x.as_str()).unwrap_or("unknown");
+        let archs = v
+            .get("archs")
+            .and_then(|x| x.as_array())
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        return (
+            ok,
+            Some(format!(
+                "Upstream Boltz venv PyTorch {torch} does not support {name} ({sm}); supported CUDA archs: {archs}. Boltz preprocess should run on CPU, or use BOLTR_BOLTZ_COMMAND pointing at a newer Boltz/PyTorch env."
+            )),
+        );
+    }
+    (ok, None)
+}
+
 fn resolve_python_for_torch_probe() -> PathBuf {
     find_venv_python().unwrap_or_else(|| PathBuf::from("python3"))
+}
+
+fn python_next_to_boltz(command: Option<&str>) -> Option<PathBuf> {
+    let cmd = command?;
+    let p = Path::new(cmd);
+    let parent = p.parent()?;
+    for name in ["python", "python3"] {
+        let py = parent.join(name);
+        if py.is_file() {
+            return Some(py);
+        }
+    }
+    None
 }
 
 async fn boltr_doctor_json() -> Result<Value, String> {
@@ -289,6 +381,10 @@ pub async fn enrich_status(mut s: StatusResponse) -> StatusResponse {
     let (tok_ok, tok_err) = probe_import_torch(&py).await;
     s.torch_import_ok = tok_ok;
     s.torch_import_error = tok_err;
+    let boltz_py = python_next_to_boltz(s.boltz_cli.command.as_deref()).unwrap_or(py);
+    let (cuda_ok, cuda_warn) = probe_torch_cuda_compat(&boltz_py).await;
+    s.boltz_cuda_compatible = cuda_ok;
+    s.boltz_cuda_warning = cuda_warn;
 
     match boltr_doctor_json().await {
         Ok(v) => {

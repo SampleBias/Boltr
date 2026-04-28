@@ -45,6 +45,7 @@ results/
 *.fasta
 *.yaml
 !examples/*.yaml
+!boltr-io/tests/fixtures/**/*.yaml
 
 # Logs
 logs/

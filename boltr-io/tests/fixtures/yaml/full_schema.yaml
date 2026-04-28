@@ -1,0 +1,49 @@
+version: 1
+sequences:
+  - protein:
+      id: [A, B]
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+      msa: ./msa.a3m
+      cyclic: false
+      modifications:
+        - position: 5
+          ccd: SEP
+  - dna:
+      id: C
+      sequence: "ATCGATCG"
+  - rna:
+      id: D
+      sequence: "AUCGAUCG"
+  - ligand:
+      id: E
+      ccd: [HEM, HEC]
+  - ligand:
+      id: F
+      smiles: "CC(=O)O"
+constraints:
+  - bond:
+      atom1: [A, 1, N]
+      atom2: [E, 1, FE]
+  - pocket:
+      binder: E
+      contacts:
+        - [A, 10]
+        - [B, 20]
+      max_distance: 6.0
+      force: true
+  - contact:
+      token1: [A, 5]
+      token2: [B, 15]
+      max_distance: 8.0
+      force: false
+templates:
+  - cif: template.cif
+    chain_id: A
+  - pdb: template.pdb
+    chain_id: [A, B]
+    template_id: X
+    force: true
+    threshold: 5.0
+properties:
+  - affinity:
+      binder: E

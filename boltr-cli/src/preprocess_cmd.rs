@@ -32,6 +32,21 @@ fn user_set_boltz_accelerator(bolt_extra: &[String]) -> bool {
         .any(|arg| arg == "--accelerator" || arg.starts_with("--accelerator="))
 }
 
+fn user_set_boltz_kernel_mode(bolt_extra: &[String]) -> bool {
+    bolt_extra
+        .iter()
+        .any(|arg| arg == "--no_kernels" || arg == "--no-kernels")
+}
+
+fn should_disable_boltz_kernels_by_default() -> bool {
+    !std::env::var("BOLTR_BOLTZ_USE_KERNELS")
+        .map(|v| {
+            let t = v.trim();
+            t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
+        })
+        .unwrap_or(false)
+}
+
 /// Merge CLI (`--preprocess-cuda-visible-devices`) with `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES` (CLI wins).
 pub fn resolve_preprocess_cuda_visible_devices(cli: Option<&str>) -> Option<String> {
     let from_cli = cli
@@ -168,13 +183,16 @@ pub fn bolt_preprocess_args_for_predict(
     force_boltz_cpu: bool,
     auto_default_boltz_cpu: bool,
 ) -> Vec<String> {
+    let mut out = bolt_extra.to_vec();
+    if should_disable_boltz_kernels_by_default() && !user_set_boltz_kernel_mode(&out) {
+        out.push("--no_kernels".to_string());
+    }
     if user_set_boltz_accelerator(bolt_extra) {
-        return bolt_extra.to_vec();
+        return out;
     }
     let need_boltz_cpu =
         !predict_device_is_cuda(device) || force_boltz_cpu || auto_default_boltz_cpu;
     if need_boltz_cpu {
-        let mut out = bolt_extra.to_vec();
         if !predict_device_is_cuda(device) {
             tracing::info!("preprocess: Boltz subprocess --accelerator cpu (boltr --device cpu)");
         } else {
@@ -186,7 +204,7 @@ pub fn bolt_preprocess_args_for_predict(
         out.push("cpu".to_string());
         return out;
     }
-    bolt_extra.to_vec()
+    out
 }
 
 /// `python` / `python3` next to a `boltz` executable (e.g. `…/venv/bin/boltz` → `…/venv/bin/python`).
@@ -410,32 +428,60 @@ mod tests {
     #[test]
     fn boltz_gpu_default_when_boltr_cuda_no_force() {
         let out = bolt_preprocess_args_for_predict("cuda", &[], false, false);
-        assert!(out.is_empty());
+        assert_eq!(out, vec!["--no_kernels".to_string()]);
     }
 
     #[test]
     fn boltz_cpu_when_force() {
         let out = bolt_preprocess_args_for_predict("cuda", &[], true, false);
-        assert_eq!(out, vec!["--accelerator".to_string(), "cpu".to_string()]);
+        assert_eq!(
+            out,
+            vec![
+                "--no_kernels".to_string(),
+                "--accelerator".to_string(),
+                "cpu".to_string()
+            ]
+        );
     }
 
     #[test]
     fn boltz_cpu_when_boltr_cpu() {
         let out = bolt_preprocess_args_for_predict("cpu", &[], false, false);
-        assert_eq!(out, vec!["--accelerator".to_string(), "cpu".to_string()]);
+        assert_eq!(
+            out,
+            vec![
+                "--no_kernels".to_string(),
+                "--accelerator".to_string(),
+                "cpu".to_string()
+            ]
+        );
     }
 
     #[test]
     fn user_bolt_arg_accelerator_untouched() {
         let extra = vec!["--accelerator".to_string(), "gpu".to_string()];
         let out = bolt_preprocess_args_for_predict("cuda", &extra, true, false);
-        assert_eq!(out, extra);
+        assert_eq!(
+            out,
+            vec![
+                "--accelerator".to_string(),
+                "gpu".to_string(),
+                "--no_kernels".to_string()
+            ]
+        );
     }
 
     #[test]
     fn auto_default_boltz_cpu_flag_adds_accelerator() {
         let out = bolt_preprocess_args_for_predict("cuda", &[], false, true);
-        assert_eq!(out, vec!["--accelerator".to_string(), "cpu".to_string()]);
+        assert_eq!(
+            out,
+            vec![
+                "--no_kernels".to_string(),
+                "--accelerator".to_string(),
+                "cpu".to_string()
+            ]
+        );
     }
 
     #[test]

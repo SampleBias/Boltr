@@ -1,0 +1,7 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+templates:
+  - cif: template.cif
+    chain_id: A

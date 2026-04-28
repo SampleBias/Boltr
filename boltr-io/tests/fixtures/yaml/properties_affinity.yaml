@@ -1,0 +1,10 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+  - ligand:
+      id: B
+      ccd: HEM
+properties:
+  - affinity:
+      binder: B

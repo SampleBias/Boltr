@@ -61,6 +61,30 @@ fn env_trimmed(key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+fn default_local_cache() -> String {
+    if let Some(cache) = env_trimmed("BOLTR_RUNPOD_CACHE").or_else(|| env_trimmed("BOLTZ_CACHE")) {
+        return cache;
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    format!("{home}/.cache/boltr")
+}
+
+fn default_local_workdir() -> String {
+    env_trimmed("BOLTR_RUNPOD_WORKDIR")
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|p| p.display().to_string())
+        })
+        .unwrap_or_else(|| ".".to_string())
+}
+
+fn default_local_boltr() -> String {
+    env_trimmed("BOLTR_RUNPOD_BOLTR")
+        .or_else(|| env_trimmed("BOLTR"))
+        .unwrap_or_else(|| "boltr".to_string())
+}
+
 impl RunPodConfig {
     pub fn from_env() -> Option<Self> {
         let host = env_trimmed("BOLTR_RUNPOD_HOST")?;
@@ -164,8 +188,104 @@ async fn ssh_output(
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+async fn local_output(program: &str, args: &[&str], timeout_secs: u64) -> Result<String, String> {
+    let fut = Command::new(program).args(args).output();
+    let out = tokio::time::timeout(Duration::from_secs(timeout_secs), fut)
+        .await
+        .map_err(|_| format!("timeout after {timeout_secs}s"))?
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "{program} exited {:?}: {}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+pub async fn local_cuda_available() -> bool {
+    local_output(
+        "nvidia-smi",
+        &[
+            "--query-gpu=name,memory.free,memory.total",
+            "--format=csv,noheader,nounits",
+        ],
+        5,
+    )
+    .await
+    .map(|out| out.lines().any(|l| !l.trim().is_empty()))
+    .unwrap_or(false)
+}
+
+async fn local_cuda_status() -> Option<RunPodStatus> {
+    let gpu_out = local_output(
+        "nvidia-smi",
+        &[
+            "--query-gpu=name,memory.free,memory.total",
+            "--format=csv,noheader,nounits",
+        ],
+        5,
+    )
+    .await
+    .ok()?;
+    let gpus: Vec<_> = gpu_out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(parse_gpu_line)
+        .collect();
+    if gpus.is_empty() {
+        return None;
+    }
+
+    let workdir = default_local_workdir();
+    let boltr = default_local_boltr();
+    let cache = default_local_cache();
+    let remote_cache_ready = {
+        let c = Path::new(&cache);
+        Some(
+            c.join("boltz2_conf.safetensors").is_file()
+                && c.join("ccd.pkl").is_file()
+                && c.join("mols.tar").is_file(),
+        )
+    };
+    let boltr_doctor = match local_output(&boltr, &["doctor", "--json"], 15).await {
+        Ok(out) => serde_json::from_str::<serde_json::Value>(&out).ok(),
+        Err(_) => None,
+    };
+
+    let mut warnings = vec![
+        "BOLTR_RUNPOD_HOST is not set; using the GPU attached to this boltr-web server instead of SSH."
+            .to_string(),
+    ];
+    if boltr_doctor.is_none() {
+        warnings.push(
+            "Local boltr doctor did not return JSON; set BOLTR to the tch-enabled boltr binary if needed."
+                .to_string(),
+        );
+    }
+
+    Some(RunPodStatus {
+        configured: true,
+        connected: true,
+        target: Some("local CUDA GPU (no SSH)".to_string()),
+        workdir: Some(workdir),
+        boltr: Some(boltr),
+        cache: Some(cache),
+        gpus,
+        boltr_doctor,
+        remote_cache_ready,
+        warnings,
+        error: None,
+    })
+}
+
 pub async fn status_from_env() -> RunPodStatus {
     let Some(cfg) = RunPodConfig::from_env() else {
+        if let Some(status) = local_cuda_status().await {
+            return status;
+        }
         return RunPodStatus {
             configured: false,
             connected: false,
@@ -177,7 +297,7 @@ pub async fn status_from_env() -> RunPodStatus {
             boltr_doctor: None,
             remote_cache_ready: None,
             warnings: vec![
-                "Set BOLTR_RUNPOD_HOST to enable RunPod SSH status. Optional: BOLTR_RUNPOD_USER, PORT, KEY, WORKDIR, BOLTR, CACHE."
+                "Set BOLTR_RUNPOD_HOST to enable RunPod SSH status, or launch boltr-web on a CUDA/RunPod host for local GPU auto-detect. Optional: BOLTR_RUNPOD_USER, PORT, KEY, WORKDIR, BOLTR, CACHE."
                     .to_string(),
             ],
             error: None,

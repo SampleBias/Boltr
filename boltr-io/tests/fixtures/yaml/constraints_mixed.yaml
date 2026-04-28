@@ -1,0 +1,22 @@
+sequences:
+  - protein:
+      id: A
+      sequence: "ACDEFGHIKLMNPQRSTVWY"
+  - ligand:
+      id: B
+      ccd: HEM
+constraints:
+  - bond:
+      atom1: [A, 1, N]
+      atom2: [B, 1, C1]
+  - pocket:
+      binder: B
+      contacts:
+        - [A, 10]
+      max_distance: 8.0
+      force: true
+  - contact:
+      token1: [A, 5]
+      token2: [B, 1]
+      max_distance: 10.0
+      force: false
