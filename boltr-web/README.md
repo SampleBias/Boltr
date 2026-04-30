@@ -24,6 +24,8 @@ The **RunPod GPU** target supports two modes:
 - **Launched on the pod:** if `boltr-web` is started inside your SSH RunPod session and `nvidia-smi` sees a GPU, the RunPod status auto-connects to the local CUDA device. No `BOLTR_RUNPOD_HOST` is needed.
 - **Launched elsewhere:** set `BOLTR_RUNPOD_HOST` so the web server can SSH to the pod. Optional variables are `BOLTR_RUNPOD_USER`, `BOLTR_RUNPOD_PORT`, `BOLTR_RUNPOD_KEY`, `BOLTR_RUNPOD_WORKDIR`, `BOLTR_RUNPOD_BOLTR`, and `BOLTR_RUNPOD_CACHE`.
 
+SSH RunPod jobs run a remote `boltr doctor --json` preflight before upload and use bounded waits for setup, upload, prediction, and download. Tune them with `BOLTR_RUNPOD_PREFLIGHT_TIMEOUT_SECS`, `BOLTR_RUNPOD_UPLOAD_TIMEOUT_SECS`, `BOLTR_RUNPOD_PREDICT_TIMEOUT_SECS`, `BOLTR_RUNPOD_DOWNLOAD_TIMEOUT_SECS`, and `BOLTR_RUNPOD_TRANSFER_RETRIES`.
+
 ## Preprocess and upstream Boltz
 
 For **`--preprocess boltz`** / **`auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`$BOLTR_BOLTZ_VENV/bin/boltz`, `/workspace/boltr-envs/boltz-gpu/bin/boltz`, `~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv-boltz/bin/boltz` / `.venv/bin/boltz`, and walking parents for repo venvs). If found, it sets **`--bolt-command`** automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** on the server or use the Web UI **Bolt command** field.

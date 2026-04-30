@@ -158,6 +158,10 @@ enum Commands {
         #[arg(long)]
         max_parallel_samples: Option<i64>,
 
+        /// Apply quality-oriented Boltz2 inference defaults where no explicit CLI override is set.
+        #[arg(long)]
+        quality_preset: bool,
+
         /// Diffusion step scale (temperature). Recommended range [1, 2]. Default 1.638.
         #[arg(long, default_value_t = 1.638)]
         step_scale: f64,
@@ -171,8 +175,8 @@ enum Commands {
         max_msa_seqs: usize,
 
         /// Record-level default for number of samples when `--diffusion-samples` is omitted.
-        #[arg(long, default_value_t = 1)]
-        num_samples: usize,
+        #[arg(long)]
+        num_samples: Option<usize>,
 
         /// Custom structure confidence checkpoint path (`.ckpt` or `.safetensors`).
         #[arg(long)]
@@ -438,6 +442,7 @@ async fn main() -> Result<()> {
             sampling_steps,
             diffusion_samples,
             max_parallel_samples,
+            quality_preset,
             step_scale,
             output_format,
             max_msa_seqs,
@@ -487,6 +492,7 @@ async fn main() -> Result<()> {
                 sampling_steps,
                 diffusion_samples,
                 max_parallel_samples,
+                quality_preset,
                 step_scale,
                 output_format,
                 max_msa_seqs,
@@ -654,10 +660,11 @@ struct PredictFlowArgs {
     sampling_steps: Option<i64>,
     diffusion_samples: Option<i64>,
     max_parallel_samples: Option<i64>,
+    quality_preset: bool,
     step_scale: f64,
     output_format: OutputFormat,
     max_msa_seqs: usize,
-    num_samples: usize,
+    num_samples: Option<usize>,
     checkpoint: Option<PathBuf>,
     affinity_checkpoint: Option<PathBuf>,
     affinity_mw_correction: bool,
@@ -693,13 +700,14 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         device: device_in,
         use_msa_server,
         ref msa_server_url,
-        msa_pairing_strategy: _,
+        msa_pairing_strategy,
         affinity,
         use_potentials,
         recycling_steps,
         sampling_steps,
         diffusion_samples,
         max_parallel_samples,
+        quality_preset,
         step_scale,
         output_format,
         max_msa_seqs,
@@ -739,6 +747,8 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     } else {
         tracing::info!(device = %device, "device");
     }
+    tracing::debug!(strategy = %msa_pairing_strategy, "MSA pairing strategy");
+    let effective_num_samples = num_samples.unwrap_or(if quality_preset { 2 } else { 1 });
 
     // 1. Parse input (YAML / FASTA / directory)
     let input_path = Path::new(&input);
@@ -748,9 +758,16 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         "parsed input YAML"
     );
 
+    let effective_preprocess = if quality_preset && matches!(preprocess, PreprocessCli::Auto) {
+        tracing::info!("--quality-preset: using high-fidelity upstream Boltz preprocess");
+        PreprocessCli::HighFidelity
+    } else {
+        preprocess
+    };
+
     if affinity {
         tracing::info!("--affinity: affinity inference path active");
-        if matches!(preprocess, PreprocessCli::Native) {
+        if matches!(effective_preprocess, PreprocessCli::Native) {
             tracing::warn!(
                 "--preprocess native does not emit pre_affinity npz; use Boltz preprocess or omit --affinity"
             );
@@ -776,7 +793,10 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     let bundle_ready = boltr_io::preprocess_bundle_ready(input_path, affinity)?;
     let manifest_missing = !bundle_ready;
     let msa_under_yaml_for_native = manifest_missing
-        && matches!(preprocess, PreprocessCli::Native | PreprocessCli::Auto)
+        && matches!(
+            effective_preprocess,
+            PreprocessCli::Native | PreprocessCli::Auto
+        )
         && use_msa_server
         && boltr_io::validate_native_eligible(&parsed).is_ok();
 
@@ -831,8 +851,8 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
 
     // 3b. Optional preprocess bundle next to YAML (for `boltr predict` + `load_input` bridge)
     let mut preprocess_ran_boltz = false;
-    if manifest_missing && preprocess != PreprocessCli::Off {
-        match preprocess {
+    if manifest_missing && effective_preprocess != PreprocessCli::Off {
+        match effective_preprocess {
             PreprocessCli::Off => {}
             PreprocessCli::Native => {
                 tracing::info!("--preprocess native: writing manifest + npz next to YAML");
@@ -931,7 +951,7 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
         use_msa_server,
         device.as_str(),
         device_requested.clone(),
-        num_samples,
+        effective_num_samples,
         backend_note,
         affinity,
         use_potentials,
@@ -952,11 +972,31 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             EnsembleRefCli::Multi => boltr_io::InferenceEnsembleMode::Multi,
         };
 
+        let mut effective_recycling_steps = recycling_steps;
+        let mut effective_sampling_steps = sampling_steps;
+        let mut effective_diffusion_samples = diffusion_samples.or_else(|| {
+            if quality_preset {
+                None
+            } else {
+                Some(effective_num_samples as i64)
+            }
+        });
+        let mut effective_max_parallel_samples = max_parallel_samples;
+        if quality_preset {
+            let q = boltr_backend_tch::Boltz2PredictArgs::quality_preset();
+            effective_recycling_steps.get_or_insert(q.recycling_steps);
+            if effective_sampling_steps.is_none() {
+                effective_sampling_steps = q.sampling_steps;
+            }
+            effective_diffusion_samples.get_or_insert(q.diffusion_samples);
+            effective_max_parallel_samples.get_or_insert(q.max_parallel_samples.unwrap_or(1));
+        }
+
         let overrides = PredictArgsCliOverrides {
-            recycling_steps,
-            sampling_steps,
-            diffusion_samples: diffusion_samples.or(Some(num_samples as i64)),
-            max_parallel_samples,
+            recycling_steps: effective_recycling_steps,
+            sampling_steps: effective_sampling_steps,
+            diffusion_samples: effective_diffusion_samples,
+            max_parallel_samples: effective_max_parallel_samples,
         };
 
         predict_tch::run_predict_tch(predict_tch::PredictTchArgs {
@@ -966,11 +1006,12 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             device,
             affinity,
             use_potentials,
+            quality_preset,
             overrides,
             step_scale,
             output_format,
             max_msa_seqs,
-            num_samples,
+            num_samples: effective_num_samples,
             checkpoint: checkpoint.clone(),
             affinity_checkpoint: affinity_checkpoint.clone(),
             affinity_mw_correction,

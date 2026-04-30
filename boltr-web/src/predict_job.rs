@@ -425,6 +425,28 @@ impl Default for PredictCliOptions {
     }
 }
 
+/// Apply quality-oriented Boltz2 inference defaults where the request did not provide an override.
+pub fn apply_quality_preset(opts: &mut PredictCliOptions) {
+    if opts.recycling_steps.is_none() {
+        opts.recycling_steps = Some(3);
+    }
+    if opts.sampling_steps.is_none() {
+        opts.sampling_steps = Some(200);
+    }
+    if opts.diffusion_samples.is_none() {
+        opts.diffusion_samples = Some(2);
+    }
+    if opts.max_parallel_samples.is_none() {
+        opts.max_parallel_samples = Some(1);
+    }
+    if opts.step_scale.is_none() {
+        opts.step_scale = Some(1.638);
+    }
+    if opts.preprocess == PreprocessMode::Auto {
+        opts.preprocess = PreprocessMode::HighFidelity;
+    }
+}
+
 /// Build `boltr predict` argv: `predict`, `<input>`, `--output`, …
 #[must_use]
 pub fn build_predict_argv(
@@ -1205,6 +1227,18 @@ mod tests {
         );
         let i = args.iter().position(|a| a == "--preprocess").unwrap();
         assert_eq!(args.get(i + 1).map(String::as_str), Some("high-fidelity"));
+    }
+
+    #[test]
+    fn apply_quality_preset_sets_boltz_like_defaults() {
+        let mut opts = PredictCliOptions::default();
+        apply_quality_preset(&mut opts);
+        assert_eq!(opts.recycling_steps, Some(3));
+        assert_eq!(opts.sampling_steps, Some(200));
+        assert_eq!(opts.diffusion_samples, Some(2));
+        assert_eq!(opts.max_parallel_samples, Some(1));
+        assert_eq!(opts.step_scale, Some(1.638));
+        assert_eq!(opts.preprocess, PreprocessMode::HighFidelity);
     }
 
     #[test]

@@ -341,8 +341,8 @@ pub fn predict_step_from_collate(
         None
     };
     if use_potentials {
-        tracing::warn!(
-            "preprocess predict bridge: --use-potentials not wired to PotentialBatchFeats; using fast diffusion sampler"
+        bail!(
+            "preprocess predict bridge: --use-potentials is not wired to PotentialBatchFeats; refusing to run an unsteered diffusion sample"
         );
     }
     let steering: Option<SteeringParams> = None;

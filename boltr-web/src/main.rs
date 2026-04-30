@@ -34,9 +34,10 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use crate::paths::resolve_boltr_exe;
 use crate::predict_job::{
-    build_predict_argv, cache_from_form_override, inspect_predict_output, parse_preprocess_mode,
-    path_under_job_dir, predict_enabled, preprocess_preflight, probe_boltz_cli, run_predict_job,
-    tarball_out_dir, JobStore, PredictCliOptions, PredictJob, PredictOutputInspect,
+    apply_quality_preset, build_predict_argv, cache_from_form_override, inspect_predict_output,
+    parse_preprocess_mode, path_under_job_dir, predict_enabled, preprocess_preflight,
+    probe_boltz_cli, run_predict_job, tarball_out_dir, JobStore, PredictCliOptions, PredictJob,
+    PredictOutputInspect,
 };
 use crate::prereq::{enrich_status, gather_status, resolve_cache_dir, validate_yaml_at};
 use crate::runpod::{
@@ -497,24 +498,7 @@ async fn post_predict(
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("on"))
         .unwrap_or(predict_target == "runpod");
     if quality_preset {
-        if opts.recycling_steps.is_none() {
-            opts.recycling_steps = Some(3);
-        }
-        if opts.sampling_steps.is_none() {
-            opts.sampling_steps = Some(200);
-        }
-        if opts.diffusion_samples.is_none() {
-            opts.diffusion_samples = Some(2);
-        }
-        if opts.max_parallel_samples.is_none() {
-            opts.max_parallel_samples = Some(1);
-        }
-        if opts.step_scale.is_none() {
-            opts.step_scale = Some(1.638);
-        }
-        if opts.preprocess == crate::predict_job::PreprocessMode::Auto {
-            opts.preprocess = crate::predict_job::PreprocessMode::HighFidelity;
-        }
+        apply_quality_preset(&mut opts);
     }
 
     let runpod_config = if predict_target == "runpod" {

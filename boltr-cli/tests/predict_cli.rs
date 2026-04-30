@@ -97,6 +97,7 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("--sampling-steps"));
     assert!(stdout.contains("--diffusion-samples"));
     assert!(stdout.contains("--max-parallel-samples"));
+    assert!(stdout.contains("--quality-preset"));
     assert!(stdout.contains("--step-scale"));
     assert!(stdout.contains("--output-format"));
     assert!(stdout.contains("--max-msa-seqs"));
@@ -123,6 +124,38 @@ fn predict_help_shows_all_flags() {
     assert!(stdout.contains("auto"));
     assert!(stdout.contains("BOLTR_AUTO_MIN_FREE_VRAM_MB"));
     assert!(stdout.contains("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU"));
+}
+
+#[test]
+fn prediction_parity_baseline_documented() {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../docs/PREDICTION_PARITY_BASELINE.md");
+    let text = fs::read_to_string(&path).expect("read parity baseline doc");
+    for fixture in [
+        "protein_minimal",
+        "protein_ligand_affinity",
+        "template_complex",
+        "constrained_complex",
+    ] {
+        assert!(text.contains(fixture), "missing fixture {fixture}");
+    }
+    assert!(text.contains("BOLTR_RUN_PREDICT_PARITY"));
+}
+
+#[test]
+fn predict_parity_fixture_matrix_is_documented() {
+    if std::env::var("BOLTR_RUN_PREDICT_PARITY").ok().as_deref() != Some("1") {
+        return;
+    }
+    let boltz = Command::new("boltz").arg("--help").status();
+    assert!(
+        boltz.map(|s| s.success()).unwrap_or(false),
+        "BOLTR_RUN_PREDICT_PARITY=1 requires upstream `boltz` on PATH"
+    );
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("../docs/PREDICTION_PARITY_BASELINE.md");
+    let text = fs::read_to_string(&path).expect("read parity baseline doc");
+    assert!(text.contains("protein_ligand_affinity"));
 }
 
 #[test]

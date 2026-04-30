@@ -234,9 +234,9 @@ fn try_predict_from_preprocess(
         .map(|templates| !templates.is_empty())
         .unwrap_or(false)
     {
-        tracing::warn!(
-            record_id = %record.id,
-            "preprocess bridge: manifest contains templates, but template bias is not wired into the current Rust predict_step path"
+        bail!(
+            "preprocess bridge: manifest contains templates for record {}, but template bias is not wired into the current Rust predict_step path",
+            record.id
         );
     }
 
@@ -382,7 +382,13 @@ fn try_predict_from_preprocess(
     if let Some(ref aff) = out.affinity {
         let pred = tensor_scalar_at(&aff.affinity_pred_value, 0).unwrap_or(f64::NAN);
         let prob = tensor_scalar_at(&aff.affinity_logits_binary.sigmoid(), 0).unwrap_or(f64::NAN);
-        let summary = AffinitySummary::single(pred, prob);
+        let summary = AffinitySummary::single(pred, prob).with_sample_metadata(
+            ranking.selected_sample,
+            ranking.ranking_metric.clone(),
+            ranking.ranking_score,
+            ranking.confidence_available,
+            model.affinity_mw_correction(),
+        );
         boltr_io::write_affinity_json(out_dir, &record_id, &summary)
             .context("write affinity JSON")?;
     }
@@ -536,6 +542,7 @@ pub struct PredictTchArgs<'a> {
     pub device: String,
     pub affinity: bool,
     pub use_potentials: bool,
+    pub quality_preset: bool,
     pub overrides: PredictArgsCliOverrides,
     pub step_scale: f64,
     pub output_format: OutputFormat,
@@ -941,6 +948,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         device,
         affinity,
         use_potentials,
+        quality_preset,
         overrides,
         step_scale,
         output_format,
@@ -1153,12 +1161,14 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
                 "status": "predict_step_complete",
                 "affinity": affinity,
                 "use_potentials": use_potentials,
+                "quality_preset": quality_preset,
                 "predict_args": predict_args,
                 "output_format": output_format.to_string(),
                 "selected_sample": success.ranking.selected_sample,
                 "ranking_metric": &success.ranking.ranking_metric,
                 "ranking_score": success.ranking.ranking_score,
                 "confidence_available": success.ranking.confidence_available,
+                "affinity_mw_correction": affinity_mw_correction,
                 "note": "Structure written from preprocess dir (manifest + npz) + collate + predict_step."
             });
             let j = serde_json::to_string_pretty(&info)?;
@@ -1192,6 +1202,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
             "status": "preprocess_reference_structure",
             "affinity": affinity,
             "use_potentials": use_potentials,
+            "quality_preset": quality_preset,
             "predict_args": predict_args,
             "output_format": output_format.to_string(),
             "note": "Structure exported from preprocess bundle (reference/input coordinates). Not a diffusion sample."
@@ -1229,6 +1240,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         "status": "pipeline_complete",
         "affinity": affinity,
         "use_potentials": use_potentials,
+        "quality_preset": quality_preset,
         "predict_args": predict_args,
         "output_format": output_format.to_string(),
         "note": "No structure file: missing `manifest.json` + preprocess `.npz` next to the input YAML (enable `--preprocess auto|native|boltz`), or load_input failed, or predict_step failed with no reference fallback. See `boltr_predict_complete.txt` under a successful run: `predict_step_complete` vs `preprocess_reference_structure`."

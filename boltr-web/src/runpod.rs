@@ -22,6 +22,11 @@ pub struct RunPodConfig {
     pub workdir: String,
     pub boltr: String,
     pub cache: String,
+    pub preflight_timeout_secs: u64,
+    pub upload_timeout_secs: u64,
+    pub predict_timeout_secs: u64,
+    pub download_timeout_secs: u64,
+    pub transfer_retries: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,6 +66,18 @@ fn env_trimmed(key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+fn env_u64(key: &str, default: u64) -> u64 {
+    env_trimmed(key)
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn env_u32(key: &str, default: u32) -> u32 {
+    env_trimmed(key)
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
 fn default_local_cache() -> String {
     if let Some(cache) = env_trimmed("BOLTR_RUNPOD_CACHE").or_else(|| env_trimmed("BOLTZ_CACHE")) {
         return cache;
@@ -97,6 +114,11 @@ impl RunPodConfig {
             env_trimmed("BOLTR_RUNPOD_WORKDIR").unwrap_or_else(|| "/workspace/boltr".to_string());
         let boltr = env_trimmed("BOLTR_RUNPOD_BOLTR").unwrap_or_else(|| "boltr".to_string());
         let cache = env_trimmed("BOLTR_RUNPOD_CACHE").unwrap_or_else(|| format!("{workdir}/cache"));
+        let preflight_timeout_secs = env_u64("BOLTR_RUNPOD_PREFLIGHT_TIMEOUT_SECS", 45);
+        let upload_timeout_secs = env_u64("BOLTR_RUNPOD_UPLOAD_TIMEOUT_SECS", 300);
+        let predict_timeout_secs = env_u64("BOLTR_RUNPOD_PREDICT_TIMEOUT_SECS", 6 * 60 * 60);
+        let download_timeout_secs = env_u64("BOLTR_RUNPOD_DOWNLOAD_TIMEOUT_SECS", 300);
+        let transfer_retries = env_u32("BOLTR_RUNPOD_TRANSFER_RETRIES", 1);
         Some(Self {
             host,
             user,
@@ -105,6 +127,11 @@ impl RunPodConfig {
             workdir,
             boltr,
             cache,
+            preflight_timeout_secs,
+            upload_timeout_secs,
+            predict_timeout_secs,
+            download_timeout_secs,
+            transfer_retries,
         })
     }
 
@@ -363,7 +390,11 @@ pub async fn status_from_env() -> RunPodStatus {
     status
 }
 
-async fn run_shell_logged(command: String, logs: Arc<Mutex<Vec<String>>>) -> bool {
+async fn run_shell_logged(
+    command: String,
+    logs: Arc<Mutex<Vec<String>>>,
+    timeout_secs: u64,
+) -> bool {
     push_log(&logs, format!("[runpod] shell: {command}")).await;
     let mut child = match Command::new("sh")
         .arg("-c")
@@ -384,7 +415,18 @@ async fn run_shell_logged(command: String, logs: Arc<Mutex<Vec<String>>>) -> boo
     let err_logs = Arc::clone(&logs);
     let t1 = stdout.map(|s| tokio::spawn(pipe_remote_lines(s, "runpod-stdout", out_logs)));
     let t2 = stderr.map(|s| tokio::spawn(pipe_remote_lines(s, "runpod-stderr", err_logs)));
-    let status = child.wait().await;
+    let status = match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait()).await {
+        Ok(status) => status,
+        Err(_) => {
+            let _ = child.kill().await;
+            push_log(
+                &logs,
+                format!("[runpod] shell timed out after {timeout_secs}s"),
+            )
+            .await;
+            return false;
+        }
+    };
     if let Some(t) = t1 {
         let _ = t.await;
     }
@@ -403,6 +445,32 @@ async fn pipe_remote_lines<R: tokio::io::AsyncRead + Unpin>(
     while let Ok(Some(line)) = lines.next_line().await {
         push_log(&logs, format!("[{name}] {line}")).await;
     }
+}
+
+async fn run_shell_logged_retry(
+    label: &str,
+    command: String,
+    logs: Arc<Mutex<Vec<String>>>,
+    timeout_secs: u64,
+    retries: u32,
+) -> bool {
+    for attempt in 0..=retries {
+        if attempt > 0 {
+            push_log(
+                &logs,
+                format!(
+                    "[runpod] retrying {label} (attempt {} of {})",
+                    attempt + 1,
+                    retries + 1
+                ),
+            )
+            .await;
+        }
+        if run_shell_logged(command.clone(), Arc::clone(&logs), timeout_secs).await {
+            return true;
+        }
+    }
+    false
 }
 
 fn ssh_shell_prefix(cfg: &RunPodConfig) -> String {
@@ -457,6 +525,28 @@ pub async fn run_remote_predict_job(
     )
     .await;
 
+    let preflight_cmd = format!(
+        "{} {}",
+        ssh_shell_prefix(&cfg),
+        shell_quote(&format!(
+            "cd {workdir} && {boltr} doctor --json >/dev/null",
+            workdir = shell_quote(&cfg.workdir),
+            boltr = shell_quote(&cfg.boltr)
+        ))
+    );
+    if !run_shell_logged_retry(
+        "remote preflight",
+        preflight_cmd,
+        Arc::clone(&logs),
+        cfg.preflight_timeout_secs,
+        cfg.transfer_retries,
+    )
+    .await
+    {
+        finish_remote_job(&job, &logs, -1, false).await;
+        return;
+    }
+
     let mkdir_cmd = format!(
         "{} {}",
         ssh_shell_prefix(&cfg),
@@ -467,18 +557,39 @@ pub async fn run_remote_predict_job(
             out = shell_quote(&remote_out_dir)
         ))
     );
-    if !run_shell_logged(mkdir_cmd, Arc::clone(&logs)).await {
+    if !run_shell_logged_retry(
+        "remote setup",
+        mkdir_cmd,
+        Arc::clone(&logs),
+        cfg.preflight_timeout_secs,
+        cfg.transfer_retries,
+    )
+    .await
+    {
         finish_remote_job(&job, &logs, -1, false).await;
         return;
     }
 
+    push_log(
+        &logs,
+        "[runpod] uploading input root with common build/cache directories excluded".to_string(),
+    )
+    .await;
     let upload_cmd = format!(
-        "tar -C {} -cf - . | {} {}",
+        "tar -C {} --exclude .git --exclude target --exclude output --exclude out --exclude 'boltz_results_*' -cf - . | {} {}",
         local_shell_quote(&req.local_input_root),
         ssh_shell_prefix(&cfg),
         shell_quote(&format!("tar -C {} -xf -", shell_quote(&remote_in_dir)))
     );
-    if !run_shell_logged(upload_cmd, Arc::clone(&logs)).await {
+    if !run_shell_logged_retry(
+        "upload",
+        upload_cmd,
+        Arc::clone(&logs),
+        cfg.upload_timeout_secs,
+        cfg.transfer_retries,
+    )
+    .await
+    {
         finish_remote_job(&job, &logs, -1, false).await;
         return;
     }
@@ -521,7 +632,27 @@ pub async fn run_remote_predict_job(
     let stderr = child.stderr.take();
     let t1 = stdout.map(|s| tokio::spawn(pipe_remote_lines(s, "remote-stdout", Arc::clone(&logs))));
     let t2 = stderr.map(|s| tokio::spawn(pipe_remote_lines(s, "remote-stderr", Arc::clone(&logs))));
-    let status = child.wait().await;
+    let status =
+        match tokio::time::timeout(Duration::from_secs(cfg.predict_timeout_secs), child.wait())
+            .await
+        {
+            Ok(status) => status,
+            Err(_) => {
+                let _ = child.kill().await;
+                push_log(
+                    &logs,
+                    format!(
+                        "[runpod] remote predict timed out after {}s",
+                        cfg.predict_timeout_secs
+                    ),
+                )
+                .await;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "remote predict timed out",
+                ))
+            }
+        };
     if let Some(t) = t1 {
         let _ = t.await;
     }
@@ -548,7 +679,15 @@ pub async fn run_remote_predict_job(
             )),
             local_shell_quote(&req.local_out_dir)
         );
-        if !run_shell_logged(download_cmd, Arc::clone(&logs)).await {
+        if !run_shell_logged_retry(
+            "download",
+            download_cmd,
+            Arc::clone(&logs),
+            cfg.download_timeout_secs,
+            cfg.transfer_retries,
+        )
+        .await
+        {
             finish_remote_job(&job, &logs, -1, false).await;
             return;
         }
