@@ -30,6 +30,15 @@ use tch::{self, Kind, Tensor};
 
 use crate::OutputFormat;
 
+fn env_flag_true(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| {
+            let t = v.trim();
+            t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
+        })
+        .unwrap_or(false)
+}
+
 /// Turn `diffusion.sample_atom_coords` into one `[x,y,z]` per atom for [`StructureV2Tables::apply_predicted_atom_coords`].
 ///
 /// Boltz uses `[batch_or_multiplicity, N_atoms, 3]`. Some layouts may appear as `[N, 3]` or wrongly
@@ -1006,7 +1015,15 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     let conf_path = resolve_conf_checkpoint(checkpoint.as_deref(), &cache)?;
     tracing::info!(path = %conf_path.display(), "using confidence checkpoint");
 
-    let aff_path = if affinity {
+    let native_confidence_enabled = env_flag_true("BOLTR_ENABLE_NATIVE_CONFIDENCE");
+    let native_affinity_enabled = env_flag_true("BOLTR_ENABLE_NATIVE_AFFINITY");
+    if affinity && !native_affinity_enabled {
+        tracing::warn!(
+            "--affinity requested, but native affinity scoring is disabled by default to preserve GPU memory; set BOLTR_ENABLE_NATIVE_AFFINITY=1 to opt in"
+        );
+    }
+
+    let aff_path = if affinity && native_affinity_enabled {
         resolve_affinity_checkpoint(affinity_checkpoint.as_deref(), &cache)
     } else {
         None
@@ -1014,7 +1031,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     if aff_path.is_some() {
         tracing::info!(path = %aff_path.as_ref().unwrap().display(), "using affinity checkpoint");
     }
-    if affinity && aff_path.is_none() {
+    if affinity && native_affinity_enabled && aff_path.is_none() {
         bail!(
             "--affinity requested but no affinity safetensors checkpoint was found (set --affinity-checkpoint or place boltz2_aff.safetensors in the cache)"
         );
@@ -1040,7 +1057,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         "building Boltz2Model from hparams"
     );
 
-    let affinity_config = if affinity {
+    let affinity_config = if affinity && native_affinity_enabled {
         Some(AffinityModuleConfig::from_affinity_model_args(
             hparams.affinity_model_args.as_ref(),
             token_s,
@@ -1048,13 +1065,20 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     } else {
         None
     };
-    let affinity_mw_correction_enabled = affinity && affinity_mw_correction
-        || (affinity && hparams.affinity_mw_correction.unwrap_or(false));
-    let confidence_config = if hparams.confidence_prediction == Some(true) {
+    let affinity_mw_correction_enabled = affinity
+        && native_affinity_enabled
+        && (affinity_mw_correction || hparams.affinity_mw_correction.unwrap_or(false));
+    let confidence_config =
+        if hparams.confidence_prediction == Some(true) && native_confidence_enabled {
         let mut cfg = ConfidenceModuleConfig::default();
         cfg.pairformer_num_blocks = num_blocks;
         Some(cfg)
     } else {
+        if hparams.confidence_prediction == Some(true) {
+            tracing::warn!(
+                "native confidence scoring is disabled by default to preserve GPU memory; set BOLTR_ENABLE_NATIVE_CONFIDENCE=1 to opt in"
+            );
+        }
         None
     };
 

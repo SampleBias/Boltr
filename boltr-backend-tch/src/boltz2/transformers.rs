@@ -341,14 +341,21 @@ impl AtomTransformer {
         let q_w = q.reshape(&[b * nw, w, d]);
         let c_w = c.reshape(&[b * nw, w, c.size()[2]]);
 
-        let bias_exp = bias.repeat_interleave_self_int(multiplicity, Some(0), None);
+        let bias_exp = if bias.size()[0] == b {
+            bias.shallow_clone()
+        } else {
+            bias.repeat_interleave_self_int(multiplicity, Some(0), None)
+        };
         let bias_size = bias_exp.size();
         let bk = bias_size[0] * bias_size[1];
         let bias_w = bias_exp.reshape(&[bk, w, h, bias_size[4]]);
 
-        let mask_w = mask
-            .repeat_interleave_self_int(multiplicity, Some(0), None)
-            .reshape(&[b * nw, w]);
+        let mask_exp = if mask.size()[0] == b {
+            mask.shallow_clone()
+        } else {
+            mask.repeat_interleave_self_int(multiplicity, Some(0), None)
+        };
+        let mask_w = mask_exp.reshape(&[b * nw, w]);
 
         let im = indexing_matrix.shallow_clone();
         let batch = b;

@@ -316,53 +316,55 @@ pub fn predict_step_from_collate(
 ) -> Result<PredictStepOutput> {
     let device = model.device();
     let owned = OwnedPredictTensors::from_collate(coll, device)?;
-    let atom_encoder_batch = AtomEncoderBatchFeats {
-        ref_atom_name_chars: Some(&owned.ref_atom_name_chars),
-        atom_backbone_feat: owned.atom_backbone_feat.as_ref(),
-        res_type: Some(&owned.res_type),
-        modified: Some(&owned.modified),
-        mol_type: Some(&owned.mol_type),
-    };
-    let emb = owned.input_embedder_feats(Some(&atom_encoder_batch));
-    let s_inputs = model.forward_s_inputs_from_embedder(&emb, false);
-    let rel = owned.rel_pos_feats();
-    let msa = owned.msa_feats();
-    let contact = owned.contact_feats();
-    let feats = owned.predict_step_feats(Some(&atom_encoder_batch));
-    if model.affinity_mw_correction() && feats.affinity_mw.is_none() {
-        bail!(
-            "affinity_mw_correction is enabled, but affinity_mw is missing from collated features"
-        );
-    }
+    tch::no_grad(|| {
+        let atom_encoder_batch = AtomEncoderBatchFeats {
+            ref_atom_name_chars: Some(&owned.ref_atom_name_chars),
+            atom_backbone_feat: owned.atom_backbone_feat.as_ref(),
+            res_type: Some(&owned.res_type),
+            modified: Some(&owned.modified),
+            mol_type: Some(&owned.mol_type),
+        };
+        let emb = owned.input_embedder_feats(Some(&atom_encoder_batch));
+        let s_inputs = model.forward_s_inputs_from_embedder(&emb, false);
+        let rel = owned.rel_pos_feats();
+        let msa = owned.msa_feats();
+        let contact = owned.contact_feats();
+        let feats = owned.predict_step_feats(Some(&atom_encoder_batch));
+        if model.affinity_mw_correction() && feats.affinity_mw.is_none() {
+            bail!(
+                "affinity_mw_correction is enabled, but affinity_mw is missing from collated features"
+            );
+        }
 
-    let type_bonds = if model.bond_type_feature() {
-        owned.type_bonds.as_ref()
-    } else {
-        None
-    };
-    if use_potentials {
-        bail!(
-            "preprocess predict bridge: --use-potentials is not wired to PotentialBatchFeats; refusing to run an unsteered diffusion sample"
-        );
-    }
-    let steering: Option<SteeringParams> = None;
+        let type_bonds = if model.bond_type_feature() {
+            owned.type_bonds.as_ref()
+        } else {
+            None
+        };
+        if use_potentials {
+            bail!(
+                "preprocess predict bridge: --use-potentials is not wired to PotentialBatchFeats; refusing to run an unsteered diffusion sample"
+            );
+        }
+        let steering: Option<SteeringParams> = None;
 
-    model.predict_step(
-        &s_inputs,
-        &rel,
-        Some(&owned.token_bonds),
-        type_bonds,
-        Some(&contact),
-        recycling_steps,
-        Some(&msa),
-        None,
-        &feats,
-        sampling_steps,
-        diffusion_samples,
-        steering,
-        None,
-        max_parallel_samples,
-        Some(&emb),
-        false,
-    )
+        model.predict_step(
+            &s_inputs,
+            &rel,
+            Some(&owned.token_bonds),
+            type_bonds,
+            Some(&contact),
+            recycling_steps,
+            Some(&msa),
+            None,
+            &feats,
+            sampling_steps,
+            diffusion_samples,
+            steering,
+            None,
+            max_parallel_samples,
+            Some(&emb),
+            false,
+        )
+    })
 }
