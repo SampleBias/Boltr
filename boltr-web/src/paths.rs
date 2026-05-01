@@ -48,7 +48,7 @@ pub fn prepend_torch_wheel_lib_to_ld_path(cmd: &mut tokio::process::Command, py:
 #[cfg(not(unix))]
 pub fn prepend_torch_wheel_lib_to_ld_path(_cmd: &mut tokio::process::Command, _py: &Path) {}
 
-/// Resolve the `boltr` executable: `BOLTR` env → walk to `target/release/boltr` → `command -v boltr`.
+/// Resolve the `boltr` executable: `BOLTR` env → `CARGO_TARGET_DIR` → common local target dirs → `command -v boltr`.
 #[must_use]
 pub fn resolve_boltr_exe() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("BOLTR") {
@@ -56,6 +56,16 @@ pub fn resolve_boltr_exe() -> Option<PathBuf> {
         if pb.is_file() {
             return Some(pb);
         }
+    }
+    if let Ok(p) = std::env::var("CARGO_TARGET_DIR") {
+        let pb = PathBuf::from(p).join("release/boltr");
+        if pb.is_file() {
+            return Some(pb);
+        }
+    }
+    let tmp_target = PathBuf::from("/tmp/boltr-target/release/boltr");
+    if tmp_target.is_file() {
+        return Some(tmp_target);
     }
     if let Ok(mut d) = std::env::current_dir() {
         for _ in 0..8 {

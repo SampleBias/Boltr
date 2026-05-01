@@ -1077,9 +1077,23 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     match model.load_partial_from_safetensors(&conf_path) {
         Ok(missing) => {
             if missing.iter().any(|k| k.starts_with("confidence_module.")) {
-                bail!(
-                    "confidence_prediction is enabled, but the checkpoint is missing confidence_module weights"
+                let missing_confidence_count = missing
+                    .iter()
+                    .filter(|k| k.starts_with("confidence_module."))
+                    .count();
+                let sample = missing
+                    .iter()
+                    .filter(|k| k.starts_with("confidence_module."))
+                    .take(10)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                tracing::warn!(
+                    missing_confidence_count,
+                    sample = ?sample,
+                    "confidence weights are incomplete for this graph; disabling confidence outputs/ranking and continuing structure prediction"
                 );
+                model.disable_confidence_module();
+                confidence_ranking_enabled = false;
             }
             tracing::info!(
                 model_params = model.var_store().len(),
@@ -1106,9 +1120,22 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         match model.load_partial_from_safetensors(path) {
             Ok(missing) => {
                 if missing.iter().any(|k| k.starts_with("affinity_module.")) {
-                    bail!(
-                        "affinity checkpoint is missing affinity_module weights; refusing partial default-initialized affinity prediction"
+                    let missing_affinity_count = missing
+                        .iter()
+                        .filter(|k| k.starts_with("affinity_module."))
+                        .count();
+                    let sample = missing
+                        .iter()
+                        .filter(|k| k.starts_with("affinity_module."))
+                        .take(10)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    tracing::warn!(
+                        missing_affinity_count,
+                        sample = ?sample,
+                        "affinity weights are incomplete; disabling affinity outputs and continuing structure prediction"
                     );
+                    model.disable_affinity_module();
                 }
                 tracing::info!(
                     model_params = model.var_store().len(),

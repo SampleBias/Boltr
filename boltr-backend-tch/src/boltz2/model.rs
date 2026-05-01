@@ -847,8 +847,20 @@ impl Boltz2Model {
         self.confidence_module.as_ref()
     }
 
+    /// Disable confidence outputs/ranking when checkpoint keys do not fully match the confidence
+    /// graph. Structure diffusion can still run without confidence.
+    pub fn disable_confidence_module(&mut self) {
+        self.confidence_module = None;
+    }
+
     pub fn affinity_module(&self) -> Option<&AffinityModule> {
         self.affinity_module.as_ref()
+    }
+
+    /// Disable affinity outputs when affinity checkpoint keys are incomplete. Structure diffusion
+    /// can still run without affinity scoring.
+    pub fn disable_affinity_module(&mut self) {
+        self.affinity_module = None;
     }
 
     pub fn affinity_mw_correction(&self) -> bool {

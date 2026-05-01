@@ -588,8 +588,9 @@ pub fn build_predict_argv(
     for a in &opts.preprocess_bolt_arg {
         let t = a.trim();
         if !t.is_empty() {
-            args.push("--preprocess-bolt-arg".to_string());
-            args.push(t.to_string());
+            // Values can themselves be flags for upstream Boltz, e.g. `--no_kernels`.
+            // Use `--flag=value` so clap parses them as values for boltr's option.
+            args.push(format!("--preprocess-bolt-arg={t}"));
         }
     }
     if let Some(ref id) = opts.preprocess_record_id {
@@ -972,6 +973,21 @@ pub async fn run_predict_job(
     )
     .await;
 
+    if let Err(e) = tokio::fs::create_dir_all(&job.out_dir).await {
+        push_log(
+            &logs,
+            format!(
+                "[boltr-web] failed to create output directory {}: {e}",
+                job.out_dir.display()
+            ),
+        )
+        .await;
+        job.exit_code.store(-1, Ordering::SeqCst);
+        job.success.store(false, Ordering::SeqCst);
+        job.done.store(true, Ordering::SeqCst);
+        return;
+    }
+
     let venv_py = find_venv_python();
     let py = venv_py.clone().unwrap_or_else(|| PathBuf::from("python3"));
     let mut cmd = Command::new(&boltr);
@@ -1227,6 +1243,24 @@ mod tests {
         );
         let i = args.iter().position(|a| a == "--preprocess").unwrap();
         assert_eq!(args.get(i + 1).map(String::as_str), Some("high-fidelity"));
+    }
+
+    #[test]
+    fn build_predict_argv_preprocess_bolt_arg_hyphen_value_uses_equals() {
+        let opts = PredictCliOptions {
+            preprocess_bolt_arg: vec!["--no_kernels".to_string()],
+            ..Default::default()
+        };
+        let args = build_predict_argv(
+            Path::new("/in.yaml"),
+            Path::new("/out"),
+            Path::new("/cache"),
+            &opts,
+        );
+        assert!(args
+            .iter()
+            .any(|a| a == "--preprocess-bolt-arg=--no_kernels"));
+        assert!(!args.iter().any(|a| a == "--preprocess-bolt-arg"));
     }
 
     #[test]

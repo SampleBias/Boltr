@@ -524,8 +524,8 @@ async fn post_predict(
         opts.sampling_steps_affinity = Some(200);
     }
 
-    if predict_target == "runpod" && !opts.preprocess_auto_boltz_gpu {
-        opts.preprocess_boltz_cpu = true;
+    if predict_target == "runpod" && !opts.preprocess_boltz_cpu {
+        opts.preprocess_auto_boltz_gpu = true;
     }
 
     if predict_target == "local" && opts.device.trim().is_empty() {
