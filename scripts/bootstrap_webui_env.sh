@@ -8,10 +8,19 @@
 # Env:
 #   BOLTZ_CACHE   — model cache (default: ~/.cache/boltr)
 #   BOLTR_TORCH_VERSION — passed to bootstrap_dev_venv (default 2.3.0)
+#   CARGO_TARGET_DIR — cargo build output (default: /tmp/boltr-target on /workspace systems)
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+if [[ -z "${CARGO_TARGET_DIR:-}" && -d /workspace ]]; then
+  export CARGO_TARGET_DIR=/tmp/boltr-target
+fi
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+  mkdir -p "$CARGO_TARGET_DIR"
+fi
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
 
 bash scripts/bootstrap_dev_venv.sh
 
@@ -26,7 +35,7 @@ CACHE="${BOLTZ_CACHE:-$HOME/.cache/boltr}"
 mkdir -p "$CACHE"
 export BOLTZ_CACHE="$CACHE"
 
-BOLTR_BIN="$ROOT/target/release/boltr"
+BOLTR_BIN="$TARGET_DIR/release/boltr"
 if [[ ! -x "$BOLTR_BIN" ]]; then
   echo "ERROR: missing $BOLTR_BIN after build" >&2
   exit 1
@@ -63,5 +72,5 @@ echo "==> Sanity: LibTorch runtime"
 
 echo
 echo "Done. Cache: $CACHE"
-echo "Run Web UI:  $ROOT/scripts/with_dev_venv.sh $ROOT/target/release/boltr-web"
+echo "Run Web UI:  $ROOT/scripts/with_dev_venv.sh $TARGET_DIR/release/boltr-web"
 echo "Set BOLTR=$BOLTR_BIN so boltr-web can probe the tch-enabled binary (optional)."
