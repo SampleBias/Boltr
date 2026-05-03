@@ -57,6 +57,10 @@ Boltr passes upstream Boltz’s `--no_kernels` flag by default. This keeps predi
 
 **Form defaults:** The predict form defaults **Preprocess** to **`auto`** (and the API defaults missing `preprocess` to **`auto`**) so a preprocess bundle is generated when possible. Use **`off`** only if you already have **`manifest.json` + `.npz`** next to your YAML.
 
+## Structure QC
+
+Predicted protein structures are validated before final export. Boltr writes `*_model_0.qc.json` and `*_model_0.qc.txt` next to the structure files, attempts deterministic coordinate relaxation when validation fails, and only promotes `.cif` / `.pdb` as final output after QC passes. If validation still fails, outputs are suffixed `.failed.cif` / `.failed.pdb` and the prediction job reports the QC failure.
+
 See the root [**README.md** § Predict: preprocess and structure output](../README.md#predict-preprocess-and-structure-output) for when **mmCIF/PDB** appear and how **`pipeline_complete`** differs from **`predict_step_complete`**.
 
 ## API

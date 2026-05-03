@@ -728,7 +728,52 @@ fn warn_if_all_present_coords_zero(structure: &boltr_io::StructureV2Tables, cont
     }
 }
 
-/// Write structure file (PDB or mmCIF) from predicted coordinates.
+fn structure_primary_path(
+    out_dir: &Path,
+    record_id: &str,
+    model_rank: usize,
+    output_format: OutputFormat,
+) -> PathBuf {
+    let record_dir = out_dir.join(record_id);
+    match output_format {
+        OutputFormat::Pdb => record_dir.join(format!("{record_id}_model_{model_rank}.pdb")),
+        OutputFormat::Mmcif | OutputFormat::Both => {
+            record_dir.join(format!("{record_id}_model_{model_rank}.cif"))
+        }
+    }
+}
+
+fn write_structure_pair(
+    record_dir: &Path,
+    base: &str,
+    suffix: Option<&str>,
+    structure: &boltr_io::StructureV2Tables,
+) -> Result<(PathBuf, PathBuf)> {
+    let stem = match suffix {
+        Some(s) => format!("{base}.{s}"),
+        None => base.to_string(),
+    };
+    let pdb = record_dir.join(format!("{stem}.pdb"));
+    let cif = record_dir.join(format!("{stem}.cif"));
+    let pdb_bytes = boltr_io::structure_v2_to_pdb(structure, None);
+    let cif_bytes = boltr_io::structure_v2_to_mmcif(structure);
+    std::fs::write(&pdb, &pdb_bytes).with_context(|| format!("write {}", pdb.display()))?;
+    std::fs::write(&cif, &cif_bytes).with_context(|| format!("write {}", cif.display()))?;
+    Ok((pdb, cif))
+}
+
+fn write_qc_reports(record_dir: &Path, base: &str, report: &boltr_io::QcReport) -> Result<()> {
+    let json = record_dir.join(format!("{base}.qc.json"));
+    let txt = record_dir.join(format!("{base}.qc.txt"));
+    let bytes = serde_json::to_vec_pretty(report).context("serialize QC report JSON")?;
+    std::fs::write(&json, bytes).with_context(|| format!("write {}", json.display()))?;
+    std::fs::write(&txt, boltr_io::render_qc_text(report))
+        .with_context(|| format!("write {}", txt.display()))?;
+    Ok(())
+}
+
+/// Write structure files only after universal QC passes. Failed structures are emitted with
+/// `.failed.*` suffixes and never become the canonical final `.cif`/`.pdb`.
 #[allow(clippy::too_many_arguments)]
 fn write_structure_file(
     out_dir: &Path,
@@ -743,31 +788,168 @@ fn write_structure_file(
     std::fs::create_dir_all(&record_dir)
         .with_context(|| format!("mkdir {}", record_dir.display()))?;
 
-    let path = match output_format {
-        OutputFormat::Pdb => {
-            let p = record_dir.join(format!("{record_id}_model_{model_rank}.pdb"));
-            let bytes = boltr_io::structure_v2_to_pdb(structure, None);
-            std::fs::write(&p, &bytes).with_context(|| format!("write {}", p.display()))?;
-            p
+    let base = format!("{record_id}_model_{model_rank}");
+    let primary_path = structure_primary_path(out_dir, record_id, model_rank, output_format);
+    let primary_name = primary_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prediction_model_0.cif")
+        .to_string();
+    let thresholds = boltr_io::QcThresholds::default();
+    let initial_report =
+        boltr_io::validate_structure_qc(structure, primary_name.clone(), thresholds, false, false);
+
+    if initial_report.passed {
+        let (_pdb, cif) = write_structure_pair(&record_dir, &base, None, structure)?;
+        write_qc_reports(&record_dir, &base, &initial_report)?;
+        tracing::debug!(path = %cif.display(), "wrote QC-passed structure files");
+        return Ok(primary_path);
+    }
+
+    let mut relaxed = structure.clone();
+    let relax_outcome = boltr_io::relax_structure(&mut relaxed, thresholds);
+    let relaxed_report =
+        boltr_io::validate_structure_qc(&relaxed, primary_name, thresholds, true, false);
+    if relaxed_report.passed {
+        write_structure_pair(&record_dir, &base, Some("relaxed"), &relaxed)?;
+        write_structure_pair(&record_dir, &base, None, &relaxed)?;
+        let mut final_report = relaxed_report;
+        final_report.relaxation_fixed = true;
+        write_qc_reports(&record_dir, &base, &final_report)?;
+        tracing::info!(
+            max_displacement = relax_outcome.max_displacement,
+            iterations = relax_outcome.iterations,
+            "QC relaxation fixed structure geometry"
+        );
+        return Ok(primary_path);
+    }
+
+    write_structure_pair(&record_dir, &base, Some("failed"), structure)?;
+    write_qc_reports(&record_dir, &base, &relaxed_report)?;
+    bail!(
+        "structure QC failed after relaxation for {record_id} model {model_rank}: {}",
+        relaxed_report.fail_reasons.join("; ")
+    )
+}
+
+#[cfg(test)]
+mod qc_export_tests {
+    use super::*;
+    use boltr_io::boltz_const::{chain_type_id, token_id};
+    use boltr_io::{AtomV2Row, ChainRow, EnsembleRow, ResidueRow, StructureV2Tables};
+
+    fn two_ala_structure() -> StructureV2Tables {
+        let protein = chain_type_id("PROTEIN").expect("PROTEIN") as i8;
+        let ala = token_id("ALA").expect("ALA") as i8;
+        let names = ["N", "CA", "C", "O", "CB", "N", "CA", "C", "O", "CB"];
+        let coords = vec![
+            [0.0, 0.0, 0.0],
+            [1.46, 0.0, 0.0],
+            [2.36, 1.24, 0.0],
+            [2.20, 2.46, 0.0],
+            [1.46, -1.50, 0.0],
+            [3.66, 1.52, 0.0],
+            [3.85, 2.95, 0.20],
+            [4.75, 4.19, 0.20],
+            [4.59, 5.41, 0.20],
+            [3.85, 2.95, 1.70],
+        ];
+        let atoms = names
+            .iter()
+            .zip(coords.iter())
+            .map(|(&name, &coords)| AtomV2Row {
+                name: name.to_string(),
+                coords,
+                is_present: true,
+                bfactor: 0.0,
+                plddt: 0.0,
+            })
+            .collect();
+        StructureV2Tables {
+            atoms,
+            residues: vec![
+                ResidueRow {
+                    name: "ALA".to_string(),
+                    res_type: ala,
+                    res_idx: 0,
+                    atom_idx: 0,
+                    atom_num: 5,
+                    atom_center: 1,
+                    atom_disto: 4,
+                    is_standard: true,
+                    is_present: true,
+                },
+                ResidueRow {
+                    name: "ALA".to_string(),
+                    res_type: ala,
+                    res_idx: 1,
+                    atom_idx: 5,
+                    atom_num: 5,
+                    atom_center: 6,
+                    atom_disto: 9,
+                    is_standard: true,
+                    is_present: true,
+                },
+            ],
+            chains: vec![ChainRow {
+                name: "A".to_string(),
+                mol_type: protein,
+                sym_id: 0,
+                asym_id: 0,
+                entity_id: 0,
+                atom_idx: 0,
+                atom_num: 10,
+                res_idx: 0,
+                res_num: 2,
+                cyclic_period: 0,
+            }],
+            chain_mask: vec![true],
+            coords: coords.clone(),
+            ensemble: vec![EnsembleRow {
+                atom_coord_idx: 0,
+                atom_num: 10,
+            }],
+            ensemble_atom_coord_idx: 0,
+            bonds: vec![],
         }
-        OutputFormat::Mmcif => {
-            let p = record_dir.join(format!("{record_id}_model_{model_rank}.cif"));
-            let bytes = boltr_io::structure_v2_to_mmcif(structure);
-            std::fs::write(&p, &bytes).with_context(|| format!("write {}", p.display()))?;
-            p
-        }
-        OutputFormat::Both => {
-            let pdb = record_dir.join(format!("{record_id}_model_{model_rank}.pdb"));
-            let cif = record_dir.join(format!("{record_id}_model_{model_rank}.cif"));
-            let pdb_bytes = boltr_io::structure_v2_to_pdb(structure, None);
-            let cif_bytes = boltr_io::structure_v2_to_mmcif(structure);
-            std::fs::write(&pdb, &pdb_bytes).with_context(|| format!("write {}", pdb.display()))?;
-            std::fs::write(&cif, &cif_bytes).with_context(|| format!("write {}", cif.display()))?;
-            cif
-        }
-    };
-    tracing::debug!(path = %path.display(), "wrote structure file");
-    Ok(path)
+    }
+
+    #[test]
+    fn qc_export_writes_final_structures_and_reports() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let p = write_structure_file(
+            tmp.path(),
+            "prediction",
+            0,
+            OutputFormat::Mmcif,
+            &two_ala_structure(),
+        )
+        .expect("QC-passed export");
+        let dir = tmp.path().join("prediction");
+        assert_eq!(p, dir.join("prediction_model_0.cif"));
+        assert!(dir.join("prediction_model_0.cif").is_file());
+        assert!(dir.join("prediction_model_0.pdb").is_file());
+        assert!(dir.join("prediction_model_0.qc.json").is_file());
+        assert!(dir.join("prediction_model_0.qc.txt").is_file());
+        assert!(!dir.join("prediction_model_0.failed.cif").exists());
+    }
+
+    #[test]
+    fn qc_export_fails_closed_for_missing_backbone() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut s = two_ala_structure();
+        s.atoms[1].is_present = false;
+        let err = write_structure_file(tmp.path(), "prediction", 0, OutputFormat::Both, &s)
+            .expect_err("missing CA must fail");
+        assert!(err.to_string().contains("structure QC failed"));
+        let dir = tmp.path().join("prediction");
+        assert!(!dir.join("prediction_model_0.cif").exists());
+        assert!(!dir.join("prediction_model_0.pdb").exists());
+        assert!(dir.join("prediction_model_0.failed.cif").is_file());
+        assert!(dir.join("prediction_model_0.failed.pdb").is_file());
+        assert!(dir.join("prediction_model_0.qc.json").is_file());
+        assert!(dir.join("prediction_model_0.qc.txt").is_file());
+    }
 }
 
 // ===========================================================================
@@ -1068,8 +1250,9 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     let affinity_mw_correction_enabled = affinity
         && native_affinity_enabled
         && (affinity_mw_correction || hparams.affinity_mw_correction.unwrap_or(false));
-    let confidence_config =
-        if hparams.confidence_prediction == Some(true) && native_confidence_enabled {
+    let confidence_config = if hparams.confidence_prediction == Some(true)
+        && native_confidence_enabled
+    {
         let mut cfg = ConfidenceModuleConfig::default();
         cfg.pairformer_num_blocks = num_blocks;
         Some(cfg)

@@ -214,7 +214,12 @@ Upstream Boltz writes preprocess artifacts under a `**boltz_results_<yaml_stem>/
 
 With a valid bundle and a successful diffusion bridge, coordinates are written as:
 
-- `{output}/{record_id}/{record_id}_model_0.cif` (mmCIF) or `.pdb`, depending on `**--output-format**`.
+- `{output}/{record_id}/{record_id}_model_0.cif`
+- `{output}/{record_id}/{record_id}_model_0.pdb`
+- `{output}/{record_id}/{record_id}_model_0.qc.json`
+- `{output}/{record_id}/{record_id}_model_0.qc.txt`
+
+Every protein prediction passes a Rust-native structure QC gate before final export. The gate checks standard protein backbone atom presence, residue order, peptide continuity, local backbone bond lengths, omega torsion outliers, hard C-N chain breaks, hard heavy-atom overlaps, and radius of gyration. If the first validation fails, Boltr runs a deterministic coordinate relaxation pass, writes `{record_id}_model_0.relaxed.cif` / `.pdb` when relaxation succeeds, and exports final `.cif` / `.pdb` only after revalidation passes. If geometry still fails, Boltr writes `{record_id}_model_0.failed.cif` / `.pdb` plus QC reports and does not silently publish invalid coordinates as final output.
 
 `boltr_predict_complete.txt` in that folder records `**status**`: e.g. `**predict_step_complete**` (diffusion), `**preprocess_reference_structure**` (reference coordinates only if diffusion did not run but the bundle loaded), or `**pipeline_complete**` when no structure file was produced (missing bundle or `load_input` failure). See `[boltr-cli/src/predict_tch.rs](boltr-cli/src/predict_tch.rs)`.
 

@@ -48,6 +48,8 @@ bash scripts/with_dev_venv.sh ./target/release/boltr doctor
 ./target/release/boltr doctor --json
 ```
 
+Prediction structure files are QC-gated before final export. Successful protein predictions include both `.cif` and `.pdb` plus `{record_id}_model_0.qc.json` / `.qc.txt`; failed geometry is written as `{record_id}_model_0.failed.*` and is not promoted to final output.
+
 ## Smoke tests
 
 ```bash

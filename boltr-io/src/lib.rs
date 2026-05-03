@@ -28,6 +28,7 @@ pub mod msa_npz;
 pub mod pad;
 pub mod parser;
 pub mod preprocess;
+pub mod qc;
 pub mod ref_atoms;
 pub mod residue_constraints;
 pub mod structure_v2;
@@ -136,6 +137,10 @@ pub use preprocess::{
     canonical_yaml_parent, copy_flat_preprocess_bundle, copy_msa_a3m_to_output,
     find_boltz_manifest_path, preprocess_bundle_ready, resolve_preprocess_load_dirs,
     validate_native_eligible, write_native_preprocess_bundle, NativePreprocessError,
+};
+pub use qc::{
+    relax_structure, render_qc_text, validate_structure_qc, QcReport, QcThresholds,
+    RelaxationOutcome,
 };
 pub use vdw_radii::{vdw_radius, VDW_RADII, VDW_RADII_LEN};
 pub use write::{
