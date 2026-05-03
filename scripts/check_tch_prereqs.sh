@@ -59,6 +59,15 @@ else
 fi
 
 echo
+if ! command -v pkg-config >/dev/null 2>&1; then
+  echo "pkg-config: MISSING — required for openssl-sys when building boltr-cli/boltr-web. Debian/Ubuntu: sudo apt install pkg-config libssl-dev   Fedora: sudo dnf install pkgconf openssl-devel"
+elif ! pkg-config --exists openssl 2>/dev/null; then
+  echo "openssl (dev): MISSING — install headers/libs so pkg-config finds openssl. Debian/Ubuntu: sudo apt install libssl-dev"
+else
+  echo "openssl (pkg-config): ok — $(pkg-config --modversion openssl)"
+fi
+
+echo
 if [[ -n "${LIBTORCH:-}" ]]; then
   echo "LIBTORCH=$LIBTORCH"
 else

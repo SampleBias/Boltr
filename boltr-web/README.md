@@ -11,11 +11,14 @@ Local web UI for Boltr cache status, YAML validation, and **running `boltr predi
 ## Run
 
 ```bash
-# From repo root, with dev venv on PATH for LibTorch (same as boltr-cli):
+# Recommended (sets BOLTR, BOLTR_REPO, BOLTR_BOLTZ_COMMAND for preprocess auto/boltz):
+scripts/run_boltr_web.sh
+
+# Or manually, with dev venv on PATH for LibTorch:
 scripts/with_dev_venv.sh ./target/release/boltr-web
 ```
 
-Set **`BOLTR=/path/to/target/release/boltr`** so status checks and predict use the **same** `boltr` binary (required for **`boltr doctor --json`** probes and consistent behavior). The bootstrap script [`Boltr_Boltz_bootstrap`](../Boltr_Boltz_bootstrap) / `./Boltr_go` prints a suggested `export BOLTR=...` line when it finishes.
+Set **`BOLTR=/path/to/target/release/boltr`** so status checks and predict use the **same** `boltr` binary (required for **`boltr doctor --json`** probes and consistent behavior). The bootstrap script [`Boltr_Boltz_bootstrap`](../Boltr_Boltz_bootstrap) / `./Boltr_go` suggests `scripts/run_boltr_web.sh`, which sets **`BOLTR`**, **`BOLTR_REPO`**, and **`BOLTR_BOLTZ_COMMAND`** when the upstream CLI is in **`.venv`**.
 
 ## RunPod GPU Target
 
@@ -30,14 +33,16 @@ SSH RunPod jobs run a remote `boltr doctor --json` preflight before upload and u
 
 For **`--preprocess boltz`** / **`auto`** (Python upstream Boltz), the server first tries **`boltz` on `PATH`**, then **auto-discovers** a file at common locations (`$BOLTR_BOLTZ_VENV/bin/boltz`, `/workspace/boltr-envs/boltz-gpu/bin/boltz`, `~/.local/bin/boltz`, `$CONDA_PREFIX/bin/boltz`, `$VIRTUAL_ENV/bin/boltz`, `BOLTR_REPO`’s `.venv-boltz/bin/boltz` / `.venv/bin/boltz`, and walking parents for repo venvs). If found, it sets **`--bolt-command`** automatically. Otherwise set **`BOLTR_BOLTZ_COMMAND`** on the server or use the Web UI **Bolt command** field.
 
-The status panel checks this at startup/page load and shows the resolved upstream **Boltz CLI** path, or a missing dependency warning before you submit a prediction. To install it into the repo venv:
+The status panel checks this at startup/page load and shows the resolved upstream **Boltz CLI** path, or a missing dependency warning before you submit a prediction.
+
+**Default:** [`bootstrap_dev_venv.sh`](../scripts/bootstrap_dev_venv.sh) (run from **`bootstrap_webui_env.sh`** / **`Boltr_Boltz_bootstrap`**) runs **`pip install boltz`** into **`.venv`** unless you set **`BOLTR_INSTALL_BOLTZ=0`**. To install only manually:
 
 ```bash
 source .venv/bin/activate
 pip install boltz
-# optional for future bootstrap runs:
-BOLTR_INSTALL_BOLTZ=1 bash scripts/bootstrap_dev_venv.sh
 ```
+
+To skip `boltz` in future bootstrap runs (tch-only venv): **`BOLTR_INSTALL_BOLTZ=0 bash scripts/bootstrap_dev_venv.sh`**
 
 On RunPod/Blackwell GPUs, prefer a separate upstream-Boltz env with a newer CUDA PyTorch:
 
@@ -48,7 +53,7 @@ export BOLTR_BOLTZ_COMMAND=/workspace/boltr-envs/boltz-gpu/bin/boltz
 
 Boltr passes upstream Boltz’s `--no_kernels` flag by default. This keeps predictions off the optional cuEquivariance import path that raises `ModuleNotFoundError: cuequivariance_torch` when those wheels are absent or incompatible. Set `BOLTR_BOLTZ_USE_KERNELS=1` only after installing compatible cuEquivariance wheels for the selected PyTorch/CUDA stack.
 
-**Model bootstrap ≠ Boltz CLI:** [`bootstrap_webui_env.sh`](../scripts/bootstrap_webui_env.sh) and **`Boltr_Boltz_bootstrap`** download **weights** into `BOLTZ_CACHE`; they do **not** install the **`boltz`** PyPI package. Install **`boltz`** separately if you rely on **`boltz`** preprocess.
+**Model bootstrap:** [`bootstrap_webui_env.sh`](../scripts/bootstrap_webui_env.sh) and **`Boltr_Boltz_bootstrap`** download **weights** into **`BOLTZ_CACHE`** and, by default, install the **`boltz`** PyPI CLI into **`.venv`** for preprocess. Use **`BOLTR_INSTALL_BOLTZ=0`** if you use a separate Boltz env (e.g. GPU) instead.
 
 **Form defaults:** The predict form defaults **Preprocess** to **`auto`** (and the API defaults missing `preprocess` to **`auto`**) so a preprocess bundle is generated when possible. Use **`off`** only if you already have **`manifest.json` + `.npz`** next to your YAML.
 

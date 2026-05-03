@@ -19,6 +19,8 @@ jobs:
           python-version: "3.12"
 
       - name: Bootstrap dev venv (torch 2.3 for tch 0.16)
+        env:
+          BOLTR_INSTALL_BOLTZ: "0"
         run: bash scripts/bootstrap_dev_venv.sh
 
       - name: Run boltr-backend-tch library tests

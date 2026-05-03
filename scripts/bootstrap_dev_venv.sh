@@ -7,7 +7,7 @@
 #
 # Run:  bash scripts/bootstrap_dev_venv.sh
 #       bash scripts/bootstrap_dev_venv.sh --force   # remove existing .venv first
-#       BOLTR_INSTALL_BOLTZ=1 bash scripts/bootstrap_dev_venv.sh   # also install upstream boltz CLI
+#       BOLTR_INSTALL_BOLTZ=0 bash scripts/bootstrap_dev_venv.sh   # skip upstream boltz PyPI CLI (faster CI / tch-only)
 #
 # Then: scripts/cargo-tch test -p boltr-backend-tch --features tch-backend
 
@@ -81,14 +81,15 @@ fi
 # numpy: safetensors.torch serializes tensors through NumPy when exporting checkpoints.
 # Keep NumPy <2 so the optional upstream `boltz` CLI remains dependency-compatible.
 .venv/bin/pip install setuptools wheel "torch==${TORCH_PIN}" safetensors omegaconf "numpy<2"
-if [[ "${BOLTR_INSTALL_BOLTZ:-0}" == "1" ]]; then
+# Upstream Python `boltz` CLI: needed for `boltr predict --preprocess boltz|auto` and boltr-web. Opt out: BOLTR_INSTALL_BOLTZ=0
+if [[ "${BOLTR_INSTALL_BOLTZ:-1}" != "0" ]]; then
   .venv/bin/pip install boltz
 fi
 
 echo
 echo "Installed setuptools, torch==${TORCH_PIN}, safetensors, omegaconf, numpy into $ROOT/.venv"
-if [[ "${BOLTR_INSTALL_BOLTZ:-0}" == "1" ]]; then
-  echo "Installed upstream boltz CLI into $ROOT/.venv"
+if [[ "${BOLTR_INSTALL_BOLTZ:-1}" != "0" ]]; then
+  echo "Installed upstream boltz CLI into $ROOT/.venv (skip next time: BOLTR_INSTALL_BOLTZ=0)"
 fi
 .venv/bin/python -c "import torch; print('torch:', torch.__version__, 'python:', __import__('sys').version.split()[0])"
 echo

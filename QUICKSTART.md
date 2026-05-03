@@ -29,17 +29,16 @@ If **`Cannot find a libtorch install`** appears (often with `build failed, waiti
 
 ## Web UI + full native cache (one script)
 
-[`scripts/bootstrap_webui_env.sh`](scripts/bootstrap_webui_env.sh) sets up the dev venv, builds **`boltr`** and **`boltr-web`** with `--features tch`, runs **`boltr download --version boltz2`**, exports **`boltz2_conf.ckpt` → `boltz2_conf.safetensors`** (and affinity), and prints **`boltr doctor --json`**.
+[`scripts/bootstrap_webui_env.sh`](scripts/bootstrap_webui_env.sh) sets up the dev venv (**including `pip install boltz`** for upstream preprocess unless `BOLTR_INSTALL_BOLTZ=0`), builds **`boltr`** and **`boltr-web`** with `--features tch`, runs **`boltr download --version boltz2`**, exports **`boltz2_conf.ckpt` → `boltz2_conf.safetensors`** (and affinity), and prints **`boltr doctor --json`**.
 
 ```bash
 bash scripts/bootstrap_webui_env.sh
 ```
 
-Run the Web UI (use [`scripts/with_dev_venv.sh`](scripts/with_dev_venv.sh) so LibTorch shared libraries resolve; point **`BOLTR`** at the tch-enabled binary for status probes):
+Run the Web UI (recommended: [**`scripts/run_boltr_web.sh`**](scripts/run_boltr_web.sh) sets **`BOLTR`**, **`BOLTR_REPO`**, and **`BOLTR_BOLTZ_COMMAND`**, and runs **`with_dev_venv`** so LibTorch resolves):
 
 ```bash
-export BOLTR="$PWD/target/release/boltr"
-bash scripts/with_dev_venv.sh ./target/release/boltr-web
+bash scripts/run_boltr_web.sh
 ```
 
 Check LibTorch / `tch` linkage anytime:

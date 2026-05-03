@@ -2,9 +2,8 @@
 # Boltz2 model cache + dev env bootstrap for Boltr (Rust inference).
 #
 # This downloads Boltz2 checkpoints into BOLTZ_CACHE, exports .safetensors, runs verify/tests,
-# and writes boltr_go_bootstrap.json for boltr-web. It does NOT install the Python "boltz" CLI
-# used for --preprocess boltz (templates/constraints); install that separately on PATH or
-# use WebUI "Bolt command" with the full path to the boltz executable.
+# and writes boltr_go_bootstrap.json for boltr-web. It also installs the upstream Python `boltz`
+# CLI into `.venv` by default (for `--preprocess boltz` / auto); set BOLTR_INSTALL_BOLTZ=0 to skip.
 #
 # From repo root:
 #   chmod +x Boltr_Boltz_bootstrap && ./Boltr_Boltz_bootstrap
@@ -17,6 +16,8 @@
 #   CARGO_TARGET_DIR     - cargo build output (default: /tmp/boltr-target on /workspace systems)
 #   BOLTR_GO_SKIP_TESTS  - set to 1 to skip cargo tests (faster iteration after first run)
 #   BOLTR_GO_SKIP_VERIFY - set to 1 to skip verify_boltz2_safetensors (if checkpoint flags differ)
+#   BOLTR_SKIP_SYSTEM_DEPS - set to 1 to skip Linux install of pkg-config / libssl-dev (see scripts/ensure_openssl_build_deps.sh)
+#   BOLTR_INSTALL_BOLTZ      - set to 0 to skip pip install boltz into .venv (GPU-only separate env, etc.)
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -109,5 +110,5 @@ echo
 echo "Boltr_Boltz_bootstrap finished OK."
 echo "  Status JSON: $CACHE/boltr_go_bootstrap.json (shown in boltr-web after Refresh status)"
 echo "  boltr:     $TARGET_DIR/release/boltr"
-echo "  boltr-web: $ROOT/scripts/with_dev_venv.sh $TARGET_DIR/release/boltr-web"
-echo "  export BOLTR=$TARGET_DIR/release/boltr   # for boltr-web status probes"
+echo "  boltr-web: $ROOT/scripts/run_boltr_web.sh"
+echo "  export BOLTR=$TARGET_DIR/release/boltr   # optional if not using run_boltr_web.sh"

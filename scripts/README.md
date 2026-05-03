@@ -18,7 +18,8 @@ LibTorch tests: use [`cargo-tch`](cargo-tch) so `torch-sys` finds Python’s tor
 
 | Script | Purpose |
 |--------|---------|
-| [`bootstrap_webui_env.sh`](bootstrap_webui_env.sh) | One-shot: dev venv, `boltr` + `boltr-web` with `tch`, `boltr download`, `.ckpt` → `.safetensors`, `boltr doctor` (see [`QUICKSTART.md`](../QUICKSTART.md)) |
+| [`run_boltr_web.sh`](run_boltr_web.sh) | Start **`boltr-web`** with **`BOLTR`**, **`BOLTR_REPO`**, **`BOLTR_BOLTZ_COMMAND`** (after bootstrap) |
+| [`bootstrap_webui_env.sh`](bootstrap_webui_env.sh) | One-shot: dev venv (+ upstream **`boltz`** CLI by default), `boltr` + `boltr-web` with `tch`, `boltr download`, `.ckpt` → `.safetensors`, `boltr doctor` (see [`QUICKSTART.md`](../QUICKSTART.md)) |
 | [`export_checkpoint_to_safetensors.py`](export_checkpoint_to_safetensors.py) | Lightning `.ckpt` → `.safetensors` for `boltr-backend-tch` |
 | [`export_hparams_from_ckpt.py`](export_hparams_from_ckpt.py) | Hyperparameters JSON from checkpoint |
 | [`compare_ckpt_safetensors_counts.py`](compare_ckpt_safetensors_counts.py) | Diff key counts ckpt vs safetensors (Makefile helper) |
@@ -41,7 +42,7 @@ LibTorch tests: use [`cargo-tch`](cargo-tch) so `torch-sys` finds Python’s tor
 | [`regression_tol.env.example`](regression_tol.env.example) | Example tolerance env vars |
 | [`cargo-tch`](cargo-tch) | Run `cargo` with dev venv (LibTorch / torch-sys) |
 | [`with_dev_venv.sh`](with_dev_venv.sh) | Low-level venv wrapper |
-| [`bootstrap_dev_venv.sh`](bootstrap_dev_venv.sh) | Create `.venv` for tch work |
+| [`bootstrap_dev_venv.sh`](bootstrap_dev_venv.sh) | Create `.venv` for tch work; **`pip install boltz`** by default (`BOLTR_INSTALL_BOLTZ=0` to skip) |
 
 ## See also
 

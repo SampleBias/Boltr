@@ -132,7 +132,7 @@ Everything below is spelled out in `[DEVELOPMENT.md](DEVELOPMENT.md)` and `[QUIC
 bash scripts/bootstrap_webui_env.sh
 ```
 
-**Extended bootstrap** (runs the above, optional VarStore verify, cargo tests, and writes `boltr_go_bootstrap.json` for **boltr-web**): `./Boltr_Boltz_bootstrap` from the repo root (alias: `./Boltr_go`). This stages **Boltz2 model weights** in `BOLTZ_CACHE`; it does **not** install the Python `**boltz`** CLI used for `--preprocess boltz` (templates/constraints).
+**Extended bootstrap** (runs the above, optional VarStore verify, cargo tests, writes `boltr_go_bootstrap.json` for **boltr-web**, and **`pip install boltz`** into `.venv` unless `BOLTR_INSTALL_BOLTZ=0`): `./Boltr_Boltz_bootstrap` from the repo root (alias: `./Boltr_go`). This stages **Boltz2 model weights** in `BOLTZ_CACHE` and the upstream **`boltz`** CLI for `--preprocess boltz` / **auto**.
 
 See `[QUICKSTART.md](QUICKSTART.md)` for `**boltr doctor**`, `**BOLTR**`, and `**with_dev_venv.sh**` when running `**boltr-web**`.
 
@@ -204,7 +204,7 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 | `**--preprocess auto**`   | Tries **native** when eligible, otherwise `**boltz`** if runnable.                                                                                                                                                   |
 
 
-**Important:** `[Boltr_Boltz_bootstrap](./Boltr_Boltz_bootstrap)` / `./Boltr_go` / `bootstrap_webui_env.sh` stage **model weights** into `BOLTZ_CACHE` and build `**boltr`** — they do **not** install the Python `**boltz`** CLI by default. For `**--preprocess boltz**` / `**auto**` fallback to Boltz, install `**boltz**` in a venv and ensure `**boltz**` is on `PATH`, or pass `**--bolt-command**` with the full path to the `boltz` executable. The Web UI status panel checks this dependency up front. On RunPod/Blackwell GPUs, prefer `scripts/bootstrap_boltz_gpu_venv.sh`; it keeps upstream Boltz in a separate CUDA-compatible env so the repo `.venv` can remain pinned for `tch`. Set `BOLTR_INSTALL_BOLTZ=1` when running `scripts/bootstrap_dev_venv.sh` only if you want the repo venv to include the upstream CLI for CPU or compatible-GPU use.
+**Important:** `[Boltr_Boltz_bootstrap](./Boltr_Boltz_bootstrap)` / `./Boltr_go` / `[bootstrap_webui_env.sh](scripts/bootstrap_webui_env.sh)` stage **model weights** into `BOLTZ_CACHE`, build **`boltr`**, and by default **`pip install boltz`** into **`.venv`** for **`--preprocess boltz`** / **`auto`**. Start the Web UI with **`scripts/run_boltr_web.sh`** so **`BOLTR_REPO`** and **`BOLTR_BOLTZ_COMMAND`** point at the repo (avoids “missing boltz” when cwd is not the repo root). Opt out of the PyPI CLI with **`BOLTR_INSTALL_BOLTZ=0`**. On RunPod/Blackwell GPUs, prefer `[scripts/bootstrap_boltz_gpu_venv.sh](scripts/bootstrap_boltz_gpu_venv.sh)` and set **`BOLTR_BOLTZ_COMMAND`** to that venv’s **`boltz`**.
 
 By default Boltr adds upstream Boltz’s `--no_kernels` flag. This avoids `ModuleNotFoundError: cuequivariance_torch` and kernel-image mismatches. If you intentionally install compatible cuEquivariance wheels, set `BOLTR_BOLTZ_USE_KERNELS=1` or pass explicit upstream Boltz args.
 
