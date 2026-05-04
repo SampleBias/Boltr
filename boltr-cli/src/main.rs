@@ -793,7 +793,21 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
     // still resolve to the same `manifest.json` + `.npz` directory as the predict bridge.
     let yaml_parent = boltr_io::canonical_yaml_parent(input_path)?;
     let bundle_ready = boltr_io::preprocess_bundle_ready(input_path, affinity)?;
-    let manifest_missing = !bundle_ready;
+    let upstream_predictions_missing = !yaml_parent
+        .join(".boltr_upstream_predictions")
+        .join(format!(
+            "{}_model_0.cif",
+            input_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("prediction")
+        ))
+        .is_file();
+    let refresh_high_fidelity_preprocess = matches!(
+        preprocess,
+        PreprocessCli::HighFidelity | PreprocessCli::Boltz
+    ) && (override_flag || upstream_predictions_missing);
+    let manifest_missing = !bundle_ready || refresh_high_fidelity_preprocess;
     let msa_under_yaml_for_native = manifest_missing
         && matches!(
             effective_preprocess,
