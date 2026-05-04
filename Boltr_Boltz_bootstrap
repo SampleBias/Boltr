@@ -18,14 +18,83 @@
 #   BOLTR_GO_SKIP_VERIFY - set to 1 to skip verify_boltz2_safetensors (if checkpoint flags differ)
 #   BOLTR_SKIP_SYSTEM_DEPS - set to 1 to skip Linux install of pkg-config / libssl-dev (see scripts/ensure_openssl_build_deps.sh)
 #   BOLTR_INSTALL_BOLTZ      - set to 0 to skip pip install boltz into .venv (GPU-only separate env, etc.)
+#   BOLTR_SKIP_RUSTUP    - set to 1 to skip auto-install/update of Rust via rustup
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-if ! command -v cargo >/dev/null 2>&1 && [ -x "$HOME/.cargo/bin/cargo" ]; then
+if [ -x "$HOME/.cargo/bin/cargo" ]; then
   export PATH="$HOME/.cargo/bin:$PATH"
 fi
+
+rust_version_ge() {
+  # Usage: rust_version_ge CURRENT MINIMUM
+  # Returns true when CURRENT >= MINIMUM. Requires coreutils sort -V.
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]
+}
+
+cargo_version() {
+  cargo --version 2>/dev/null | awk '{print $2}'
+}
+
+ensure_rust_toolchain() {
+  # Some transitive crates now use edition 2024, which requires Cargo/Rust >= 1.85.
+  # Ubuntu 22.04's apt cargo can be older, so prefer rustup stable.
+  min_rust="1.85.0"
+
+  if [ "${BOLTR_SKIP_RUSTUP:-}" = "1" ]; then
+    echo "==> Boltr_Boltz_bootstrap: skipping Rust auto-install (BOLTR_SKIP_RUSTUP=1)"
+    return 0
+  fi
+
+  if command -v cargo >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1; then
+    current="$(cargo_version || true)"
+    if [ -n "$current" ] && rust_version_ge "$current" "$min_rust"; then
+      echo "==> Boltr_Boltz_bootstrap: Rust toolchain OK ($(cargo --version), $(rustc --version))"
+      return 0
+    fi
+    echo "==> Boltr_Boltz_bootstrap: Cargo ${current:-unknown} is too old; installing/updating rustup stable"
+  else
+    echo "==> Boltr_Boltz_bootstrap: cargo/rustc not found; installing rustup stable"
+  fi
+
+  if command -v rustup >/dev/null 2>&1; then
+    rustup toolchain install stable --profile minimal
+    rustup default stable
+  elif [ -x "$HOME/.cargo/bin/rustup" ]; then
+    "$HOME/.cargo/bin/rustup" toolchain install stable --profile minimal
+    "$HOME/.cargo/bin/rustup" default stable
+  else
+    export RUSTUP_INIT_SKIP_PATH_CHECK=yes
+    if command -v curl >/dev/null 2>&1; then
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    else
+      echo "ERROR: need curl or wget to install Rust via rustup." >&2
+      exit 1
+    fi
+  fi
+
+  export PATH="$HOME/.cargo/bin:$PATH"
+  hash -r 2>/dev/null || true
+
+  if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
+    echo "ERROR: Rust installation finished, but cargo/rustc are still not on PATH." >&2
+    exit 1
+  fi
+
+  current="$(cargo_version || true)"
+  if [ -z "$current" ] || ! rust_version_ge "$current" "$min_rust"; then
+    echo "ERROR: Cargo ${current:-unknown} is still too old; need >= $min_rust." >&2
+    exit 1
+  fi
+
+  echo "==> Boltr_Boltz_bootstrap: Rust toolchain ready ($(cargo --version), $(rustc --version))"
+}
+
+ensure_rust_toolchain
 
 if [ -z "${CARGO_TARGET_DIR:-}" ] && [ -d /workspace ]; then
   export CARGO_TARGET_DIR=/tmp/boltr-target
