@@ -90,9 +90,12 @@ pub fn weighted_rigid_align(
     );
 
     let original_dtype = cov_matrix.kind();
-    let cov_32 = cov_matrix.to_kind(Kind::Float);
+    // Small 3x3 SVDs are cheap on CPU and avoid CUDA driver incompatibilities in libtorch wheels.
+    let cov_32 = cov_matrix.to_kind(Kind::Float).to_device(Device::Cpu);
 
-    let (u, _s, vh) = Tensor::linalg_svd(&cov_32, false, "");
+    let (u, _s, v) = cov_32.svd(true, true);
+    let u = u.to_device(device);
+    let vh = v.transpose(-2, -1).to_device(device);
 
     let rot_matrix = u.matmul(&vh).to_kind(Kind::Float);
 
@@ -118,7 +121,7 @@ pub fn weighted_rigid_align(
     let det = rot_matrix.det();
     // F = I with F[..., -1, -1] = det(rot_matrix).
     let corner_one = Tensor::from_slice(&[0_f32, 0., 0., 0., 0., 0., 0., 0., 1.])
-        .view([1, dim, dim])
+        .view([dim, dim])
         .to_device(device);
     let mut corner = corner_one;
     for _ in 0..batch_prefix.len() {

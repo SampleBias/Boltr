@@ -608,6 +608,8 @@ async fn main() -> Result<()> {
                 let child = preprocess_cmd::BoltzChildEnv {
                     cuda_visible_devices: vis,
                     pytorch_cuda_alloc_conf: preprocess_cmd::resolve_boltz_pytorch_alloc_conf(true),
+                    preprocess_threads: preprocess_cmd::resolve_preprocess_threads(),
+                    matmul_precision: preprocess_cmd::resolve_boltz_matmul_precision(),
                 };
                 preprocess_cmd::run_boltz_preprocess(
                     &input,
@@ -825,6 +827,9 @@ async fn predict_flow(args: PredictFlowArgs) -> Result<()> {
             preprocess_cuda_visible_devices.as_deref(),
         ),
         pytorch_cuda_alloc_conf: preprocess_cmd::resolve_boltz_pytorch_alloc_conf(predict_cuda),
+        preprocess_threads: preprocessing_threads
+            .or_else(preprocess_cmd::resolve_preprocess_threads),
+        matmul_precision: preprocess_cmd::resolve_boltz_matmul_precision(),
     };
 
     // 3. Optional MSA server fetch

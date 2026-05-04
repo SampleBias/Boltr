@@ -140,6 +140,32 @@ impl StructureV2Tables {
         }
     }
 
+    /// Apply predicted positions to explicit atom indices and keep the first conformer's flat
+    /// coordinate table in sync. This is used when model output follows crop/featurizer atom order
+    /// rather than raw `atoms` row order.
+    pub fn apply_predicted_atom_coords_by_atom_indices(
+        &mut self,
+        xyz: &[[f32; 3]],
+        atom_indices: &[usize],
+    ) {
+        let n = xyz.len().min(atom_indices.len());
+        let base = self.ensemble_base_offset(0);
+        for i in 0..n {
+            let atom_idx = atom_indices[i];
+            if atom_idx >= self.atoms.len() {
+                continue;
+            }
+            self.atoms[atom_idx].coords = xyz[i];
+            let flat_idx = base + atom_idx as i64;
+            if flat_idx >= 0 {
+                let flat_idx = flat_idx as usize;
+                if flat_idx < self.coords.len() {
+                    self.coords[flat_idx] = xyz[i];
+                }
+            }
+        }
+    }
+
     /// Returns true when at least one atom is marked present and every present atom has coordinates
     /// within `eps` of the origin (placeholder or failed coordinate write).
     #[must_use]

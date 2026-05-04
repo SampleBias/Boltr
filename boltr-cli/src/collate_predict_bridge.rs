@@ -346,7 +346,11 @@ pub fn predict_step_from_collate(
                 "preprocess predict bridge: --use-potentials is not wired to PotentialBatchFeats; refusing to run an unsteered diffusion sample"
             );
         }
-        let steering: Option<SteeringParams> = None;
+        // Upstream Boltz2 uses the full sampler loop even when user potentials are not requested:
+        // random augmentation runs every step and `alignment_reverse_diff` is honored from hparams.
+        // Keep `--use-potentials` disabled until PotentialBatchFeats are fully wired, but do not
+        // fall back to the Rust fast sampler for normal prediction.
+        let steering = Some(SteeringParams::default());
 
         model.predict_step(
             &s_inputs,

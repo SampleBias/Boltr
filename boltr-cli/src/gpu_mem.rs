@@ -4,6 +4,7 @@
 //! before choosing CUDA; if the probe fails, CUDA is still used when LibTorch reports a GPU (**fail-open**).
 //! Single-GPU Boltz defaults live in [`crate::preprocess_cmd::auto_default_boltz_cpu_for_memory`].
 
+#[cfg(feature = "tch")]
 use std::process::Command;
 
 /// Core decision for [`auto_vram_allows_cuda`] and unit tests.

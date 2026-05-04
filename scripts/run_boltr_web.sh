@@ -24,7 +24,9 @@ fi
 
 export BOLTR_REPO="$ROOT"
 export BOLTR="${TARGET_DIR}/release/boltr"
-if [[ -x "$ROOT/.venv/bin/boltz" ]]; then
+if [[ -z "${BOLTR_BOLTZ_COMMAND:-}" && -x "$ROOT/scripts/boltz-gpu" ]]; then
+  export BOLTR_BOLTZ_COMMAND="$ROOT/scripts/boltz-gpu"
+elif [[ -z "${BOLTR_BOLTZ_COMMAND:-}" && -x "$ROOT/.venv/bin/boltz" ]]; then
   export BOLTR_BOLTZ_COMMAND="$ROOT/.venv/bin/boltz"
 fi
 

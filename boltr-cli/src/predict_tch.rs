@@ -103,6 +103,14 @@ fn diffusion_sample_coords_to_xyz_vec(
     Ok(v)
 }
 
+fn diffusion_sample_count(coord_tensor: &Tensor) -> i64 {
+    if coord_tensor.dim() == 3 {
+        coord_tensor.size().first().copied().unwrap_or(1).max(1)
+    } else {
+        1
+    }
+}
+
 #[derive(Debug, Clone)]
 struct SampleRanking {
     selected_sample: i64,
@@ -115,6 +123,7 @@ struct SampleRanking {
 struct PredictBridgeSuccess {
     record_id: String,
     ranking: SampleRanking,
+    source_note: String,
 }
 
 fn tensor_scalar_at(t: &Tensor, idx: i64) -> Option<f64> {
@@ -133,25 +142,39 @@ fn select_best_sample(
     out: &boltr_backend_tch::PredictStepOutput,
     confidence_ranking_enabled: bool,
 ) -> SampleRanking {
-    let sample_count = out
-        .diffusion
-        .sample_atom_coords
-        .size()
-        .first()
-        .copied()
-        .unwrap_or(1)
-        .max(1);
+    sample_rankings(out, confidence_ranking_enabled)
+        .into_iter()
+        .next()
+        .unwrap_or(SampleRanking {
+            selected_sample: 0,
+            ranking_metric: "sample0_no_confidence".to_string(),
+            ranking_score: None,
+            confidence_available: false,
+        })
+}
+
+fn sample_rankings(
+    out: &boltr_backend_tch::PredictStepOutput,
+    confidence_ranking_enabled: bool,
+) -> Vec<SampleRanking> {
+    let sample_count = diffusion_sample_count(&out.diffusion.sample_atom_coords);
     let Some(conf) = out
         .confidence
         .as_ref()
         .filter(|_| confidence_ranking_enabled)
     else {
-        return SampleRanking {
-            selected_sample: 0,
-            ranking_metric: "sample0_no_confidence".to_string(),
-            ranking_score: None,
-            confidence_available: false,
-        };
+        return (0..sample_count)
+            .map(|i| SampleRanking {
+                selected_sample: i,
+                ranking_metric: if i == 0 {
+                    "sample0_no_confidence".to_string()
+                } else {
+                    "sample_no_confidence".to_string()
+                },
+                ranking_score: None,
+                confidence_available: false,
+            })
+            .collect();
     };
     let scores = if conf.iptm.numel() as i64 >= sample_count {
         Some((
@@ -173,28 +196,36 @@ fn select_best_sample(
         None
     };
     let Some((metric, scores)) = scores else {
-        return SampleRanking {
-            selected_sample: 0,
-            ranking_metric: "sample0_confidence_unrankable".to_string(),
-            ranking_score: None,
-            confidence_available: true,
-        };
+        return (0..sample_count)
+            .map(|i| SampleRanking {
+                selected_sample: i,
+                ranking_metric: if i == 0 {
+                    "sample0_confidence_unrankable".to_string()
+                } else {
+                    "confidence_unrankable".to_string()
+                },
+                ranking_score: None,
+                confidence_available: true,
+            })
+            .collect();
     };
-    let mut best_idx = 0_i64;
-    let mut best_score = f64::NEG_INFINITY;
-    for i in 0..sample_count {
-        let score = scores.double_value(&[i]);
-        if score.is_finite() && score > best_score {
-            best_idx = i;
-            best_score = score;
-        }
-    }
-    SampleRanking {
-        selected_sample: best_idx,
-        ranking_metric: metric.to_string(),
-        ranking_score: Some(best_score),
-        confidence_available: true,
-    }
+    let mut ranked: Vec<_> = (0..sample_count)
+        .map(|i| (i, scores.double_value(&[i])))
+        .collect();
+    ranked.sort_by(|(a_idx, a), (b_idx, b)| {
+        b.partial_cmp(a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a_idx.cmp(b_idx))
+    });
+    ranked
+        .into_iter()
+        .map(|(i, score)| SampleRanking {
+            selected_sample: i,
+            ranking_metric: metric.to_string(),
+            ranking_score: score.is_finite().then_some(score),
+            confidence_available: true,
+        })
+        .collect()
 }
 
 fn is_likely_cuda_oom(err_msg: &str) -> bool {
@@ -202,6 +233,186 @@ fn is_likely_cuda_oom(err_msg: &str) -> bool {
     l.contains("out of memory")
         || l.contains("cuda out of memory")
         || (l.contains("cuda") && l.contains("alloc") && l.contains("fail"))
+}
+
+fn crop_map_from_feature_batch(fb: &boltr_io::FeatureBatch) -> Result<Vec<i64>> {
+    let arr = fb
+        .get_i64("crop_to_all_atom_map")
+        .context("feature batch missing crop_to_all_atom_map")?;
+    Ok(arr.iter().copied().collect())
+}
+
+fn crop_to_structure_atom_indices(
+    structure: &boltr_io::StructureV2Tables,
+    crop_to_all_atom_map: &[i64],
+) -> Result<Vec<usize>> {
+    let mut all_to_structure = Vec::new();
+    for chain in &structure.chains {
+        let start = usize::try_from(chain.atom_idx)
+            .with_context(|| format!("negative chain atom_idx {}", chain.atom_idx))?;
+        let count = usize::try_from(chain.atom_num)
+            .with_context(|| format!("negative chain atom_num {}", chain.atom_num))?;
+        for i in 0..count {
+            let atom_idx = start + i;
+            if atom_idx < structure.atoms.len() {
+                all_to_structure.push(atom_idx);
+            }
+        }
+    }
+    if all_to_structure.is_empty() && !structure.atoms.is_empty() {
+        all_to_structure.extend(0..structure.atoms.len());
+    }
+
+    let mut mapped = Vec::with_capacity(crop_to_all_atom_map.len());
+    for &all_idx in crop_to_all_atom_map {
+        let u = usize::try_from(all_idx)
+            .with_context(|| format!("negative crop_to_all_atom_map entry {all_idx}"))?;
+        let atom_idx = all_to_structure.get(u).copied().with_context(|| {
+            format!(
+                "crop_to_all_atom_map entry {u} outside all-atom map length {}",
+                all_to_structure.len()
+            )
+        })?;
+        mapped.push(atom_idx);
+    }
+    Ok(mapped)
+}
+
+fn apply_mapped_predicted_coords(
+    structure: &mut boltr_io::StructureV2Tables,
+    xyz: &[[f32; 3]],
+    crop_atom_indices: &[usize],
+) -> Result<usize> {
+    if xyz.len() < crop_atom_indices.len() {
+        bail!(
+            "diffusion returned {} coordinates, but crop mapping needs {} real atom coordinates",
+            xyz.len(),
+            crop_atom_indices.len()
+        );
+    }
+    structure.apply_predicted_atom_coords_by_atom_indices(
+        &xyz[..crop_atom_indices.len()],
+        crop_atom_indices,
+    );
+    Ok(crop_atom_indices.len())
+}
+
+fn coord_stats_json(xyz: &[[f32; 3]]) -> serde_json::Value {
+    let mut finite = 0_usize;
+    let mut non_finite = 0_usize;
+    let mut near_zero_atoms = 0_usize;
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    for c in xyz {
+        if c.iter().all(|v| v.abs() <= 1e-12) {
+            near_zero_atoms += 1;
+        }
+        for axis in 0..3 {
+            let v = c[axis];
+            if v.is_finite() {
+                finite += 1;
+                min[axis] = min[axis].min(v);
+                max[axis] = max[axis].max(v);
+            } else {
+                non_finite += 1;
+            }
+        }
+    }
+    serde_json::json!({
+        "atom_count": xyz.len(),
+        "finite_scalar_count": finite,
+        "non_finite_scalar_count": non_finite,
+        "near_zero_atom_count": near_zero_atoms,
+        "min_xyz": if finite == 0 { serde_json::Value::Null } else { serde_json::json!(min) },
+        "max_xyz": if finite == 0 { serde_json::Value::Null } else { serde_json::json!(max) },
+    })
+}
+
+fn qc_dry_run_report(
+    structure: &boltr_io::StructureV2Tables,
+    model_filename: String,
+) -> boltr_io::QcReport {
+    let thresholds = boltr_io::QcThresholds::default();
+    let initial = boltr_io::validate_structure_qc(
+        structure,
+        model_filename.clone(),
+        thresholds,
+        false,
+        false,
+    );
+    if initial.passed {
+        return initial;
+    }
+    let mut relaxed = structure.clone();
+    boltr_io::relax_structure(&mut relaxed, thresholds);
+    let mut relaxed_report =
+        boltr_io::validate_structure_qc(&relaxed, model_filename, thresholds, true, false);
+    if relaxed_report.passed {
+        relaxed_report.relaxation_fixed = true;
+    }
+    relaxed_report
+}
+
+fn first_failed_geometry_json(report: &boltr_io::QcReport) -> serde_json::Value {
+    serde_json::json!({
+        "backbone_bond_distances": report.backbone_bond_distances
+            .iter()
+            .filter(|m| !m.passed)
+            .take(8)
+            .collect::<Vec<_>>(),
+        "peptide_bond_distances": report.peptide_bond_distances
+            .iter()
+            .filter(|m| !m.passed)
+            .take(8)
+            .collect::<Vec<_>>(),
+        "ca_ca_distances": report.ca_ca_distances
+            .iter()
+            .filter(|m| !m.passed)
+            .take(8)
+            .collect::<Vec<_>>(),
+        "omega_torsions": report.omega_torsions
+            .iter()
+            .filter(|m| !m.passed)
+            .take(8)
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn promote_upstream_boltz_prediction(
+    preprocess_dir: &Path,
+    out_dir: &Path,
+    record_id: &str,
+) -> Result<Option<PathBuf>> {
+    let upstream_dir = preprocess_dir.join(".boltr_upstream_predictions");
+    if !upstream_dir.is_dir() {
+        return Ok(None);
+    }
+    let record_dir = out_dir.join(record_id);
+    std::fs::create_dir_all(&record_dir)
+        .with_context(|| format!("mkdir {}", record_dir.display()))?;
+
+    let mut promoted_cif = None;
+    for ext in ["cif", "pdb"] {
+        let src = upstream_dir.join(format!("{record_id}_model_0.{ext}"));
+        if !src.is_file() {
+            continue;
+        }
+        let dst = record_dir.join(format!("{record_id}_model_0.{ext}"));
+        std::fs::copy(&src, &dst)
+            .with_context(|| format!("copy upstream Boltz prediction {}", src.display()))?;
+        if ext == "cif" {
+            promoted_cif = Some(dst);
+        }
+    }
+    if promoted_cif.is_some() {
+        let note = record_dir.join(format!("{record_id}_model_0.upstream_boltz.txt"));
+        std::fs::write(
+            &note,
+            "Final structure promoted from upstream Boltz high-fidelity prediction because native Rust diffusion did not pass QC.\n",
+        )
+        .with_context(|| format!("write {}", note.display()))?;
+    }
+    Ok(promoted_cif)
 }
 
 /// When `manifest.json` + preprocess `.npz` live next to the input YAML, run collate → `predict_step` → structure writer.
@@ -249,20 +460,19 @@ fn try_predict_from_preprocess(
         );
     }
 
-    // `--affinity` normally uses `pre_affinity_{id}.npz` for affinity-specific tensors, but the
-    // structure diffusion bridge always reads the flat `{id}.npz` (same as `load_input(..., false)`).
-    // If only the affinity layout exists and not the flat bundle, skip the bridge (reference export
-    // may still run from `try_write_preprocess_reference_structure`).
+    // Structure diffusion always reads the flat `{record_id}.npz` bundle. Treat a
+    // manifest without that file as an incomplete preprocess result instead of
+    // falling through to zero-coordinate reference export.
+    let flat_npz = preprocess_dir.join(format!("{}.npz", record.id));
+    if !flat_npz.is_file() {
+        bail!(
+            "preprocess bundle incomplete: found {} for record {}, but missing flat structure npz {}. Re-run with preprocess auto/native/boltz and verify upstream Boltz copied both manifest.json and the .npz bundle.",
+            manifest_path.display(),
+            record.id,
+            flat_npz.display()
+        );
+    }
     if affinity {
-        let flat_npz = preprocess_dir.join(format!("{}.npz", record.id));
-        if !flat_npz.is_file() {
-            tracing::info!(
-                record_id = %record.id,
-                expected = %flat_npz.display(),
-                "--affinity: flat preprocess npz missing; skipping structure diffusion bridge"
-            );
-            return Ok(None);
-        }
         tracing::info!(
             record_id = %record.id,
             path = %flat_npz.display(),
@@ -280,7 +490,7 @@ fn try_predict_from_preprocess(
         constraints_dir,
         preprocess_auto_extras,
     );
-    let mut inference_input = load_input(
+    let inference_input = load_input(
         record,
         &preprocess_dir,
         &preprocess_dir,
@@ -338,16 +548,20 @@ fn try_predict_from_preprocess(
         }
     };
 
-    let ranking = select_best_sample(&out, confidence_ranking_enabled);
+    let rankings = sample_rankings(&out, confidence_ranking_enabled);
     let raw_shape = out.diffusion.sample_atom_coords.size();
-    let xyz = diffusion_sample_coords_to_xyz_vec(
-        &out.diffusion.sample_atom_coords,
-        ranking.selected_sample,
-    )
-    .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
-    let n_from_model = xyz.len();
+    let crop_to_all_atom_map = crop_map_from_feature_batch(&fb)?;
+    let crop_atom_indices =
+        crop_to_structure_atom_indices(&inference_input.structure, &crop_to_all_atom_map)?;
     let n_featurized = featurized_atom_token_sum(&inference_input);
     let n_atoms_struct = inference_input.structure.atoms.len();
+    if n_featurized != crop_atom_indices.len() {
+        tracing::warn!(
+            n_featurized,
+            n_crop_map = crop_atom_indices.len(),
+            "featurized atom count differs from crop_to_all_atom_map length"
+        );
+    }
 
     // `n_from_model` includes atom_pad_mask tail padding (window-rounded); it can exceed
     // `n_featurized` and `n_atoms_struct`. Only compare structure vs featurizer for order/count.
@@ -359,35 +573,117 @@ fn try_predict_from_preprocess(
             "featurized atom count (token sum) differs from StructureV2 atoms length; tail atoms may keep reference coords or map incorrectly"
         );
     }
-    if n_from_model < n_featurized {
-        tracing::warn!(
-            n_from_model,
-            n_featurized,
-            raw_shape = ?raw_shape,
-            "diffusion returned fewer coords than featurizer real atoms; truncating coordinate write"
-        );
-    }
-    if n_from_model > n_featurized {
-        tracing::debug!(
-            n_from_model,
-            n_featurized,
-            "diffusion atom dim exceeds featurized real atoms (expected: padding to atoms_per_window)"
-        );
-    }
-
-    let n_apply = n_featurized.min(n_atoms_struct).min(n_from_model);
-    inference_input
-        .structure
-        .apply_predicted_atom_coords(&xyz[..n_apply]);
 
     let record_id = record.id.clone();
-    write_structure_file(
-        out_dir,
-        &record_id,
-        0,
-        output_format,
-        &inference_input.structure,
-    )?;
+    let model_filename = structure_primary_path(out_dir, &record_id, 0, output_format)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("prediction_model_0.cif")
+        .to_string();
+    let mut selected: Option<(SampleRanking, boltr_io::StructureV2Tables)> = None;
+    let mut sample_summaries = Vec::new();
+
+    for ranking in rankings {
+        let xyz = diffusion_sample_coords_to_xyz_vec(
+            &out.diffusion.sample_atom_coords,
+            ranking.selected_sample,
+        )
+        .map_err(|e| anyhow!("diffusion coords → xyz: {e}"))?;
+        let n_from_model = xyz.len();
+        if n_from_model < crop_atom_indices.len() {
+            tracing::warn!(
+                n_from_model,
+                n_crop_map = crop_atom_indices.len(),
+                raw_shape = ?raw_shape,
+                sample = ranking.selected_sample,
+                "diffusion returned fewer coords than crop map real atoms"
+            );
+        }
+        if n_from_model > crop_atom_indices.len() {
+            tracing::debug!(
+                n_from_model,
+                n_crop_map = crop_atom_indices.len(),
+                sample = ranking.selected_sample,
+                "diffusion atom dim exceeds crop map real atoms (expected padding)"
+            );
+        }
+
+        let mut candidate = inference_input.structure.clone();
+        let applied = apply_mapped_predicted_coords(&mut candidate, &xyz, &crop_atom_indices)?;
+        let qc_report = qc_dry_run_report(&candidate, model_filename.clone());
+        let passed_qc = qc_report.passed;
+        sample_summaries.push(serde_json::json!({
+            "sample": ranking.selected_sample,
+            "ranking_metric": &ranking.ranking_metric,
+            "ranking_score": ranking.ranking_score,
+            "confidence_available": ranking.confidence_available,
+            "applied_atom_count": applied,
+            "coord_stats": coord_stats_json(&xyz),
+            "qc_passed_after_relax": passed_qc,
+            "fail_reasons": &qc_report.fail_reasons,
+            "steric_clashes": qc_report.steric_clashes.len(),
+            "first_failed_geometry": first_failed_geometry_json(&qc_report),
+        }));
+        if passed_qc && selected.is_none() {
+            selected = Some((ranking, candidate));
+        }
+    }
+
+    let debug_dir = out_dir.join(&record_id);
+    std::fs::create_dir_all(&debug_dir)
+        .with_context(|| format!("mkdir {}", debug_dir.display()))?;
+    let selected_sample = selected.as_ref().map(|(r, _)| r.selected_sample);
+    let debug_json = serde_json::json!({
+        "record_id": &record_id,
+        "raw_sample_atom_coords_shape": raw_shape,
+        "selected_sample_after_qc": selected_sample,
+        "n_featurized": n_featurized,
+        "n_atoms_struct": n_atoms_struct,
+        "crop_to_all_atom_map_len": crop_to_all_atom_map.len(),
+        "mapped_atom_count": crop_atom_indices.len(),
+        "samples": sample_summaries,
+    });
+    let debug_path = debug_dir.join(format!("{record_id}_native_predict_debug.json"));
+    std::fs::write(&debug_path, serde_json::to_vec_pretty(&debug_json)?)
+        .with_context(|| format!("write {}", debug_path.display()))?;
+
+    let (ranking, selected_structure, source_note) = if let Some(selected) = selected {
+        (
+            selected.0,
+            selected.1,
+            "Structure written from native Rust diffusion after QC passed.".to_string(),
+        )
+    } else {
+        if promote_upstream_boltz_prediction(&preprocess_dir, out_dir, &record_id)?.is_some() {
+            let ranking = select_best_sample(&out, confidence_ranking_enabled);
+            copy_msa_a3m_to_output(&preprocess_dir, out_dir)
+                .context("copy MSA .a3m into output dir")?;
+            tracing::warn!(
+                record_id = %record_id,
+                "native Rust diffusion failed QC; promoted upstream Boltz high-fidelity prediction"
+            );
+            return Ok(Some(PredictBridgeSuccess {
+                record_id,
+                ranking,
+                source_note: "Structure promoted from upstream Boltz high-fidelity prediction because native Rust diffusion did not pass QC.".to_string(),
+            }));
+        }
+        let fallback = select_best_sample(&out, confidence_ranking_enabled);
+        let xyz = diffusion_sample_coords_to_xyz_vec(
+            &out.diffusion.sample_atom_coords,
+            fallback.selected_sample,
+        )
+        .map_err(|e| anyhow!("diffusion coords → xyz for failed fallback sample: {e}"))?;
+        let mut candidate = inference_input.structure.clone();
+        apply_mapped_predicted_coords(&mut candidate, &xyz, &crop_atom_indices)?;
+        (
+            fallback,
+            candidate,
+            "Native Rust diffusion did not pass dry-run QC; failed artifacts are diagnostics."
+                .to_string(),
+        )
+    };
+    write_structure_file(out_dir, &record_id, 0, output_format, &selected_structure)?;
     if let Some(ref aff) = out.affinity {
         let pred = tensor_scalar_at(&aff.affinity_pred_value, 0).unwrap_or(f64::NAN);
         let prob = tensor_scalar_at(&aff.affinity_logits_binary.sigmoid(), 0).unwrap_or(f64::NAN);
@@ -410,7 +706,11 @@ fn try_predict_from_preprocess(
         "wrote predicted structure (preprocess dir + predict_step)"
     );
 
-    Ok(Some(PredictBridgeSuccess { record_id, ranking }))
+    Ok(Some(PredictBridgeSuccess {
+        record_id,
+        ranking,
+        source_note,
+    }))
 }
 
 /// Write mmCIF/PDB from preprocess `StructureV2` only (reference/input geometry, no diffusion).
@@ -782,13 +1082,17 @@ fn write_structure_file(
     output_format: OutputFormat,
     structure: &boltr_io::StructureV2Tables,
 ) -> Result<PathBuf> {
-    warn_if_all_present_coords_zero(structure, "write_structure_file");
-
     let record_dir = out_dir.join(record_id);
     std::fs::create_dir_all(&record_dir)
         .with_context(|| format!("mkdir {}", record_dir.display()))?;
 
     let base = format!("{record_id}_model_{model_rank}");
+    if structure.present_atoms_all_coords_near_zero(1e-12) {
+        warn_if_all_present_coords_zero(structure, "write_structure_file");
+        bail!(
+            "structure export aborted for {record_id} model {model_rank}: all present atom coordinates are zero. This is a placeholder/reference bundle, not a usable predicted structure; check preprocess bundle completeness and predict_step logs before QC."
+        );
+    }
     let primary_path = structure_primary_path(out_dir, record_id, model_rank, output_format);
     let primary_name = primary_path
         .file_name()
@@ -826,9 +1130,29 @@ fn write_structure_file(
 
     write_structure_pair(&record_dir, &base, Some("failed"), structure)?;
     write_qc_reports(&record_dir, &base, &relaxed_report)?;
+    let severe_geometry = relaxed_report.steric_clashes.len() >= 1000
+        || relaxed_report.fail_reasons.iter().any(|r| {
+            let r = r.to_ascii_lowercase();
+            r.contains("hard steric overlap") || r.contains("ca-ca distance")
+        });
+    if severe_geometry {
+        tracing::warn!(
+            record_id,
+            model_rank,
+            steric_clashes = relaxed_report.steric_clashes.len(),
+            reasons = %relaxed_report.fail_reasons.join("; "),
+            "structure QC detected severe geometry collapse; failed structure files are debug artifacts"
+        );
+    }
+    let guidance = if severe_geometry {
+        " Severe geometry collapse detected; `.failed.cif` / `.failed.pdb` are debug artifacts, not usable structures. If high-fidelity/Boltz preprocess already ran, inspect the native prediction debug JSON, coordinate mapping, inputs/templates/constraints, and upstream Boltz comparison."
+    } else {
+        " See the `.qc.txt` / `.qc.json` report and `.failed.*` files for diagnostics."
+    };
     bail!(
-        "structure QC failed after relaxation for {record_id} model {model_rank}: {}",
-        relaxed_report.fail_reasons.join("; ")
+        "structure QC failed after relaxation for {record_id} model {model_rank}: {}. Steric clashes: {}.{guidance}",
+        relaxed_report.fail_reasons.join("; "),
+        relaxed_report.steric_clashes.len()
     )
 }
 
@@ -949,6 +1273,98 @@ mod qc_export_tests {
         assert!(dir.join("prediction_model_0.failed.pdb").is_file());
         assert!(dir.join("prediction_model_0.qc.json").is_file());
         assert!(dir.join("prediction_model_0.qc.txt").is_file());
+    }
+
+    #[test]
+    fn qc_export_rejects_all_zero_placeholder_without_failed_artifacts() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut s = two_ala_structure();
+        for atom in &mut s.atoms {
+            atom.coords = [0.0, 0.0, 0.0];
+        }
+        let err = write_structure_file(tmp.path(), "prediction", 0, OutputFormat::Both, &s)
+            .expect_err("all-zero placeholder must fail before file export");
+        assert!(err
+            .to_string()
+            .contains("all present atom coordinates are zero"));
+        let dir = tmp.path().join("prediction");
+        assert!(!dir.join("prediction_model_0.cif").exists());
+        assert!(!dir.join("prediction_model_0.pdb").exists());
+        assert!(!dir.join("prediction_model_0.failed.cif").exists());
+        assert!(!dir.join("prediction_model_0.failed.pdb").exists());
+        assert!(!dir.join("prediction_model_0.qc.json").exists());
+    }
+
+    #[test]
+    fn diffusion_coords_extracts_supported_shapes() {
+        let coords = Tensor::from_slice(&[1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0]).view([2, 3]);
+        assert_eq!(diffusion_sample_count(&coords), 1);
+        let xyz = diffusion_sample_coords_to_xyz_vec(&coords, 0).expect("2D coords");
+        assert_eq!(xyz, vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+
+        let transposed = Tensor::from_slice(&[1.0_f32, 4.0, 2.0, 5.0, 3.0, 6.0]).view([3, 2]);
+        let xyz = diffusion_sample_coords_to_xyz_vec(&transposed, 0).expect("transposed coords");
+        assert_eq!(xyz, vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]);
+
+        let batched = Tensor::from_slice(&[
+            1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ])
+        .view([2, 2, 3]);
+        assert_eq!(diffusion_sample_count(&batched), 2);
+        let xyz = diffusion_sample_coords_to_xyz_vec(&batched, 1).expect("batched coords");
+        assert_eq!(xyz, vec![[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]]);
+    }
+
+    #[test]
+    fn crop_map_applies_coords_to_explicit_structure_atoms() {
+        let mut s = two_ala_structure();
+        s.chains[0].atom_idx = 5;
+        s.chains[0].atom_num = 5;
+        s.chains.push(ChainRow {
+            name: "B".to_string(),
+            mol_type: s.chains[0].mol_type,
+            sym_id: 0,
+            asym_id: 1,
+            entity_id: 1,
+            atom_idx: 0,
+            atom_num: 5,
+            res_idx: 0,
+            res_num: 1,
+            cyclic_period: 0,
+        });
+        let mapped = crop_to_structure_atom_indices(&s, &[0, 4, 5, 9]).expect("crop map");
+        assert_eq!(mapped, vec![5, 9, 0, 4]);
+
+        let xyz = vec![
+            [50.0, 0.0, 0.0],
+            [90.0, 0.0, 0.0],
+            [0.0, 50.0, 0.0],
+            [0.0, 90.0, 0.0],
+        ];
+        apply_mapped_predicted_coords(&mut s, &xyz, &mapped).expect("apply mapped coords");
+        assert_eq!(s.atoms[5].coords, [50.0, 0.0, 0.0]);
+        assert_eq!(s.atoms[9].coords, [90.0, 0.0, 0.0]);
+        assert_eq!(s.atoms[0].coords, [0.0, 50.0, 0.0]);
+        assert_eq!(s.atoms[4].coords, [0.0, 90.0, 0.0]);
+        assert_eq!(s.coords[5], [50.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn qc_dry_run_identifies_passing_sample_after_failed_sample() {
+        let crop_atoms: Vec<_> = (0..two_ala_structure().atoms.len()).collect();
+        let mut failed = two_ala_structure();
+        let collapsed = vec![[0.0_f32, 0.0, 0.0]; crop_atoms.len()];
+        apply_mapped_predicted_coords(&mut failed, &collapsed, &crop_atoms)
+            .expect("apply collapsed sample");
+        let failed_report = qc_dry_run_report(&failed, "prediction_model_0.cif".to_string());
+        assert!(!failed_report.passed);
+
+        let mut passing = two_ala_structure();
+        let coords: Vec<_> = two_ala_structure().atoms.iter().map(|a| a.coords).collect();
+        apply_mapped_predicted_coords(&mut passing, &coords, &crop_atoms)
+            .expect("apply passing sample");
+        let passing_report = qc_dry_run_report(&passing, "prediction_model_0.cif".to_string());
+        assert!(passing_report.passed);
     }
 }
 
@@ -1403,7 +1819,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
                 "ranking_score": success.ranking.ranking_score,
                 "confidence_available": success.ranking.confidence_available,
                 "affinity_mw_correction": affinity_mw_correction,
-                "note": "Structure written from preprocess dir (manifest + npz) + collate + predict_step."
+                "note": &success.source_note
             });
             let j = serde_json::to_string_pretty(&info)?;
             tokio::fs::write(&marker, j).await?;
@@ -1416,6 +1832,9 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
                 error = %e,
                 "preprocess predict_step bridge failed; trying preprocess reference export fallback"
             );
+            if e.to_string().contains("preprocess bundle incomplete") {
+                bail!("preprocess predict_step bridge requires a complete flat bundle: {e}");
+            }
         }
     }
 

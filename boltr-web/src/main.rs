@@ -480,6 +480,24 @@ async fn post_predict(
             opts.preprocess_cuda_visible_devices = Some(t.to_string());
         }
     }
+    if let Some(p) = field_map.get("preprocessing_threads") {
+        let t = p.trim();
+        if !t.is_empty() {
+            let n = t.parse::<usize>().map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    "preprocessing_threads must be a positive integer".to_string(),
+                )
+            })?;
+            if n == 0 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "preprocessing_threads must be a positive integer".to_string(),
+                ));
+            }
+            opts.preprocessing_threads = Some(n);
+        }
+    }
     opts.preprocess_boltz_cpu = field_map
         .get("preprocess_boltz_cpu")
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))

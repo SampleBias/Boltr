@@ -17,6 +17,10 @@ pub struct BoltzChildEnv {
     pub cuda_visible_devices: Option<String>,
     /// `PYTORCH_CUDA_ALLOC_CONF` for the Boltz child (reduces fragmentation before LibTorch loads).
     pub pytorch_cuda_alloc_conf: Option<String>,
+    /// Thread cap for CPU-heavy BLAS/token preprocessing in the upstream Boltz process.
+    pub preprocess_threads: Option<usize>,
+    /// PyTorch float32 matmul precision for the Boltz child when the wrapper is used.
+    pub matmul_precision: Option<String>,
 }
 
 /// True if `device` selects a CUDA device for LibTorch (`cpu` / `cuda` / `cuda:N`).
@@ -39,12 +43,50 @@ fn user_set_boltz_kernel_mode(bolt_extra: &[String]) -> bool {
 }
 
 fn should_disable_boltz_kernels_by_default() -> bool {
-    !std::env::var("BOLTR_BOLTZ_USE_KERNELS")
+    !boltz_kernel_probe_allows_enable()
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name)
         .map(|v| {
             let t = v.trim();
             t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
         })
         .unwrap_or(false)
+}
+
+fn boltz_kernel_probe_allows_enable() -> bool {
+    if !env_truthy("BOLTR_BOLTZ_USE_KERNELS") {
+        return false;
+    }
+    let py = std::env::var("BOLTR_PYTHON").unwrap_or_else(|_| "python3".to_string());
+    let script = r#"
+import importlib.util
+import sys
+
+try:
+    import torch
+    ok = torch.cuda.is_available() and importlib.util.find_spec("cuequivariance_torch") is not None
+except Exception:
+    ok = False
+sys.exit(0 if ok else 1)
+"#;
+    let ok = Command::new(&py)
+        .args(["-c", script])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        tracing::info!(%py, "preprocess: enabling upstream Boltz GPU kernels after CUDA/cuEquivariance probe");
+    } else {
+        tracing::warn!(
+            %py,
+            "BOLTR_BOLTZ_USE_KERNELS requested, but CUDA/cuEquivariance probe failed; keeping --no_kernels"
+        );
+    }
+    ok
 }
 
 /// Merge CLI (`--preprocess-cuda-visible-devices`) with `BOLTR_BOLTZ_CUDA_VISIBLE_DEVICES` (CLI wins).
@@ -81,6 +123,25 @@ pub fn resolve_boltz_pytorch_alloc_conf(predict_cuda: bool) -> Option<String> {
                 None
             }
         }
+    }
+}
+
+/// `BOLTR_PREPROCESS_THREADS`: cap CPU threads used by upstream Boltz preprocessing.
+pub fn resolve_preprocess_threads() -> Option<usize> {
+    std::env::var("BOLTR_PREPROCESS_THREADS")
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+}
+
+/// `BOLTR_BOLTZ_MATMUL_PRECISION`: Tensor Core-friendly matmul precision for the Python wrapper.
+pub fn resolve_boltz_matmul_precision() -> Option<String> {
+    let v = std::env::var("BOLTR_BOLTZ_MATMUL_PRECISION").unwrap_or_else(|_| "high".to_string());
+    let t = v.trim().to_lowercase();
+    match t.as_str() {
+        "highest" | "high" | "medium" => Some(t),
+        "" | "off" | "none" => None,
+        _ => Some("high".to_string()),
     }
 }
 
@@ -155,11 +216,10 @@ pub fn auto_default_boltz_cpu_for_memory(
     auto_boltz_gpu_opt_out: bool,
 ) -> bool {
     if let Ok(s) = std::env::var("BOLTR_AUTO_PREPROCESS_BOLTZ_CPU") {
-        if matches!(
-            s.trim().to_lowercase().as_str(),
-            "0" | "false" | "no" | "off"
-        ) {
-            return false;
+        match s.trim().to_lowercase().as_str() {
+            "0" | "false" | "no" | "off" => return false,
+            "1" | "true" | "yes" | "on" => return true,
+            _ => {}
         }
     }
     if auto_boltz_gpu_opt_out || !predict_cuda {
@@ -168,7 +228,58 @@ pub fn auto_default_boltz_cpu_for_memory(
     if device_requested.map(str::trim) != Some("auto") {
         return false;
     }
-    parent_visible_cuda_device_count() == 1
+    if parent_visible_cuda_device_count() != 1 {
+        return false;
+    }
+    if auto_boltz_gpu_allowed_by_free_vram() {
+        tracing::info!(
+            "preprocess: auto allows GPU Boltz on the single visible GPU because free VRAM is above BOLTR_AUTO_BOLTZ_GPU_MIN_FREE_VRAM_MB"
+        );
+        return false;
+    }
+    true
+}
+
+#[cfg(feature = "tch")]
+fn auto_boltz_min_free_vram_mb() -> u64 {
+    std::env::var("BOLTR_AUTO_BOLTZ_GPU_MIN_FREE_VRAM_MB")
+        .or_else(|_| std::env::var("BOLTR_AUTO_MIN_FREE_VRAM_MB"))
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(40_000)
+}
+
+#[cfg(feature = "tch")]
+fn auto_boltz_gpu_allowed_by_free_vram() -> bool {
+    let min_mb = auto_boltz_min_free_vram_mb();
+    if min_mb == 0 {
+        return true;
+    }
+    match crate::gpu_mem::query_free_vram_bytes() {
+        Some(free) => {
+            let free_mib = free / (1024 * 1024);
+            let ok = free_mib >= min_mb;
+            tracing::info!(
+                free_mib,
+                min_mib = min_mb,
+                ok,
+                "preprocess: auto Boltz GPU free VRAM check"
+            );
+            ok
+        }
+        None => {
+            tracing::info!(
+                min_mib = min_mb,
+                "preprocess: auto Boltz GPU free VRAM probe failed; keeping CPU fallback"
+            );
+            return false;
+        }
+    }
+}
+
+#[cfg(not(feature = "tch"))]
+fn auto_boltz_gpu_allowed_by_free_vram() -> bool {
+    false
 }
 
 /// Extra args for `boltz predict` when invoked from `boltr predict --preprocess …`.
@@ -315,6 +426,58 @@ pub fn maybe_post_boltz_empty_cache(bolt_command: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn collect_prediction_structures(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_prediction_structures(&path, out)?;
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let ext = ext.to_ascii_lowercase();
+        if (ext == "cif" || ext == "pdb")
+            && path
+                .components()
+                .any(|c| c.as_os_str().to_string_lossy() == "predictions")
+        {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn copy_upstream_prediction_structures(staging: &Path, dest_dir: &Path) -> Result<usize> {
+    let mut structures = Vec::new();
+    collect_prediction_structures(staging, &mut structures)?;
+    if structures.is_empty() {
+        return Ok(0);
+    }
+    let pred_dir = dest_dir.join(".boltr_upstream_predictions");
+    fs::create_dir_all(&pred_dir).with_context(|| format!("mkdir {}", pred_dir.display()))?;
+    let mut copied = 0_usize;
+    for src in structures {
+        let Some(name) = src.file_name() else {
+            continue;
+        };
+        let dst = pred_dir.join(name);
+        fs::copy(&src, &dst).with_context(|| {
+            format!(
+                "copy upstream prediction {} -> {}",
+                src.display(),
+                dst.display()
+            )
+        })?;
+        copied += 1;
+    }
+    Ok(copied)
+}
+
 /// Run upstream `boltz predict` and copy preprocess artifacts next to `yaml_path`.
 pub fn run_boltz_preprocess(
     yaml_path: &Path,
@@ -364,6 +527,23 @@ pub fn run_boltz_preprocess(
         cmd.env("PYTORCH_CUDA_ALLOC_CONF", conf);
         tracing::info!(%conf, "Boltz subprocess PYTORCH_CUDA_ALLOC_CONF");
     }
+    if let Some(n) = child_env.preprocess_threads {
+        let n = n.to_string();
+        for key in [
+            "OMP_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+            "BOLTR_PREPROCESS_THREADS",
+        ] {
+            cmd.env(key, &n);
+        }
+        tracing::info!(threads = %n, "Boltz subprocess CPU thread cap");
+    }
+    if let Some(ref precision) = child_env.matmul_precision {
+        cmd.env("BOLTR_BOLTZ_MATMUL_PRECISION", precision);
+        tracing::info!(%precision, "Boltz subprocess matmul precision");
+    }
     cmd.arg("predict");
     cmd.arg(&yaml_path);
     cmd.arg("--out_dir");
@@ -396,9 +576,12 @@ pub fn run_boltz_preprocess(
 
     boltr_io::copy_flat_preprocess_bundle(&manifest_path, &dest_dir, use_symlink)
         .context("copy preprocess bundle")?;
+    let copied_predictions = copy_upstream_prediction_structures(&staging, &dest_dir)
+        .context("copy upstream Boltz prediction structures")?;
 
     info!(
         dest = %dest_dir.display(),
+        copied_predictions,
         "preprocess bundle materialized next to YAML"
     );
 

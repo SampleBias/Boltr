@@ -290,12 +290,53 @@ fn user_set_boltz_kernel_mode(args: &[String]) -> bool {
 }
 
 fn should_disable_boltz_kernels_by_default() -> bool {
-    !std::env::var("BOLTR_BOLTZ_USE_KERNELS")
+    !boltz_kernel_probe_allows_enable()
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name)
         .map(|v| {
             let t = v.trim();
             t == "1" || t.eq_ignore_ascii_case("true") || t.eq_ignore_ascii_case("yes")
         })
         .unwrap_or(false)
+}
+
+fn boltz_kernel_probe_allows_enable() -> bool {
+    if !env_truthy("BOLTR_BOLTZ_USE_KERNELS") {
+        return false;
+    }
+    let py = find_venv_python()
+        .map(|p| p.display().to_string())
+        .or_else(|| std::env::var("BOLTR_PYTHON").ok())
+        .unwrap_or_else(|| "python3".to_string());
+    let script = r#"
+import importlib.util
+import sys
+
+try:
+    import torch
+    ok = torch.cuda.is_available() and importlib.util.find_spec("cuequivariance_torch") is not None
+except Exception:
+    ok = False
+sys.exit(0 if ok else 1)
+"#;
+    let ok = std::process::Command::new(&py)
+        .args(["-c", script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        info!(%py, "boltr-web: enabling upstream Boltz GPU kernels after CUDA/cuEquivariance probe");
+    } else {
+        info!(
+            %py,
+            "boltr-web: BOLTR_BOLTZ_USE_KERNELS requested, but CUDA/cuEquivariance probe failed; keeping --no_kernels"
+        );
+    }
+    ok
 }
 
 /// Validate preprocess choices before spawning `boltr predict` (clear 400 instead of failing mid-job).
@@ -723,6 +764,12 @@ impl JobStore {
 pub struct PredictOutputInspect {
     /// Canonical absolute paths to each `.cif` / `.pdb` found under `out_dir`.
     pub structure_paths: Vec<String>,
+    /// Canonical structure paths that are not debug/failed artifacts.
+    pub usable_structure_paths: Vec<String>,
+    /// Canonical structure paths with `.failed.*` suffixes; useful for debugging only.
+    pub debug_structure_paths: Vec<String>,
+    /// Failed QC summaries parsed from `*.qc.json` reports.
+    pub qc_failures: Vec<QcFailureSummary>,
     /// One short paragraph for UI: success summary, or why no structure file was found.
     pub structure_message: String,
     /// `status` from `boltr_predict_complete.txt` when present.
@@ -736,6 +783,9 @@ impl PredictOutputInspect {
     pub fn job_running() -> Self {
         Self {
             structure_paths: Vec::new(),
+            usable_structure_paths: Vec::new(),
+            debug_structure_paths: Vec::new(),
+            qc_failures: Vec::new(),
             structure_message:
                 "Job still running; structure paths and completion details appear when the job finishes."
                     .to_string(),
@@ -743,6 +793,16 @@ impl PredictOutputInspect {
             completion_note: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QcFailureSummary {
+    pub report_path: String,
+    pub model_filename: Option<String>,
+    pub fail_reasons: Vec<String>,
+    pub steric_clashes: usize,
+    pub severe_geometry: bool,
+    pub guidance: String,
 }
 
 fn collect_structure_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -759,6 +819,13 @@ fn collect_structure_files(dir: &Path, out: &mut Vec<PathBuf>) {
             }
         }
     }
+}
+
+fn is_debug_structure_path(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.contains(".failed."))
+        .unwrap_or(false)
 }
 
 /// When `completion_note` looks like a LibTorch / shape error, append troubleshooting text.
@@ -793,6 +860,74 @@ fn collect_named_files(dir: &Path, filename: &str, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn collect_qc_json_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            collect_qc_json_files(&p, out);
+        } else if p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.ends_with(".qc.json"))
+            .unwrap_or(false)
+        {
+            out.push(p);
+        }
+    }
+}
+
+fn parse_qc_failure(path: &Path) -> Option<QcFailureSummary> {
+    let txt = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&txt).ok()?;
+    if v.get("passed").and_then(|x| x.as_bool()).unwrap_or(true) {
+        return None;
+    }
+    let fail_reasons: Vec<String> = v
+        .get("fail_reasons")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .take(8)
+                .collect()
+        })
+        .unwrap_or_default();
+    let steric_clashes = v
+        .get("steric_clashes")
+        .and_then(|x| x.as_array())
+        .map(Vec::len)
+        .unwrap_or(0);
+    let severe_geometry = steric_clashes >= 1000
+        || fail_reasons.iter().any(|r| {
+            let r = r.to_ascii_lowercase();
+            r.contains("hard steric overlap") || r.contains("ca-ca distance")
+        });
+    let guidance = if severe_geometry {
+        "Severe geometry collapse was detected. Treat `.failed.cif` / `.failed.pdb` as debug artifacts, not usable structures. If high-fidelity/Boltz preprocess already ran, inspect the native prediction debug JSON, coordinate mapping, inputs/templates/constraints, and compare against upstream Boltz output."
+    } else {
+        "The structure failed geometry QC. Use the `.qc.txt` / `.qc.json` report and failed structure files for debugging before using this model."
+    }
+    .to_string();
+    Some(QcFailureSummary {
+        report_path: path
+            .canonicalize()
+            .unwrap_or_else(|_| path.to_path_buf())
+            .to_string_lossy()
+            .into_owned(),
+        model_filename: v
+            .get("model_filename")
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
+        fail_reasons,
+        steric_clashes,
+        severe_geometry,
+        guidance,
+    })
+}
+
 fn parse_completion_json(path: &Path) -> Option<(String, String)> {
     let txt = std::fs::read_to_string(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&txt).ok()?;
@@ -813,20 +948,55 @@ fn parse_completion_json(path: &Path) -> Option<(String, String)> {
 }
 
 fn build_structure_message(
-    paths: &[String],
+    usable_paths: &[String],
+    debug_paths: &[String],
+    qc_failures: &[QcFailureSummary],
     completion_status: Option<&str>,
     completion_note: Option<&str>,
 ) -> String {
-    if !paths.is_empty() {
+    if !usable_paths.is_empty() {
         let mut s = format!(
-            "Found {} structure file(s) (.cif / .pdb) under the job output directory.",
-            paths.len()
+            "Found {} usable structure file(s) (.cif / .pdb) under the job output directory.",
+            usable_paths.len()
         );
-        if paths.len() == 1 {
-            s.push_str(" Full path is listed in structure_paths.");
+        if usable_paths.len() == 1 {
+            s.push_str(" Full path is listed in usable_structure_paths.");
         } else {
-            s.push_str(" All paths are listed in structure_paths.");
+            s.push_str(" All paths are listed in usable_structure_paths.");
         }
+        if let Some(qc) = qc_failures.first() {
+            let reasons = if qc.fail_reasons.is_empty() {
+                "unknown QC reason".to_string()
+            } else {
+                qc.fail_reasons.join("; ")
+            };
+            s.push_str(&format!(
+                " QC failed for {} model(s): {reasons}. Steric clashes: {}. Failed structure files are debug artifacts, not usable final structures.",
+                qc_failures.len(),
+                qc.steric_clashes
+            ));
+        }
+        return s;
+    }
+
+    if !debug_paths.is_empty() {
+        let mut s = format!(
+            "No usable structure file was produced. Found {} debug/failed structure artifact(s); these are listed in debug_structure_paths and should not be used as final predictions.",
+            debug_paths.len()
+        );
+        if let Some(qc) = qc_failures.first() {
+            let reasons = if qc.fail_reasons.is_empty() {
+                "unknown QC reason".to_string()
+            } else {
+                qc.fail_reasons.join("; ")
+            };
+            s.push_str(&format!(
+                " QC failed for {} model(s): {reasons}. Steric clashes: {}.",
+                qc_failures.len(),
+                qc.steric_clashes
+            ));
+        }
+        append_tensor_shape_hint(&mut s, completion_note);
         return s;
     }
 
@@ -866,9 +1036,21 @@ fn build_structure_message(
             }
         }
         None => {
-            s.push_str(
-                " No `boltr_predict_complete.txt` JSON was parsed, or the run did not reach the structure writer (see log_tail).",
-            );
+            if let Some(qc) = qc_failures.first() {
+                let reasons = if qc.fail_reasons.is_empty() {
+                    "unknown QC reason".to_string()
+                } else {
+                    qc.fail_reasons.join("; ")
+                };
+                s.push_str(&format!(
+                    " QC failed before final promotion: {reasons}. Steric clashes: {}.",
+                    qc.steric_clashes
+                ));
+            } else {
+                s.push_str(
+                    " No `boltr_predict_complete.txt` JSON was parsed, or the run did not reach the structure writer (see log_tail).",
+                );
+            }
         }
     }
     append_tensor_shape_hint(&mut s, completion_note);
@@ -880,6 +1062,9 @@ pub fn inspect_predict_output(out_dir: &Path) -> PredictOutputInspect {
     if !out_dir.is_dir() {
         return PredictOutputInspect {
             structure_paths: Vec::new(),
+            usable_structure_paths: Vec::new(),
+            debug_structure_paths: Vec::new(),
+            qc_failures: Vec::new(),
             structure_message: "Output directory is missing or not a directory.".to_string(),
             completion_status: None,
             completion_note: None,
@@ -889,14 +1074,26 @@ pub fn inspect_predict_output(out_dir: &Path) -> PredictOutputInspect {
     let mut raw_paths = Vec::new();
     collect_structure_files(out_dir, &mut raw_paths);
     raw_paths.sort();
+    let mut usable_structure_paths = Vec::new();
+    let mut debug_structure_paths = Vec::new();
     let structure_paths: Vec<String> = raw_paths
-        .into_iter()
+        .iter()
         .filter_map(|p| {
             p.canonicalize()
                 .ok()
                 .map(|c| c.to_string_lossy().into_owned())
         })
         .collect();
+    for p in &raw_paths {
+        if let Ok(c) = p.canonicalize() {
+            let s = c.to_string_lossy().into_owned();
+            if is_debug_structure_path(p) {
+                debug_structure_paths.push(s);
+            } else {
+                usable_structure_paths.push(s);
+            }
+        }
+    }
 
     let mut markers = Vec::new();
     collect_named_files(out_dir, "boltr_predict_complete.txt", &mut markers);
@@ -912,14 +1109,27 @@ pub fn inspect_predict_output(out_dir: &Path) -> PredictOutputInspect {
         }
     }
 
+    let mut qc_paths = Vec::new();
+    collect_qc_json_files(out_dir, &mut qc_paths);
+    qc_paths.sort();
+    let qc_failures: Vec<QcFailureSummary> = qc_paths
+        .iter()
+        .filter_map(|p| parse_qc_failure(p))
+        .collect();
+
     let structure_message = build_structure_message(
-        &structure_paths,
+        &usable_structure_paths,
+        &debug_structure_paths,
+        &qc_failures,
         completion_status.as_deref(),
         completion_note.as_deref(),
     );
 
     PredictOutputInspect {
         structure_paths,
+        usable_structure_paths,
+        debug_structure_paths,
+        qc_failures,
         structure_message,
         completion_status,
         completion_note,
@@ -1307,8 +1517,40 @@ mod tests {
         std::fs::create_dir_all(&rec).unwrap();
         std::fs::write(rec.join("rec1_model_0.cif"), b"data_x").unwrap();
         let i = inspect_predict_output(tmp.path());
+        assert_eq!(i.usable_structure_paths.len(), 1);
+        assert!(i.debug_structure_paths.is_empty());
         assert_eq!(i.structure_paths.len(), 1);
         assert!(i.structure_message.contains("Found 1"));
+    }
+
+    #[test]
+    fn inspect_predict_output_surfaces_qc_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rec = tmp.path().join("rec1");
+        std::fs::create_dir_all(&rec).unwrap();
+        std::fs::write(rec.join("rec1_model_0.failed.cif"), b"data_x").unwrap();
+        std::fs::write(
+            rec.join("rec1_model_0.qc.json"),
+            r#"{
+                "model_filename":"rec1_model_0.cif",
+                "passed":false,
+                "fail_reasons":["hard steric overlap detected","CA-CA distance out of tolerance"],
+                "steric_clashes":[{}, {}, {}]
+            }"#,
+        )
+        .unwrap();
+        let i = inspect_predict_output(tmp.path());
+        assert!(i.usable_structure_paths.is_empty());
+        assert_eq!(i.debug_structure_paths.len(), 1);
+        assert_eq!(i.qc_failures.len(), 1);
+        assert_eq!(i.qc_failures[0].steric_clashes, 3);
+        assert!(i.qc_failures[0].severe_geometry);
+        assert!(i.qc_failures[0]
+            .guidance
+            .contains("native prediction debug JSON"));
+        assert!(i.structure_message.contains("No usable structure"));
+        assert!(i.structure_message.contains("QC failed"));
+        assert!(i.structure_message.contains("Steric clashes: 3"));
     }
 
     #[test]

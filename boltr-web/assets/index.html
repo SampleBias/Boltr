@@ -258,6 +258,12 @@ ___</pre>
         <input type="text" id="predictBoltzCudaVis" class="path-wide" placeholder="optional: e.g. 1 for second GPU (CUDA_VISIBLE_DEVICES for Boltz only)" autocomplete="off" spellcheck="false" title="--preprocess-cuda-visible-devices" />
       </div>
       <div class="row">
+        <label for="predictPreprocessThreads">Preprocess CPU threads</label>
+      </div>
+      <div class="row">
+        <input type="number" min="1" step="1" id="predictPreprocessThreads" class="path-wide" placeholder="optional: e.g. 8 (sets --preprocessing-threads and Boltz thread env)" autocomplete="off" title="--preprocessing-threads / BOLTR_PREPROCESS_THREADS" />
+      </div>
+      <div class="row">
         <label><input type="checkbox" id="predictBoltzCpu" /> Force Boltz CPU (<code>--preprocess-boltz-cpu</code>) — OOM fallback when LibTorch uses GPU</label>
       </div>
       <div class="row">
@@ -604,6 +610,8 @@ ___</pre>
       if (boltCmd) fd.append("bolt_command", boltCmd);
       const boltzVis = $("predictBoltzCudaVis").value.trim();
       if (boltzVis) fd.append("preprocess_cuda_visible_devices", boltzVis);
+      const preThreads = $("predictPreprocessThreads").value.trim();
+      if (preThreads) fd.append("preprocessing_threads", preThreads);
       if ($("predictBoltzCpu").checked) fd.append("preprocess_boltz_cpu", "1");
       if ($("predictAutoBoltzGpu").checked) fd.append("preprocess_auto_boltz_gpu", "1");
       if ($("predictPostEmptyCache").checked) fd.append("preprocess_post_boltz_empty_cache", "1");
@@ -664,19 +672,40 @@ ___</pre>
         predictBar.value = 100;
         const wrap = $("predictStructureWrap");
         const so = st.structure_output || {};
-        const paths = so.structure_paths || [];
+        const usablePaths = so.usable_structure_paths || [];
+        const debugPaths = so.debug_structure_paths || [];
         const msg = so.structure_message || "";
         let html = "<strong>Structure output</strong> — " + esc(msg);
-        if (paths.length) {
+        if (usablePaths.length) {
+          html += "<div style=\"margin-top:0.5rem;\"><strong>Usable structures</strong></div>";
           html += "<ul style=\"margin:0.35rem 0 0 1rem;padding:0;\">";
-          for (let i = 0; i < paths.length; i++) {
-            html += "<li><code style=\"word-break:break-all;\">" + esc(paths[i]) + "</code></li>";
+          for (let i = 0; i < usablePaths.length; i++) {
+            html += "<li><code style=\"word-break:break-all;\">" + esc(usablePaths[i]) + "</code></li>";
+          }
+          html += "</ul>";
+        }
+        if (debugPaths.length) {
+          html += "<div style=\"margin-top:0.5rem;\"><strong>Debug / failed artifacts</strong></div>";
+          html += "<ul style=\"margin:0.35rem 0 0 1rem;padding:0;\">";
+          for (let i = 0; i < debugPaths.length; i++) {
+            html += "<li><code style=\"word-break:break-all;\">" + esc(debugPaths[i]) + "</code></li>";
+          }
+          html += "</ul>";
+        }
+        const qcFailures = so.qc_failures || [];
+        if (qcFailures.length) {
+          html += "<div style=\"margin-top:0.5rem;\"><strong>QC failure diagnostics</strong></div>";
+          html += "<ul style=\"margin:0.35rem 0 0 1rem;padding:0;\">";
+          for (let i = 0; i < qcFailures.length; i++) {
+            const q = qcFailures[i];
+            const reasons = (q.fail_reasons || []).join("; ") || "unknown QC reason";
+            html += "<li><code>" + esc(q.model_filename || "model") + "</code>: " + esc(reasons) + "; steric clashes: " + esc(String(q.steric_clashes || 0)) + "<br/><span class=\"notes\">" + esc(q.guidance || "") + "</span></li>";
           }
           html += "</ul>";
         }
         wrap.innerHTML = html;
         wrap.style.display = "block";
-        if (!paths.length && st.done) {
+        if (!usablePaths.length && st.done) {
           wrap.style.borderColor = "#a63";
         } else {
           wrap.style.borderColor = "var(--border)";

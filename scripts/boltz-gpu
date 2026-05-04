@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Wrapper around upstream `boltz` that sets PyTorch GPU performance defaults.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PY="${BOLTR_BOLTZ_PYTHON:-$ROOT/.venv/bin/python}"
+
+if [[ ! -x "$PY" ]]; then
+  PY="$(command -v python3)"
+fi
+
+exec "$PY" "$ROOT/scripts/boltz_gpu_wrapper.py" "$@"
