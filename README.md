@@ -186,6 +186,22 @@ bash scripts/cargo-tch build --release -p boltr-cli --features tch
 
 ---
 
+## Local hardware guidance
+
+Boltr can run local status checks and small smoke tests on modest hardware, but practical Boltz2 prediction quality depends heavily on GPU VRAM, input size, MSA depth, templates, ligands, and diffusion sample count.
+
+| Use case | GPU VRAM | CPU | System RAM | Notes |
+| --- | ---: | --- | ---: | --- |
+| Dev/UI/status only | 4 GB | 4-8 cores | 16-32 GB | Enough for CUDA/LibTorch probing and tiny smoke tests; not a reliable production prediction target. |
+| Tiny protein tests | 8 GB | 8 cores | 32 GB | Small single-chain jobs with low sample counts and no heavy ligands/templates. |
+| Practical local prediction | 12-16 GB | 8-16 cores | 64 GB | Reasonable baseline for small/medium proteins with `max_parallel_samples=1`. |
+| Recommended workstation | 24 GB | 16+ cores | 64-128 GB | Good target for Boltz2 quality preset and moderate complexes. RTX 3090/4090-class GPUs fit here. |
+| Larger complexes / affinity / templates | 48 GB+ | 24+ cores | 128 GB+ | Safer for protein-ligand affinity, template-heavy jobs, larger MSAs, and larger atom/token counts. |
+
+For local reliability, keep `max_parallel_samples=1` until you have measured free VRAM on your workload. If a single GPU is shared by upstream Boltz preprocess and LibTorch prediction, prefer running Boltz preprocess on CPU so prediction has the most VRAM available. The largest VRAM drivers are atom/token count, MSA depth, template count, `sampling_steps`, `diffusion_samples`, affinity/ligand complexity, and whether preprocessing also uses GPU.
+
+---
+
 ## Predict: preprocess and structure output
 
 `boltr predict` with `**--features tch**` can write **mmCIF (`.cif`)** or **PDB** under `--output` **only when** a valid **preprocess bundle** sits **in the same directory as the input YAML**:
