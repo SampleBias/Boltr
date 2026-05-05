@@ -40,6 +40,7 @@ pub struct RunPodGpu {
 pub struct RunPodStatus {
     pub configured: bool,
     pub connected: bool,
+    pub connection_mode: String,
     pub target: Option<String>,
     pub workdir: Option<String>,
     pub boltr: Option<String>,
@@ -296,7 +297,8 @@ async fn local_cuda_status() -> Option<RunPodStatus> {
     Some(RunPodStatus {
         configured: true,
         connected: true,
-        target: Some("local CUDA GPU (no SSH)".to_string()),
+        connection_mode: "local_cuda".to_string(),
+        target: Some("local CUDA GPU (no RunPod SSH)".to_string()),
         workdir: Some(workdir),
         boltr: Some(boltr),
         cache: Some(cache),
@@ -316,6 +318,7 @@ pub async fn status_from_env() -> RunPodStatus {
         return RunPodStatus {
             configured: false,
             connected: false,
+            connection_mode: "unconfigured".to_string(),
             target: None,
             workdir: None,
             boltr: None,
@@ -334,6 +337,7 @@ pub async fn status_from_env() -> RunPodStatus {
     let mut status = RunPodStatus {
         configured: true,
         connected: false,
+        connection_mode: "ssh".to_string(),
         target: Some(cfg.target()),
         workdir: Some(cfg.workdir.clone()),
         boltr: Some(cfg.boltr.clone()),

@@ -27,6 +27,8 @@ The **RunPod GPU** target supports two modes:
 - **Launched on the pod:** if `boltr-web` is started inside your SSH RunPod session and `nvidia-smi` sees a GPU, the RunPod status auto-connects to the local CUDA device. No `BOLTR_RUNPOD_HOST` is needed.
 - **Launched elsewhere:** set `BOLTR_RUNPOD_HOST` so the web server can SSH to the pod. Optional variables are `BOLTR_RUNPOD_USER`, `BOLTR_RUNPOD_PORT`, `BOLTR_RUNPOD_KEY`, `BOLTR_RUNPOD_WORKDIR`, `BOLTR_RUNPOD_BOLTR`, and `BOLTR_RUNPOD_CACHE`.
 
+The status panel distinguishes these modes. `RunPod SSH connected` means the web server reached `BOLTR_RUNPOD_HOST` over SSH. `Local CUDA detected (no RunPod SSH)` means `BOLTR_RUNPOD_HOST` is unset and the web server only found a GPU on the machine where `boltr-web` is running.
+
 SSH RunPod jobs run a remote `boltr doctor --json` preflight before upload and use bounded waits for setup, upload, prediction, and download. Tune them with `BOLTR_RUNPOD_PREFLIGHT_TIMEOUT_SECS`, `BOLTR_RUNPOD_UPLOAD_TIMEOUT_SECS`, `BOLTR_RUNPOD_PREDICT_TIMEOUT_SECS`, `BOLTR_RUNPOD_DOWNLOAD_TIMEOUT_SECS`, and `BOLTR_RUNPOD_TRANSFER_RETRIES`.
 
 ## Preprocess and upstream Boltz

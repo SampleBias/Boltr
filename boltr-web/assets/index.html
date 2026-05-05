@@ -166,11 +166,11 @@ ___</pre>
     </div>
     <div id="statusMount"></div>
     <div class="help-box" style="margin-top:0.75rem;">
-      <p><strong>RunPod GPU</strong> — optional CUDA target. If this web server is already running inside your SSH RunPod session, it auto-detects the local GPU. Otherwise configure SSH with <code>BOLTR_RUNPOD_HOST</code>, optional <code>BOLTR_RUNPOD_USER</code>/<code>PORT</code>/<code>KEY</code>, plus <code>BOLTR_RUNPOD_WORKDIR</code>, <code>BOLTR_RUNPOD_BOLTR</code>, and <code>BOLTR_RUNPOD_CACHE</code>.</p>
-      <p class="notes">The browser never sends SSH credentials; it only asks this web server to probe or run the configured pod, or the local CUDA GPU when launched on RunPod.</p>
+      <p><strong>GPU target</strong> — optional CUDA target for predictions. This can be the GPU attached to the machine running <code>boltr-web</code>, or an SSH RunPod when <code>BOLTR_RUNPOD_HOST</code> is configured.</p>
+      <p class="notes">The browser never sends SSH credentials; it only asks this web server to probe the available GPU target. Local CUDA means the current <code>boltr-web</code> host GPU is available; SSH RunPod means a remote pod was reached over SSH.</p>
       <div class="row">
-        <button type="button" id="btnRunpodRefresh">Refresh RunPod</button>
-        <span class="pill" id="runpodPill">RunPod …</span>
+        <button type="button" id="btnRunpodRefresh">Refresh GPU target</button>
+        <span class="pill" id="runpodPill">GPU target …</span>
       </div>
       <div id="runpodMount"></div>
     </div>
@@ -460,8 +460,11 @@ ___</pre>
       if (!data.configured) {
         pill.textContent = "RunPod not configured";
         pill.className = "pill not-ready";
+      } else if (data.connected && data.connection_mode === "local_cuda") {
+        pill.textContent = "Local CUDA detected (no RunPod SSH)";
+        pill.className = "pill ready";
       } else if (data.connected) {
-        pill.textContent = "RunPod connected";
+        pill.textContent = "RunPod SSH connected";
         pill.className = "pill ready";
       } else {
         pill.textContent = "RunPod offline";
@@ -475,7 +478,8 @@ ___</pre>
         return `<div class="row"><span class="tag">GPU</span><span>${esc(g.name || "unknown")}</span><span class="notes">${esc(mem)}</span></div>`;
       }).join("");
       const bits = [];
-      if (data.target) bits.push(`<p class="notes">SSH target: <code>${esc(data.target)}</code></p>`);
+      if (data.connection_mode) bits.push(`<p class="notes">Mode: <code>${esc(data.connection_mode)}</code></p>`);
+      if (data.target) bits.push(`<p class="notes">${data.connection_mode === "ssh" ? "SSH target" : "Target"}: <code>${esc(data.target)}</code></p>`);
       if (data.workdir) bits.push(`<p class="notes">Workdir: <code>${esc(data.workdir)}</code></p>`);
       if (data.cache) bits.push(`<p class="notes">Cache: <code>${esc(data.cache)}</code> ${data.remote_cache_ready === true ? '<span class="ok">ready</span>' : data.remote_cache_ready === false ? '<span class="no">missing required files</span>' : ''}</p>`);
       if (data.boltr_doctor) bits.push(`<pre class="notes">${esc(JSON.stringify(data.boltr_doctor, null, 2))}</pre>`);
