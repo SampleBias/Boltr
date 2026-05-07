@@ -67,6 +67,32 @@ fn env_trimmed(key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+fn env_flag_true(key: &str) -> bool {
+    env_trimmed(key)
+        .map(|v| {
+            v == "1"
+                || v.eq_ignore_ascii_case("true")
+                || v.eq_ignore_ascii_case("yes")
+                || v.eq_ignore_ascii_case("on")
+        })
+        .unwrap_or(false)
+}
+
+fn running_on_runpod_host() -> bool {
+    if env_flag_true("BOLTR_RUNPOD_LOCAL") {
+        return true;
+    }
+    [
+        "RUNPOD_POD_ID",
+        "RUNPOD_PUBLIC_IP",
+        "RUNPOD_TCP_PORT_22",
+        "RUNPOD_GPU_COUNT",
+        "RUNPOD_DC_ID",
+    ]
+    .iter()
+    .any(|k| env_trimmed(k).is_some())
+}
+
 fn env_u64(key: &str, default: u64) -> u64 {
     env_trimmed(key)
         .and_then(|s| s.parse::<u64>().ok())
@@ -283,10 +309,14 @@ async fn local_cuda_status() -> Option<RunPodStatus> {
         Err(_) => None,
     };
 
-    let mut warnings = vec![
+    let runpod_local = running_on_runpod_host();
+    let mut warnings = vec![if runpod_local {
+        "boltr-web appears to be running on a RunPod host; using the attached pod GPU directly (no SSH needed)."
+            .to_string()
+    } else {
         "BOLTR_RUNPOD_HOST is not set; using the GPU attached to this boltr-web server instead of SSH."
-            .to_string(),
-    ];
+            .to_string()
+    }];
     if boltr_doctor.is_none() {
         warnings.push(
             "Local boltr doctor did not return JSON; set BOLTR to the tch-enabled boltr binary if needed."
@@ -297,8 +327,20 @@ async fn local_cuda_status() -> Option<RunPodStatus> {
     Some(RunPodStatus {
         configured: true,
         connected: true,
-        connection_mode: "local_cuda".to_string(),
-        target: Some("local CUDA GPU (no RunPod SSH)".to_string()),
+        connection_mode: if runpod_local {
+            "runpod_local_cuda"
+        } else {
+            "local_cuda"
+        }
+        .to_string(),
+        target: Some(
+            if runpod_local {
+                "RunPod attached CUDA GPU (no SSH)"
+            } else {
+                "local CUDA GPU (no RunPod SSH)"
+            }
+            .to_string(),
+        ),
         workdir: Some(workdir),
         boltr: Some(boltr),
         cache: Some(cache),
@@ -729,6 +771,14 @@ mod tests {
     #[test]
     fn shell_quote_handles_single_quotes() {
         assert_eq!(shell_quote("a'b"), "'a'\"'\"'b'");
+    }
+
+    #[test]
+    fn runpod_local_override_detects_pod_host() {
+        std::env::set_var("BOLTR_RUNPOD_LOCAL", "1");
+        let detected = running_on_runpod_host();
+        std::env::remove_var("BOLTR_RUNPOD_LOCAL");
+        assert!(detected);
     }
 
     #[tokio::test]
