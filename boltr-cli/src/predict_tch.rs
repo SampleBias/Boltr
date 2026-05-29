@@ -7,7 +7,7 @@
 //! 4. When `manifest.json` + preprocess `.npz` sit next to the input YAML: `load_input` → collate → `predict_step` → PDB/mmCIF
 //! 5. If step 4 did not write (e.g. `--affinity` without flat `{id}.npz`, no manifest, or `predict_step` failed): try preprocess reference export from the same bundle
 //! 6. Otherwise: placeholder completion marker (no structure file)
-//! 7. Confidence / affinity / PAE npz when those heads are loaded and wired (see `boltr-io` writers)
+//! 7. Affinity JSON and, with `--write-full-pae`, `pae_{id}_model_0.npz` via `boltr-io` writers
 //!
 //! Reference: [boltz-reference/docs/prediction.md](../../../boltz-reference/docs/prediction.md)
 
@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use boltr_backend_tch::{
     resolve_predict_args, AffinityModuleConfig, AtomDiffusionConfig, Boltz2DiffusionArgs,
-    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, ConfidenceModuleConfig, PredictArgsCliOverrides,
-    RelPosFeatures, SteeringParams,
+    Boltz2Hparams, Boltz2Model, Boltz2PredictArgs, ConfidenceModuleConfig, ConfidenceOutput,
+    PredictArgsCliOverrides, PredictStepOutput, RelPosFeatures, SteeringParams,
 };
 use boltr_io::config::BoltzInput;
 use boltr_io::{
@@ -26,7 +26,8 @@ use boltr_io::{
     trunk_smoke_feature_batch_from_inference_input_with_ensemble, AffinitySummary,
     InferenceEnsembleMode,
 };
-use tch::{self, Kind, Tensor};
+use ndarray::Array2;
+use tch::{self, Device, Kind, Tensor};
 
 use crate::OutputFormat;
 
@@ -136,6 +137,74 @@ fn tensor_scalar_at(t: &Tensor, idx: i64) -> Option<f64> {
         return None;
     }
     Some(t.double_value(&[idx]))
+}
+
+/// Expected-value PAE matrix `[N, N]` (Å) for one diffusion sample index.
+fn confidence_pae_matrix_for_sample(
+    conf: &ConfidenceOutput,
+    sample_idx: i64,
+) -> Result<Array2<f32>> {
+    let pae = conf
+        .pae
+        .to_kind(Kind::Float)
+        .to_device(Device::Cpu)
+        .contiguous();
+    let matrix = match pae.dim() {
+        2 => {
+            if sample_idx != 0 {
+                bail!(
+                    "PAE tensor is 2D but sample_idx={sample_idx} (expected 0 for single-sample output)"
+                );
+            }
+            pae
+        }
+        3 => {
+            let batch = pae.size()[0];
+            if sample_idx < 0 || sample_idx >= batch {
+                bail!("PAE sample index {sample_idx} out of range for batch size {batch}");
+            }
+            pae.narrow(0, sample_idx, 1).squeeze_dim(0)
+        }
+        d => bail!("unexpected PAE tensor rank {d} (expected 2 or 3)"),
+    };
+    let shape = matrix.size();
+    if shape.len() != 2 {
+        bail!("PAE matrix must be rank 2 after sample selection, got {:?}", shape);
+    }
+    let n0 = shape[0] as usize;
+    let n1 = shape[1] as usize;
+    let mut data = vec![0f32; n0 * n1];
+    matrix.copy_data(&mut data, n0 * n1);
+    Array2::from_shape_vec((n0, n1), data).map_err(|e| anyhow!("PAE matrix shape: {e}"))
+}
+
+/// Write `pae_{record_id}_model_{rank}.npz` when `--write-full-pae` is set.
+fn maybe_write_full_pae_npz(
+    out_dir: &Path,
+    record_id: &str,
+    out: &PredictStepOutput,
+    ranking: &SampleRanking,
+    write_full_pae: bool,
+) -> Result<()> {
+    if !write_full_pae {
+        return Ok(());
+    }
+    let conf = out.confidence.as_ref().ok_or_else(|| {
+        anyhow!(
+            "--write-full-pae requested but confidence output is missing (set BOLTR_ENABLE_NATIVE_CONFIDENCE=1 and ensure confidence checkpoint weights load)"
+        )
+    })?;
+    let pae = confidence_pae_matrix_for_sample(conf, ranking.selected_sample)
+        .context("extract PAE matrix from confidence head")?;
+    let path = boltr_io::write_pae_npz_path(out_dir, record_id, 0, pae.view())
+        .context("write PAE npz")?;
+    tracing::info!(
+        path = %path.display(),
+        tokens = pae.nrows(),
+        sample = ranking.selected_sample,
+        "wrote full PAE matrix"
+    );
+    Ok(())
 }
 
 fn select_best_sample(
@@ -430,6 +499,7 @@ fn try_predict_from_preprocess(
     ensemble_mode: InferenceEnsembleMode,
     device_requested: Option<&str>,
     confidence_ranking_enabled: bool,
+    write_full_pae: bool,
 ) -> Result<Option<PredictBridgeSuccess>> {
     let preprocess_dir = match canonical_yaml_parent(input_path) {
         Ok(p) => p,
@@ -656,6 +726,7 @@ fn try_predict_from_preprocess(
     } else {
         if promote_upstream_boltz_prediction(&preprocess_dir, out_dir, &record_id)?.is_some() {
             let ranking = select_best_sample(&out, confidence_ranking_enabled);
+            maybe_write_full_pae_npz(out_dir, &record_id, &out, &ranking, write_full_pae)?;
             copy_msa_a3m_to_output(&preprocess_dir, out_dir)
                 .context("copy MSA .a3m into output dir")?;
             tracing::warn!(
@@ -697,6 +768,7 @@ fn try_predict_from_preprocess(
         boltr_io::write_affinity_json(out_dir, &record_id, &summary)
             .context("write affinity JSON")?;
     }
+    maybe_write_full_pae_npz(out_dir, &record_id, &out, &ranking, write_full_pae)?;
     copy_msa_a3m_to_output(&preprocess_dir, out_dir).context("copy MSA .a3m into output dir")?;
 
     tracing::info!(
@@ -1613,7 +1685,16 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     let conf_path = resolve_conf_checkpoint(checkpoint.as_deref(), &cache)?;
     tracing::info!(path = %conf_path.display(), "using confidence checkpoint");
 
-    let native_confidence_enabled = env_flag_true("BOLTR_ENABLE_NATIVE_CONFIDENCE");
+    let native_confidence_enabled = env_flag_true("BOLTR_ENABLE_NATIVE_CONFIDENCE")
+        || write_full_pae
+        || write_full_pde;
+    if (write_full_pae || write_full_pde) && !env_flag_true("BOLTR_ENABLE_NATIVE_CONFIDENCE") {
+        tracing::info!(
+            write_full_pae,
+            write_full_pde,
+            "enabling native confidence module for full PAE/PDE export"
+        );
+    }
     let native_affinity_enabled = env_flag_true("BOLTR_ENABLE_NATIVE_AFFINITY");
     if affinity && !native_affinity_enabled {
         tracing::warn!(
@@ -1772,6 +1853,12 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         }
     }
 
+    if write_full_pae && model.confidence_module().is_none() {
+        bail!(
+            "--write-full-pae requires the confidence module (checkpoint must include confidence_module weights; set BOLTR_ENABLE_NATIVE_CONFIDENCE=1 if disabled)"
+        );
+    }
+
     let mut pargs = match &resolved {
         Ok(a) => *a,
         Err(_) => Boltz2PredictArgs::default(),
@@ -1799,6 +1886,7 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
         ensemble_mode,
         device_requested.as_deref(),
         confidence_ranking_enabled,
+        write_full_pae,
     );
 
     match &predict_result {
