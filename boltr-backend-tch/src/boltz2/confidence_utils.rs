@@ -49,16 +49,17 @@ pub fn compute_frame_pred_stub(
     token_pad_mask: &Tensor,
     multiplicity: i64,
 ) -> (Tensor, Tensor) {
-    let b_total = frames_idx_true.size()[0];
-    let n_atom = frames_idx_true.size()[1];
-    let b0 = b_total / multiplicity;
+    // `frames_idx_true` / `token_pad_mask` are pre-multiplicity `[B, N, …]`; expand like Python
+    // `compute_frame_pred` (`repeat_interleave` then `reshape(B // mult, mult, …)`).
+    let b0 = frames_idx_true.size()[0];
+    let n_tok = frames_idx_true.size()[1];
     let frames_idx_pred = frames_idx_true
         .repeat_interleave_self_int(multiplicity, Some(0), None)
-        .view([b0, multiplicity, n_atom, 3]);
-    let n_tok = token_pad_mask.size()[1];
+        .view([b0, multiplicity, n_tok, 3]);
+    let mask_pad_n = token_pad_mask.size()[1];
     let mask_collinear = token_pad_mask
-        .view([b0, 1, n_tok])
-        .expand([b0, multiplicity, n_tok], true)
+        .view([b0, 1, mask_pad_n])
+        .expand([b0, multiplicity, mask_pad_n], true)
         .to_kind(Kind::Float);
     (frames_idx_pred, mask_collinear)
 }

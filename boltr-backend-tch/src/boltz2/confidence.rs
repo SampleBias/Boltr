@@ -631,4 +631,53 @@ mod tests {
         );
         assert!(model.confidence_module().is_some());
     }
+
+    #[test]
+    fn confidence_forward_multiplicity2_separate_heads_smoke() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+        let b = 1_i64;
+        let n = 16_i64;
+        let n_atom = 64_i64;
+        let mult = 2_i64;
+        let token_s = 64_i64;
+        let token_z = 32_i64;
+
+        let cfg = ConfidenceModuleConfig {
+            pairformer_num_blocks: 1,
+            pairformer_num_heads: Some(4),
+            use_separate_heads: true,
+            ..Default::default()
+        };
+
+        let vs = tch::nn::VarStore::new(device);
+        let cm = ConfidenceModule::new(vs.root(), device, token_s, token_z, &cfg);
+
+        let s_inputs = Tensor::randn(&[b, n, token_s], (Kind::Float, device));
+        let s = Tensor::randn(&[b, n, token_s], (Kind::Float, device));
+        let z = Tensor::randn(&[b, n, n, token_z], (Kind::Float, device));
+        let x_pred = Tensor::randn(&[mult, n_atom, 3], (Kind::Float, device));
+        let token_pad = Tensor::ones(&[b, n], (Kind::Float, device));
+        let asym_id = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let mol_type = Tensor::zeros(&[b, n], (Kind::Int64, device));
+        let token_to_rep = Tensor::eye(n_atom, (Kind::Float, device))
+            .narrow(0, 0, n)
+            .unsqueeze(0);
+        let frames_idx = Tensor::zeros(&[b, n, 3], (Kind::Int64, device));
+        let pdistogram = Tensor::randn(&[b, n, n, 64], (Kind::Float, device));
+
+        let _out = cm.forward(
+            &s_inputs,
+            &s,
+            &z,
+            &x_pred,
+            &token_pad,
+            &asym_id,
+            &mol_type,
+            &token_to_rep,
+            &frames_idx,
+            &pdistogram,
+            mult,
+        );
+    }
 }

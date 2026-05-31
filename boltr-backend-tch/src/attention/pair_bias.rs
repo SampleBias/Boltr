@@ -232,14 +232,13 @@ impl AttentionPairBiasV2 {
 
         let attn = attn + bias_float;
 
-        // Match Python `attentionv2.py`: 3D mask [B, W, H] → (B, 1, W, H); 2D key-only [B, H] for W≠H;
-        // symmetric token mask [B, N] → (B, N, N).
+        // Match Python `attentionv2.py`: 3D pairwise mask [B, N, N] → (B, 1, N, N);
+        // 2D token mask [B, N] → `mask[:, None, None]` → (B, 1, 1, N) for broadcast over heads
+        // and query positions. Do not expand to (B, N, N) — that misaligns with (B, H, N, N) attn.
         let mask_expanded = if mask_float.dim() == 3 {
             mask_float.unsqueeze(1)
-        } else if mask_float.dim() == 2 && q_len != k_len {
-            mask_float.unsqueeze(1).unsqueeze(1)
         } else if mask_float.dim() == 2 {
-            mask_float.unsqueeze(1).expand(&[b, q_len, k_len], false)
+            mask_float.unsqueeze(1).unsqueeze(1)
         } else {
             mask_float.unsqueeze(1)
         };
@@ -287,6 +286,30 @@ mod tests {
         let s = Tensor::randn(&[batch_size, seq_len, c_s], (Kind::Float, device));
         let z = Tensor::randn(&[batch_size, seq_len, seq_len, c_z], (Kind::Float, device));
         let mask = Tensor::ones(&[batch_size, seq_len, seq_len], (Kind::Float, device));
+
+        let output = layer.forward(&s, &z, &mask, &s, None);
+
+        assert_eq!(output.size(), vec![batch_size, seq_len, c_s]);
+    }
+
+    #[test]
+    fn test_attention_pair_bias_v2_token_mask_2d() {
+        tch::maybe_init_cuda();
+        let device = Device::Cpu;
+
+        let c_s = 64;
+        let c_z = 32;
+        let num_heads = 4;
+        let batch_size = 2;
+        let seq_len = 16;
+
+        let vs = VarStore::new(device);
+        let layer =
+            AttentionPairBiasV2::new(vs.root(), c_s, Some(c_z), Some(num_heads), None, device);
+
+        let s = Tensor::randn(&[batch_size, seq_len, c_s], (Kind::Float, device));
+        let z = Tensor::randn(&[batch_size, seq_len, seq_len, c_z], (Kind::Float, device));
+        let mask = Tensor::ones(&[batch_size, seq_len], (Kind::Float, device));
 
         let output = layer.forward(&s, &z, &mask, &s, None);
 
