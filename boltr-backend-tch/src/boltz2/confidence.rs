@@ -43,6 +43,53 @@ impl Default for ConfidenceModuleConfig {
     }
 }
 
+impl ConfidenceModuleConfig {
+    /// Build from Lightning `confidence_model_args` JSON (see [`crate::boltz_hparams::Boltz2Hparams::confidence_model_args`]).
+    #[must_use]
+    pub fn from_confidence_model_args(
+        v: Option<&serde_json::Value>,
+        token_level_confidence: bool,
+    ) -> Self {
+        let mut cfg = Self::default();
+        cfg.token_level_confidence = token_level_confidence;
+        let Some(v) = v else {
+            return cfg;
+        };
+        if let Some(n) = v.get("num_dist_bins").and_then(serde_json::Value::as_i64) {
+            cfg.num_dist_bins = n;
+        }
+        if let Some(x) = v.get("max_dist").and_then(|x| x.as_f64()) {
+            cfg.max_dist = x;
+        }
+        if let Some(p) = v.get("pairformer_args").and_then(|x| x.as_object()) {
+            if let Some(n) = p.get("num_blocks").and_then(serde_json::Value::as_i64) {
+                cfg.pairformer_num_blocks = n;
+            }
+            if let Some(n) = p.get("num_heads").and_then(serde_json::Value::as_i64) {
+                cfg.pairformer_num_heads = Some(n);
+            }
+            if let Some(b) = p.get("no_update_s").and_then(serde_json::Value::as_bool) {
+                cfg.no_update_s = b;
+            }
+        }
+        if let Some(c) = v.get("confidence_args").and_then(|x| x.as_object()) {
+            if let Some(n) = c.get("num_plddt_bins").and_then(serde_json::Value::as_i64) {
+                cfg.num_plddt_bins = n;
+            }
+            if let Some(n) = c.get("num_pde_bins").and_then(serde_json::Value::as_i64) {
+                cfg.num_pde_bins = n;
+            }
+            if let Some(n) = c.get("num_pae_bins").and_then(serde_json::Value::as_i64) {
+                cfg.num_pae_bins = n;
+            }
+            if let Some(b) = c.get("use_separate_heads").and_then(serde_json::Value::as_bool) {
+                cfg.use_separate_heads = b;
+            }
+        }
+        cfg
+    }
+}
+
 /// Full confidence stack + heads (`confidence_module` in Lightning).
 pub struct ConfidenceModule {
     device: Device,
@@ -224,31 +271,84 @@ pub struct ConfidenceOutput {
 }
 
 struct ConfidenceHeads {
-    to_pae_logits: tch::nn::Linear,
-    to_pde_logits: tch::nn::Linear,
+    to_pae_logits: Option<tch::nn::Linear>,
+    to_pae_intra_logits: Option<tch::nn::Linear>,
+    to_pae_inter_logits: Option<tch::nn::Linear>,
+    to_pde_logits: Option<tch::nn::Linear>,
+    to_pde_intra_logits: Option<tch::nn::Linear>,
+    to_pde_inter_logits: Option<tch::nn::Linear>,
     to_plddt_logits: tch::nn::Linear,
     to_resolved_logits: tch::nn::Linear,
+    use_separate_heads: bool,
     token_level_confidence: bool,
 }
 
 impl ConfidenceHeads {
     fn new<'a>(path: Path<'a>, token_s: i64, token_z: i64, cfg: &ConfidenceModuleConfig) -> Self {
-        let (pae, pde, plddt, resolved) = if cfg.use_separate_heads {
-            panic!("use_separate_heads=true not implemented in Rust port yet");
+        let (
+            to_pae_logits,
+            to_pae_intra_logits,
+            to_pae_inter_logits,
+            to_pde_logits,
+            to_pde_intra_logits,
+            to_pde_inter_logits,
+        ) = if cfg.use_separate_heads {
+            (
+                None,
+                Some(linear_no_bias(
+                    path.sub("to_pae_intra_logits"),
+                    token_z,
+                    cfg.num_pae_bins,
+                )),
+                Some(linear_no_bias(
+                    path.sub("to_pae_inter_logits"),
+                    token_z,
+                    cfg.num_pae_bins,
+                )),
+                None,
+                Some(linear_no_bias(
+                    path.sub("to_pde_intra_logits"),
+                    token_z,
+                    cfg.num_pde_bins,
+                )),
+                Some(linear_no_bias(
+                    path.sub("to_pde_inter_logits"),
+                    token_z,
+                    cfg.num_pde_bins,
+                )),
+            )
         } else {
             (
-                linear_no_bias(path.sub("to_pae_logits"), token_z, cfg.num_pae_bins),
-                linear_no_bias(path.sub("to_pde_logits"), token_z, cfg.num_pde_bins),
-                linear_no_bias(path.sub("to_plddt_logits"), token_s, cfg.num_plddt_bins),
-                linear_no_bias(path.sub("to_resolved_logits"), token_s, 2),
+                Some(linear_no_bias(
+                    path.sub("to_pae_logits"),
+                    token_z,
+                    cfg.num_pae_bins,
+                )),
+                None,
+                None,
+                Some(linear_no_bias(
+                    path.sub("to_pde_logits"),
+                    token_z,
+                    cfg.num_pde_bins,
+                )),
+                None,
+                None,
             )
         };
+        let to_plddt_logits =
+            linear_no_bias(path.sub("to_plddt_logits"), token_s, cfg.num_plddt_bins);
+        let to_resolved_logits = linear_no_bias(path.sub("to_resolved_logits"), token_s, 2);
 
         Self {
-            to_pae_logits: pae,
-            to_pde_logits: pde,
-            to_plddt_logits: plddt,
-            to_resolved_logits: resolved,
+            to_pae_logits,
+            to_pae_intra_logits,
+            to_pae_inter_logits,
+            to_pde_logits,
+            to_pde_intra_logits,
+            to_pde_inter_logits,
+            to_plddt_logits,
+            to_resolved_logits,
+            use_separate_heads: cfg.use_separate_heads,
             token_level_confidence: cfg.token_level_confidence,
         }
     }
@@ -272,8 +372,63 @@ impl ConfidenceHeads {
             "atom-level confidence path not ported"
         );
 
-        let pae_logits = self.to_pae_logits.forward(z);
-        let pde_logits = self.to_pde_logits.forward(&(z + z.transpose(1, 2)));
+        let pae_logits = if self.use_separate_heads {
+            let is_same_chain = asym_id
+                .unsqueeze(-1)
+                .eq_tensor(&asym_id.unsqueeze(-2))
+                .to_kind(Kind::Float);
+            let is_different_chain = asym_id
+                .unsqueeze(-1)
+                .ne_tensor(&asym_id.unsqueeze(-2))
+                .to_kind(Kind::Float);
+            let intra = self
+                .to_pae_intra_logits
+                .as_ref()
+                .expect("separate PAE intra head")
+                .forward(z)
+                * is_same_chain.unsqueeze(-1);
+            let inter = self
+                .to_pae_inter_logits
+                .as_ref()
+                .expect("separate PAE inter head")
+                .forward(z)
+                * is_different_chain.unsqueeze(-1);
+            intra + inter
+        } else {
+            self.to_pae_logits
+                .as_ref()
+                .expect("unified PAE head")
+                .forward(z)
+        };
+        let pde_logits = if self.use_separate_heads {
+            let z_sym = z + z.transpose(1, 2);
+            let is_same_chain = asym_id
+                .unsqueeze(-1)
+                .eq_tensor(&asym_id.unsqueeze(-2))
+                .to_kind(Kind::Float);
+            let is_different_chain = asym_id
+                .unsqueeze(-1)
+                .ne_tensor(&asym_id.unsqueeze(-2))
+                .to_kind(Kind::Float);
+            let intra = self
+                .to_pde_intra_logits
+                .as_ref()
+                .expect("separate PDE intra head")
+                .forward(&z_sym)
+                * is_same_chain.unsqueeze(-1);
+            let inter = self
+                .to_pde_inter_logits
+                .as_ref()
+                .expect("separate PDE inter head")
+                .forward(&z_sym)
+                * is_different_chain.unsqueeze(-1);
+            intra + inter
+        } else {
+            self.to_pde_logits
+                .as_ref()
+                .expect("unified PDE head")
+                .forward(&(z + z.transpose(1, 2)))
+        };
         let resolved_logits = self.to_resolved_logits.forward(s);
         let plddt_logits = self.to_plddt_logits.forward(s);
 
@@ -322,6 +477,7 @@ impl ConfidenceHeads {
         let is_ligand_token = mol_type
             .to_kind(Kind::Float)
             .eq_tensor(&Tensor::from(CHAIN_TYPE_NONPOLYMER as f64))
+            .to_kind(Kind::Float)
             .repeat_interleave_self_int(multiplicity, Some(0), None);
 
         let token_interface_mask = (is_contact
@@ -398,3 +554,81 @@ impl ConfidenceHeads {
 
 /// Back-compat alias (older placeholder name).
 pub type ConfidenceV2 = ConfidenceModule;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn from_confidence_model_args_reads_boltz2_defaults() {
+        let j = serde_json::json!({
+            "num_dist_bins": 64,
+            "max_dist": 22.0,
+            "pairformer_args": { "num_blocks": 8, "num_heads": 16 },
+            "confidence_args": {
+                "num_plddt_bins": 50,
+                "num_pde_bins": 64,
+                "num_pae_bins": 64,
+                "use_separate_heads": true
+            }
+        });
+        let cfg = ConfidenceModuleConfig::from_confidence_model_args(Some(&j), true);
+        assert_eq!(cfg.pairformer_num_blocks, 8);
+        assert_eq!(cfg.pairformer_num_heads, Some(16));
+        assert!(cfg.use_separate_heads);
+        assert_eq!(cfg.num_pae_bins, 64);
+    }
+
+    #[test]
+    fn boltz2_confidence_weights_load_without_missing_module_keys() {
+        tch::maybe_init_cuda();
+        let cache = Path::new("/root/.cache/boltr");
+        let hparams_path = cache.join("boltz2_hparams.json");
+        let safetensors_path = cache.join("boltz2_conf.safetensors");
+        if !hparams_path.is_file() || !safetensors_path.is_file() {
+            eprintln!("skipping: cache artifacts not present");
+            return;
+        }
+        let hparams_bytes = std::fs::read(&hparams_path).expect("read boltz2_hparams.json");
+        let h = crate::boltz_hparams::Boltz2Hparams::from_json_slice(&hparams_bytes).unwrap();
+        let token_level = h
+            .other
+            .get("token_level_confidence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let confidence_cfg = ConfidenceModuleConfig::from_confidence_model_args(
+            h.confidence_model_args.as_ref(),
+            token_level,
+        );
+        assert_eq!(confidence_cfg.pairformer_num_blocks, 8);
+        assert!(confidence_cfg.use_separate_heads);
+
+        let mut model = crate::boltz2::model::Boltz2Model::with_all_options(
+            Device::Cpu,
+            h.resolved_token_s(),
+            h.resolved_token_z(),
+            h.resolved_num_pairformer_blocks(),
+            h.resolved_bond_type_feature(),
+            crate::boltz2::model::Boltz2DiffusionArgs::from_boltz2_hparams(&h),
+            crate::boltz2::diffusion::AtomDiffusionConfig::from_boltz2_hparams(&h),
+            Some(confidence_cfg),
+            None,
+            false,
+        )
+        .expect("with_all_options");
+        let missing = model
+            .load_partial_from_safetensors(&safetensors_path)
+            .expect("load_partial_from_safetensors");
+        let missing_confidence: Vec<_> = missing
+            .iter()
+            .filter(|k| k.starts_with("confidence_module."))
+            .collect();
+        assert!(
+            missing_confidence.is_empty(),
+            "confidence_module weights should load fully; missing: {:?}",
+            missing_confidence.iter().take(10).collect::<Vec<_>>()
+        );
+        assert!(model.confidence_module().is_some());
+    }
+}

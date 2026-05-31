@@ -57,17 +57,27 @@ fn main() {
     let manifest_dir =
         PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".into());
-    let build_root = manifest_dir
-        .join("..")
-        .join("target")
-        .join(&profile)
-        .join("build");
+    let target_root = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| manifest_dir.join("..").join("target"));
+    let build_root = target_root.join(&profile).join("build");
 
     let (from_dl, other) = lib_dirs_from_torch_sys_outputs(&build_root);
-    let lib = from_dl
-        .into_iter()
-        .next()
-        .or_else(|| other.into_iter().next());
+    let use_pytorch_wheel =
+        std::env::var("LIBTORCH_USE_PYTORCH").ok().as_deref() == Some("1");
+    // When both pip and download-libtorch outputs exist after incremental builds, RUNPATH must
+    // match the link target or `boltr-web`'s LD_LIBRARY_PATH prepend causes symbol mismatches.
+    let lib = if use_pytorch_wheel {
+        other
+            .into_iter()
+            .next()
+            .or_else(|| from_dl.into_iter().next())
+    } else {
+        from_dl
+            .into_iter()
+            .next()
+            .or_else(|| other.into_iter().next())
+    };
 
     if let Some(lib) = lib {
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib.display());

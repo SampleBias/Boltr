@@ -107,7 +107,7 @@ pub struct OwnedPredictTensors {
     type_bonds: Option<Tensor>,
     contact_conditioning: Tensor,
     contact_threshold: Tensor,
-    /// Placeholder; confidence path expects `[B, N_atoms]`-shaped indices when enabled.
+    /// Representative-atom gather matrix for confidence/affinity (`[B, N_token, N_atom]` one-hot).
     token_to_rep_atom: Tensor,
     frames_idx: Tensor,
     /// Atom-name one-hot (Boltz `ref_atom_name_chars`); required when checkpoint has `use_no_atom_char: false`.
@@ -172,7 +172,36 @@ impl OwnedPredictTensors {
 
         let b = token_pad_mask.size()[0];
         let n_atom = ref_pos.size()[1];
-        let token_to_rep_atom = Tensor::zeros(&[b, n_atom], (Kind::Int64, device));
+        let mut token_to_rep_atom = take_f32(batch, "token_to_rep_atom", device)?;
+        if token_to_rep_atom.dim() == 2 {
+            token_to_rep_atom = token_to_rep_atom.unsqueeze(0);
+        }
+        if token_to_rep_atom.dim() != 3 {
+            bail!(
+                "token_to_rep_atom: expected rank 2 or 3, got {} dims",
+                token_to_rep_atom.dim()
+            );
+        }
+        let ttra_tok = token_to_rep_atom.size()[1];
+        let ttra_atom = token_to_rep_atom.size()[2];
+        if ttra_tok != n_tok {
+            if ttra_tok > n_tok {
+                token_to_rep_atom = token_to_rep_atom.narrow(1, 0, n_tok);
+            } else {
+                bail!(
+                    "token_to_rep_atom token dim {ttra_tok} < token_pad_mask token count {n_tok}"
+                );
+            }
+        }
+        if ttra_atom != n_atom {
+            if ttra_atom > n_atom {
+                token_to_rep_atom = token_to_rep_atom.narrow(2, 0, n_atom);
+            } else {
+                bail!(
+                    "token_to_rep_atom atom dim {ttra_atom} < ref_pos atom count {n_atom}"
+                );
+            }
+        }
         let frames_idx = Tensor::zeros(&[b, n_tok, 3], (Kind::Int64, device));
 
         let ref_atom_name_chars = take_f32(batch, "ref_atom_name_chars", device)?;

@@ -1750,9 +1750,15 @@ pub async fn run_predict_tch(args: PredictTchArgs<'_>) -> Result<()> {
     let confidence_config = if hparams.confidence_prediction == Some(true)
         && native_confidence_enabled
     {
-        let mut cfg = ConfidenceModuleConfig::default();
-        cfg.pairformer_num_blocks = num_blocks;
-        Some(cfg)
+        let token_level = hparams
+            .other
+            .get("token_level_confidence")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        Some(ConfidenceModuleConfig::from_confidence_model_args(
+            hparams.confidence_model_args.as_ref(),
+            token_level,
+        ))
     } else {
         if hparams.confidence_prediction == Some(true) {
             tracing::warn!(

@@ -336,11 +336,15 @@ impl Boltz2Model {
         let confidence = if h.confidence_prediction == Some(false) {
             None
         } else {
-            let mut c = ConfidenceModuleConfig::default();
-            if let Some(nb) = h.resolved_num_pairformer_blocks() {
-                c.pairformer_num_blocks = nb;
-            }
-            Some(c)
+            let token_level = h
+                .other
+                .get("token_level_confidence")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            Some(ConfidenceModuleConfig::from_confidence_model_args(
+                h.confidence_model_args.as_ref(),
+                token_level,
+            ))
         };
         let affinity = if h.affinity_prediction == Some(true) {
             Some(AffinityModuleConfig::from_affinity_model_args(
@@ -519,8 +523,7 @@ impl Boltz2Model {
             .predict_bfactor
             .then(|| BFactorModule::new(root.sub("bfactor_module"), token_s, diff_args.num_bins));
 
-        let confidence_module = confidence.map(|mut cfg| {
-            cfg.pairformer_num_blocks = num_pairformer_blocks.unwrap_or(cfg.pairformer_num_blocks);
+        let confidence_module = confidence.map(|cfg| {
             ConfidenceModule::new(
                 root.sub("confidence_module"),
                 device,
